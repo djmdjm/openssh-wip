@@ -137,6 +137,8 @@ ssh_err(int n)
 		return "Protocol error";
 	case SSH_ERR_KEY_LENGTH:
 		return "Invalid key length";
+	case SSH_ERR_NUMBER_TOO_LARGE:
+		return "number is too large";
 	default:
 		return "unknown error";
 	}

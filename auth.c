@@ -473,6 +473,7 @@ getpwnamallow(const char *user)
 	ci->user = user;
 	parse_server_match_config(&options, ci);
 	log_change_level(options.log_level);
+	process_permitopen(ssh, &options);
 
 	pw = getpwnam(user);
 	if (pw == NULL) {
