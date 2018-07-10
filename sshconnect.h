@@ -50,7 +50,6 @@ void	 ssh_kex2(struct ssh *ssh, char *, struct sockaddr *, u_short);
 void	 ssh_userauth2(struct ssh *ssh, const char *, const char *,
     char *, Sensitive *);
 
-void	 ssh_put_password(char *);
 int	 ssh_local_cmd(const char *);
 
 void	 maybe_add_key_to_agent(char *, const struct sshkey *, char *, char *);
