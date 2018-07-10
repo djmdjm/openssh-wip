@@ -192,6 +192,8 @@ const u_char	*sshpkt_ptr(struct ssh *, size_t *lenp);
 
 /* OLD API */
 extern struct ssh *active_state;
+#ifndef SKIP_OPACKET
 #include "opacket.h"
+#endif
 
 #endif				/* PACKET_H */

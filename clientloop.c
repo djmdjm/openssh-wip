@@ -1,3 +1,4 @@
+#define SKIP_OPACKET
 /* $OpenBSD: clientloop.c,v 1.318 2018/09/21 12:46:22 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
