@@ -510,7 +510,7 @@ client_wait_until_can_do_something(struct ssh *ssh,
 
 	/* channel_prepare_select could have closed the last channel */
 	if (session_closed && !channel_still_open(ssh) &&
-	    !packet_have_data_to_write()) {
+	    !ssh_packet_have_data_to_write(ssh)) {
 		/* clear mask since we did not call select() */
 		memset(*readsetp, 0, *nallocp);
 		memset(*writesetp, 0, *nallocp);
@@ -1342,7 +1342,7 @@ client_loop(struct ssh *ssh, int have_pty, int escape_char_arg,
 			 * Make packets from buffered channel data, and
 			 * enqueue them for sending to the server.
 			 */
-			if (packet_not_very_much_data_to_write())
+			if (ssh_packet_not_very_much_data_to_write(ssh))
 				channel_output_poll(ssh);
 
 			/*
@@ -1380,7 +1380,7 @@ client_loop(struct ssh *ssh, int have_pty, int escape_char_arg,
 		 * sender.
 		 */
 		if (FD_ISSET(connection_out, writeset))
-			packet_write_poll();
+			ssh_packet_write_poll(ssh);
 
 		/*
 		 * If we are a backgrounded control master, and the
@@ -2274,9 +2274,10 @@ client_session2_setup(struct ssh *ssh, int id, int want_tty, int want_subsystem,
 
 		debug("Setting env %s = %s", name, val);
 		channel_request_start(ssh, id, "env", 0);
-		packet_put_cstring(name);
-		packet_put_cstring(val);
-		packet_send();
+		if ((r = sshpkt_put_cstring(ssh, name)) != 0 ||
+		    (r = sshpkt_put_cstring(ssh, val)) != 0 ||
+		    (r = sshpkt_send(ssh)) != 0)
+			fatal("%s: %s", __func__, ssh_err(r));
 		free(name);
 	}
 
@@ -2296,12 +2297,14 @@ client_session2_setup(struct ssh *ssh, int id, int want_tty, int want_subsystem,
 			channel_request_start(ssh, id, "exec", 1);
 			client_expect_confirm(ssh, id, "exec", CONFIRM_CLOSE);
 		}
-		packet_put_string(sshbuf_ptr(cmd), sshbuf_len(cmd));
-		packet_send();
+		if ((r = sshpkt_put_stringb(ssh, cmd)) != 0 ||
+		    (r = sshpkt_send(ssh)) != 0)
+			fatal("%s: %s", __func__, ssh_err(r));
 	} else {
 		channel_request_start(ssh, id, "shell", 1);
 		client_expect_confirm(ssh, id, "shell", CONFIRM_CLOSE);
-		packet_send();
+		if ((r = sshpkt_send(ssh)) != 0)
+			fatal("%s: %s", __func__, ssh_err(r));
 	}
 }
 
