@@ -186,7 +186,7 @@ auth_input_request_forwarding(struct ssh *ssh, struct passwd * pw)
 
 	/* Create private directory for socket */
 	if (mkdtemp(auth_sock_dir) == NULL) {
-		packet_send_debug("Agent forwarding disabled: "
+		ssh_packet_send_debug(ssh, "Agent forwarding disabled: "
 		    "mkdtemp() failed: %.100s", strerror(errno));
 		restore_uid();
 		free(auth_sock_dir);
@@ -499,7 +499,7 @@ do_exec_no_pty(struct ssh *ssh, Session *s, const char *command)
 
 	s->pid = pid;
 	/* Set interactive/non-interactive mode. */
-	packet_set_interactive(s->display != NULL,
+	ssh_packet_set_interactive(ssh, s->display != NULL,
 	    options.ip_qos_interactive, options.ip_qos_bulk);
 
 #ifdef USE_PIPES
@@ -716,8 +716,8 @@ do_login(struct ssh *ssh, Session *s, const char *command)
 	 */
 	memset(&from, 0, sizeof(from));
 	fromlen = sizeof(from);
-	if (packet_connection_is_on_socket()) {
-		if (getpeername(packet_get_connection_in(),
+	if (ssh_packet_connection_is_on_socket(ssh)) {
+		if (getpeername(ssh_packet_get_connection_in(ssh),
 		    (struct sockaddr *)&from, &fromlen) < 0) {
 			debug("getpeername: %.100s", strerror(errno));
 			cleanup_exit(255);
@@ -1182,11 +1182,12 @@ child_close_fds(struct ssh *ssh)
 		auth_sock = -1;
 	}
 
-	if (packet_get_connection_in() == packet_get_connection_out())
-		close(packet_get_connection_in());
+	if (ssh_packet_get_connection_in(ssh) ==
+	    ssh_packet_get_connection_out(ssh))
+		close(ssh_packet_get_connection_in(ssh));
 	else {
-		close(packet_get_connection_in());
-		close(packet_get_connection_out());
+		close(ssh_packet_get_connection_in(ssh));
+		close(ssh_packet_get_connection_out(ssh));
 	}
 	/*
 	 * Close all descriptors related to channels.  They will still remain
@@ -1228,7 +1229,7 @@ do_child(struct ssh *ssh, Session *s, const char *command)
 
 	/* remove hostkey from the child's memory */
 	destroy_sensitive_data();
-	packet_clear_keys();
+	ssh_packet_clear_keys(ssh);
 
 	/* Force a password change */
 	if (s->authctxt->force_pwchange) {

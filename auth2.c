@@ -197,9 +197,9 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 	if (acceptit) {
 		if ((r = sshpkt_start(ssh, SSH2_MSG_SERVICE_ACCEPT)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, service)) != 0 ||
-		    (r = sshpkt_send(ssh)) != 0)
+		    (r = sshpkt_send(ssh)) != 0 ||
+		    (r = ssh_packet_write_wait(ssh)) != 0)
 			goto out;
-		ssh_packet_write_wait(ssh);
 	} else {
 		debug("bad service request %s", service);
 		ssh_packet_disconnect(ssh, "bad service request %s", service);
@@ -292,7 +292,8 @@ input_userauth_request(int type, u_int32_t seq, struct ssh *ssh)
 			mm_inform_authserv(service, style);
 		userauth_banner(ssh);
 		if (auth2_setup_methods_lists(authctxt) != 0)
-			packet_disconnect("no authentication methods enabled");
+			ssh_packet_disconnect(ssh,
+			    "no authentication methods enabled");
 	} else if (strcmp(user, authctxt->user) != 0 ||
 	    strcmp(service, authctxt->service) != 0) {
 		packet_disconnect("Change of username or service not allowed: "
@@ -371,9 +372,9 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_REQUEST,
 		    &dispatch_protocol_ignore);
 		if ((r = sshpkt_start(ssh, SSH2_MSG_USERAUTH_SUCCESS)) != 0 ||
-		    (r = sshpkt_send(ssh)) != 0)
+		    (r = sshpkt_send(ssh)) != 0 ||
+		    (r = ssh_packet_write_wait(ssh))
 			fatal("%s: %s", __func__, ssh_err(r));
-		ssh_packet_write_wait(ssh);
 		/* now we can break out */
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
@@ -390,9 +391,9 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		if ((r = sshpkt_start(ssh, SSH2_MSG_USERAUTH_FAILURE)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, methods)) != 0 ||
 		    (r = sshpkt_put_u8(ssh, partial)) != 0 ||
-		    (r = sshpkt_send(ssh)) != 0)
+		    (r = sshpkt_send(ssh)) != 0 ||
+		    (r = ssh_packet_write_wait(ssh)) != 0)
 			fatal("%s: %s", __func__, ssh_err(r));
-		ssh_packet_write_wait(ssh);
 		free(methods);
 	}
 }

@@ -175,11 +175,12 @@ sigterm_handler(int sig)
 static void
 client_alive_check(struct ssh *ssh)
 {
-	int channel_id;
 	char remote_id[512];
+	int r, channel_id;
 
 	/* timeout, check to see how many we have had */
-	if (packet_inc_alive_timeouts() > options.client_alive_count_max) {
+	if (ssh_packet_inc_alive_timeouts(ssh) >
+	    options.client_alive_count_max) {
 		sshpkt_fmt_connection_id(ssh, remote_id, sizeof(remote_id));
 		logit("Timeout, client not responding from %s", remote_id);
 		cleanup_exit(255);
@@ -190,14 +191,17 @@ client_alive_check(struct ssh *ssh)
 	 * we should get back a failure
 	 */
 	if ((channel_id = channel_find_open(ssh)) == -1) {
-		packet_start(SSH2_MSG_GLOBAL_REQUEST);
-		packet_put_cstring("keepalive@openssh.com");
-		packet_put_char(1);	/* boolean: want reply */
+		if ((r = sshpkt_start(ssh, SSH2_MSG_GLOBAL_REQUEST)) != 0 ||
+		    (r = sshpkt_put_cstring(ssh, "keepalive@openssh.com"))
+		    != 0 ||
+		    (r = sshpkt_put_u8(ssh, 1)) != 0) /* boolean: want reply */
+			fatal("%s: %s", __func__, ssh_err(r));
 	} else {
 		channel_request_start(ssh, channel_id,
 		    "keepalive@openssh.com", 1);
 	}
-	packet_send();
+	if ((r = sshpkt_send(ssh)) != 0)
+		fatal("%s: %s", __func__, ssh_err(r));
 }
 
 /*
@@ -254,7 +258,7 @@ wait_until_can_do_something(struct ssh *ssh,
 	 * If we have buffered packet data going to the client, mark that
 	 * descriptor.
 	 */
-	if (packet_have_data_to_write())
+	if (ssh_packet_have_data_to_write(ssh))
 		FD_SET(connection_out, *writesetp);
 
 	/*
@@ -305,7 +309,7 @@ wait_until_can_do_something(struct ssh *ssh,
 static int
 process_input(struct ssh *ssh, fd_set *readset, int connection_in)
 {
-	int len;
+	int r, len;
 	char buf[16384];
 
 	/* Read and buffer any input data from the client. */
@@ -326,6 +330,10 @@ process_input(struct ssh *ssh, fd_set *readset, int connection_in)
 		} else {
 			/* Buffer any received data. */
 			packet_process_incoming(buf, len);
+			if ((r = ssh_packet_process_incoming(ssh, buf, len))
+			    != 0)
+				fatal("%s: ssh_packet_process_incoming: %s",
+				    __func__, ssh_err(r));
 		}
 	}
 	return 0;
@@ -337,9 +345,14 @@ process_input(struct ssh *ssh, fd_set *readset, int connection_in)
 static void
 process_output(fd_set *writeset, int connection_out)
 {
+	int r;
+
 	/* Send any buffered packet data to the client. */
-	if (FD_ISSET(connection_out, writeset))
-		packet_write_poll();
+	if (FD_ISSET(connection_out, writeset)) {
+		if ((r = ssh_packet_write_poll()) != 0)
+			fatal("%s: ssh_packet_write_poll: %s",
+			    __func__, ssh_err(r));
+	}
 }
 
 static void

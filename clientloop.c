@@ -1406,9 +1406,9 @@ client_loop(struct ssh *ssh, int have_pty, int escape_char_arg,
 	    (r = sshpkt_put_u32(ssh, SSH2_DISCONNECT_BY_APPLICATION)) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, "disconnected by user")) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, "")) != 0 ||	/* language tag */
-	    (r = sshpkt_send(ssh)) != 0)
+	    (r = sshpkt_send(ssh)) != 0 ||
+	    (r = ssh_packet_write_wait(ssh)) != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
-	ssh_packet_write_wait(ssh);
 
 	channel_free_all(ssh);
 
@@ -2177,9 +2177,9 @@ client_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 	if (want_reply) {
 		if ((r = sshpkt_start(ssh, success ? SSH2_MSG_REQUEST_SUCCESS :
 		    SSH2_MSG_REQUEST_FAILURE)) != 0 ||
-		    (r = sshpkt_send(ssh)) != 0)
+		    (r = sshpkt_send(ssh)) != 0 ||
+		    (r = ssh_packet_write_wait(ssh)) != 0)
 			goto out;
-		ssh_packet_write_wait(ssh);
 	}
 	r = 0;
  out:
