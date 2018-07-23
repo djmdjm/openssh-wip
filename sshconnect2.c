@@ -2014,8 +2014,7 @@ userauth_hostbased(Authctxt *authctxt)
 #ifdef DEBUG_PK
 	sshbuf_dump(b, stderr);
 #endif
-	r = ssh_keysign(private, &sig, &siglen,
-	    sshbuf_ptr(b), sshbuf_len(b));
+	r = ssh_keysign(private, &sig, &siglen, sshbuf_ptr(b), sshbuf_len(b));
 	if (r != 0) {
 		error("sign using hostkey %s %s failed",
 		    sshkey_ssh_name(private), fp);
