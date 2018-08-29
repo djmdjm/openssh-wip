@@ -472,7 +472,7 @@ cipher_get_keyiv(struct sshcipher_ctx *cc, u_char *iv, u_int len)
 		   len, iv))
 		       return SSH_ERR_LIBCRYPTO_ERROR;
 	} else
-		memcpy(iv, cc->evp->iv, len);
+		memcpy(iv, EVP_CIPHER_CTX_iv(cc->evp), len);
 #endif
 	return 0;
 }
@@ -500,7 +500,7 @@ cipher_set_keyiv(struct sshcipher_ctx *cc, const u_char *iv)
 		    EVP_CTRL_GCM_SET_IV_FIXED, -1, (void *)iv))
 			return SSH_ERR_LIBCRYPTO_ERROR;
 	} else
-		memcpy(cc->evp->iv, iv, evplen);
+		memcpy(EVP_CIPHER_CTX_iv_noconst(cc->evp), iv, evplen);
 #endif
 	return 0;
 }
