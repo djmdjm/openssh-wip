@@ -1217,7 +1217,6 @@ void
 ssh_login(struct ssh *ssh, Sensitive *sensitive, const char *orighost,
     struct sockaddr *hostaddr, u_short port, struct passwd *pw, int timeout_ms)
 {
-	struct ssh *ssh = active_state; /* XXX */
 	char *host;
 	char *server_user, *local_user;
 
