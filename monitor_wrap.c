@@ -71,7 +71,6 @@
 
 #include "ssherr.h"
 
-#include "opacket.h" /* XXX */
 extern struct ssh *active_state; /* XXX */
 
 /* Imports */
