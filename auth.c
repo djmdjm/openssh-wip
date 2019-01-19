@@ -475,8 +475,9 @@ getpwnamallow(const char *user)
 	extern login_cap_t *lc;
 	auth_session_t *as;
 	struct passwd *pw;
-	struct connection_info *ci = get_connection_info(1, options.use_dns);
+	struct connection_info *ci;
 
+	ci = get_connection_info(ssh, 1, options.use_dns);
 	ci->user = user;
 	parse_server_match_config(&options, ci);
 	log_change_level(options.log_level);

@@ -866,12 +866,11 @@ process_permitopen(struct ssh *ssh, ServerOptions *options)
 }
 
 struct connection_info *
-get_connection_info(int populate, int use_dns)
+get_connection_info(struct ssh *ssh, int populate, int use_dns)
 {
-	struct ssh *ssh = active_state; /* XXX */
 	static struct connection_info ci;
 
-	if (!populate)
+	if (ssh == NULL || !populate)
 		return &ci;
 	ci.host = auth_get_canonical_hostname(ssh, use_dns);
 	ci.address = ssh_remote_ipaddr(ssh);
