@@ -1714,14 +1714,15 @@ client_input_channel_req(int type, u_int32_t seq, struct ssh *ssh)
 
 	if ((r = sshpkt_get_u32(ssh, &id)) != 0)
 		return r;
-	c = channel_lookup(ssh, id);
+	if (id <= INT_MAX)
+		c = channel_lookup(ssh, id);
 	if (channel_proxy_upstream(c, type, seq, ssh))
 		return 0;
 	if ((r = sshpkt_get_cstring(ssh, &rtype, NULL)) != 0 ||
 	    (r = sshpkt_get_u8(ssh, &reply)) != 0)
 		goto out;
 
-	debug("client_input_channel_req: channel %d rtype %s reply %d",
+	debug("client_input_channel_req: channel %u rtype %s reply %d",
 	    id, rtype, reply);
 
 	if (c == NULL) {
@@ -1737,7 +1738,7 @@ client_input_channel_req(int type, u_int32_t seq, struct ssh *ssh)
 		if (c->ctl_chan != -1) {
 			mux_exit_message(ssh, c, exitval);
 			success = 1;
-		} else if (id == session_ident) {
+		} else if ((int)id == session_ident) {
 			/* Record exit value of local session */
 			success = 1;
 			exit_status = exitval;
