@@ -343,13 +343,13 @@ process_input(struct ssh *ssh, fd_set *readset, int connection_in)
  * Sends data from internal buffers to client program stdin.
  */
 static void
-process_output(fd_set *writeset, int connection_out)
+process_output(struct ssh *ssh, fd_set *writeset, int connection_out)
 {
 	int r;
 
 	/* Send any buffered packet data to the client. */
 	if (FD_ISSET(connection_out, writeset)) {
-		if ((r = ssh_packet_write_poll()) != 0)
+		if ((r = ssh_packet_write_poll(ssh)) != 0)
 			fatal("%s: ssh_packet_write_poll: %s",
 			    __func__, ssh_err(r));
 	}
@@ -436,7 +436,7 @@ server_loop2(struct ssh *ssh, Authctxt *authctxt)
 			channel_after_select(ssh, readset, writeset);
 		if (process_input(ssh, readset, connection_in) < 0)
 			break;
-		process_output(writeset, connection_out);
+		process_output(ssh, writeset, connection_out);
 	}
 	collect_children(ssh);
 

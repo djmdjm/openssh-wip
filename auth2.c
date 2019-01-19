@@ -373,7 +373,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		    &dispatch_protocol_ignore);
 		if ((r = sshpkt_start(ssh, SSH2_MSG_USERAUTH_SUCCESS)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0 ||
-		    (r = ssh_packet_write_wait(ssh))
+		    (r = ssh_packet_write_wait(ssh)) != 0)
 			fatal("%s: %s", __func__, ssh_err(r));
 		/* now we can break out */
 		authctxt->success = 1;
