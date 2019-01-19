@@ -4,6 +4,7 @@
 
 #include "ssherr.h"
 #include "packet.h"
+#include "opacket.h" /* XXX */
 #include "log.h"
 
 struct ssh *active_state, *backup_state;

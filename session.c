@@ -92,6 +92,9 @@
 #include <kafs.h>
 #endif
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 #define IS_INTERNAL_SFTP(c) \
 	(!strncmp(c, INTERNAL_SFTP_NAME, sizeof(INTERNAL_SFTP_NAME) - 1) && \
 	 (c[sizeof(INTERNAL_SFTP_NAME) - 1] == '\0' || \

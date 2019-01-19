@@ -82,6 +82,9 @@
 #include "match.h"
 #include "ssherr.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 #ifdef GSSAPI
 static Gssctxt *gsscontext = NULL;
 #endif

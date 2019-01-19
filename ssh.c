@@ -102,6 +102,8 @@
 #include "ssh-pkcs11.h"
 #endif
 
+extern struct ssh *active_state; /* XXX move here */
+
 extern char *__progname;
 
 /* Flag indicating whether debug mode is on.  May be set on the command line. */

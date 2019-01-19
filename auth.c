@@ -65,6 +65,9 @@
 #include "compat.h"
 #include "channels.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 /* import */
 extern ServerOptions options;
 extern int use_privsep;

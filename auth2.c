@@ -57,6 +57,9 @@
 #include "ssherr.h"
 #include "digest.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 /* import */
 extern ServerOptions options;
 extern u_char *session_id2;
