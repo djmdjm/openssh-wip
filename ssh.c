@@ -102,8 +102,6 @@
 #include "ssh-pkcs11.h"
 #endif
 
-extern struct ssh *active_state; /* XXX move here */
-
 extern char *__progname;
 
 /* Flag indicating whether debug mode is on.  May be set on the command line. */
@@ -627,7 +625,6 @@ main(int ac, char **av)
 	if ((ssh = ssh_alloc_session_state()) == NULL)
 		fatal("Couldn't allocate session state");
 	channel_init_channels(ssh);
-	active_state = ssh; /* XXX legacy API compat */
 
 	/* Parse command-line arguments. */
 	host = NULL;
@@ -1358,8 +1355,6 @@ main(int ac, char **av)
 
 	ssh_packet_set_timeout(ssh, options.server_alive_interval,
 	    options.server_alive_count_max);
-
-	ssh = active_state; /* XXX */
 
 	if (timeout_ms > 0)
 		debug3("timeout: %d ms remain after connect", timeout_ms);
