@@ -104,6 +104,9 @@
 #include "ssherr.h"
 #include "hostfile.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 /* import options */
 extern Options options;
 

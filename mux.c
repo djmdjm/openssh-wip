@@ -55,6 +55,9 @@
 #include "clientloop.h"
 #include "ssherr.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 /* from ssh.c */
 extern int tty_flag;
 extern Options options;

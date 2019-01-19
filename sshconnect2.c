@@ -71,6 +71,9 @@
 #include "ssh-gss.h"
 #endif
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 /* import */
 extern char *client_version_string;
 extern char *server_version_string;

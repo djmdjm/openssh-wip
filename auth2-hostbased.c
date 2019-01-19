@@ -50,6 +50,8 @@
 #include "ssherr.h"
 #include "match.h"
 
+extern struct ssh *active_state; /* XXX */
+
 /* import */
 extern ServerOptions options;
 extern u_char *session_id2;

@@ -56,6 +56,9 @@
 #include "authfd.h"
 #include "kex.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 struct sshkey *previous_host_key = NULL;
 
 static int matching_host_key_dns = 0;

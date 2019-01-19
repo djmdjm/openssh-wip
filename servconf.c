@@ -56,6 +56,9 @@
 #include "myproposal.h"
 #include "digest.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 static void add_listen_addr(ServerOptions *, const char *,
     const char *, int);
 static void add_one_listen_addr(ServerOptions *, const char *,

@@ -190,8 +190,4 @@ int	sshpkt_get_end(struct ssh *ssh);
 void	sshpkt_fmt_connection_id(struct ssh *ssh, char *s, size_t l);
 const u_char	*sshpkt_ptr(struct ssh *, size_t *lenp);
 
-/* OLD API */
-extern struct ssh *active_state;
-#include "opacket.h"
-
 #endif				/* PACKET_H */

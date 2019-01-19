@@ -105,6 +105,9 @@
 #include "version.h"
 #include "ssherr.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX move decl to this file */
+
 /* Re-exec fds */
 #define REEXEC_DEVCRYPTO_RESERVED_FD	(STDERR_FILENO + 1)
 #define REEXEC_STARTUP_PIPE_FD		(STDERR_FILENO + 2)

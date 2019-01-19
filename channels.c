@@ -78,6 +78,9 @@
 #include "pathnames.h"
 #include "match.h"
 
+#include "opacket.h" /* XXX */
+extern struct ssh *active_state; /* XXX */
+
 /* -- agent forwarding */
 #define	NUM_SOCKS	10
 
