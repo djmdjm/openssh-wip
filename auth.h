@@ -147,7 +147,7 @@ int	auth_krb5_password(Authctxt *authctxt, const char *password);
 void	krb5_cleanup_proc(Authctxt *authctxt);
 #endif /* KRB5 */
 
-void	do_authentication2(Authctxt *);
+void	do_authentication2(struct ssh *);
 
 void	auth_log(Authctxt *, int, int, const char *, const char *);
 void	auth_maxtries_exceeded(Authctxt *) __attribute__((noreturn));

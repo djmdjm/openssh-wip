@@ -1887,7 +1887,8 @@ main(int ac, char **av)
 	/* perform the key exchange */
 	/* authenticate user and start session */
 	do_ssh2_kex();
-	do_authentication2(authctxt);
+	ssh->authctxt = authctxt;
+	do_authentication2(ssh);
 
 	/*
 	 * If we use privilege separation, the unprivileged child transfers

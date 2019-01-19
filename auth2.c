@@ -57,9 +57,6 @@
 #include "ssherr.h"
 #include "digest.h"
 
-#include "opacket.h" /* XXX */
-extern struct ssh *active_state; /* XXX */
-
 /* import */
 extern ServerOptions options;
 extern u_char *session_id2;
@@ -162,10 +159,10 @@ done:
  * loop until authctxt->success == TRUE
  */
 void
-do_authentication2(Authctxt *authctxt)
+do_authentication2(struct ssh *ssh)
 {
-	struct ssh *ssh = active_state;		/* XXX */
-	ssh->authctxt = authctxt;		/* XXX move to caller */
+	Authctxt *authctxt = ssh->authctxt;
+
 	ssh_dispatch_init(ssh, &dispatch_protocol_error);
 	ssh_dispatch_set(ssh, SSH2_MSG_SERVICE_REQUEST, &input_service_request);
 	ssh_dispatch_run_fatal(ssh, DISPATCH_BLOCK, &authctxt->success);
@@ -299,8 +296,8 @@ input_userauth_request(int type, u_int32_t seq, struct ssh *ssh)
 			    "no authentication methods enabled");
 	} else if (strcmp(user, authctxt->user) != 0 ||
 	    strcmp(service, authctxt->service) != 0) {
-		packet_disconnect("Change of username or service not allowed: "
-		    "(%s,%s) -> (%s,%s)",
+		ssh_packet_disconnect(ssh, "Change of username or service "
+		    "not allowed: (%s,%s) -> (%s,%s)",
 		    authctxt->user, authctxt->service, user, service);
 	}
 	/* reset state */
