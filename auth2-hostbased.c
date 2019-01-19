@@ -50,8 +50,6 @@
 #include "ssherr.h"
 #include "match.h"
 
-extern struct ssh *active_state; /* XXX */
-
 /* import */
 extern ServerOptions options;
 extern u_char *session_id2;
@@ -148,7 +146,8 @@ userauth_hostbased(struct ssh *ssh)
 
 	/* test for allowed key and correct signature */
 	authenticated = 0;
-	if (PRIVSEP(hostbased_key_allowed(authctxt->pw, cuser, chost, key)) &&
+	if (PRIVSEP(hostbased_key_allowed(ssh, authctxt->pw, cuser,
+	    chost, key)) &&
 	    PRIVSEP(sshkey_verify(key, sig, slen,
 	    sshbuf_ptr(b), sshbuf_len(b), pkalg, ssh->compat)) == 0)
 		authenticated = 1;
@@ -168,10 +167,9 @@ done:
 
 /* return 1 if given hostkey is allowed */
 int
-hostbased_key_allowed(struct passwd *pw, const char *cuser, char *chost,
-    struct sshkey *key)
+hostbased_key_allowed(struct ssh *ssh, struct passwd *pw,
+    const char *cuser, char *chost, struct sshkey *key)
 {
-	struct ssh *ssh = active_state; /* XXX */
 	const char *resolvedname, *ipaddr, *lookup, *reason;
 	HostStatus host_status;
 	int len;

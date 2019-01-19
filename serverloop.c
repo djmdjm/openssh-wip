@@ -772,7 +772,7 @@ server_input_hostkeys_prove(struct ssh *ssh, struct sshbuf **respp)
 		    (r = sshbuf_put_string(sigbuf,
 		    ssh->kex->session_id, ssh->kex->session_id_len)) != 0 ||
 		    (r = sshkey_puts(key, sigbuf)) != 0 ||
-		    (r = ssh->kex->sign(key_prv, key_pub, &sig, &slen,
+		    (r = ssh->kex->sign(ssh, key_prv, key_pub, &sig, &slen,
 		    sshbuf_ptr(sigbuf), sshbuf_len(sigbuf),
 		    use_kexsigtype ? ssh->kex->hostkey_alg : NULL, 0)) != 0 ||
 		    (r = sshbuf_put_string(resp, sig, slen)) != 0) {

@@ -164,8 +164,9 @@ input_kex_ecdh_init(int type, u_int32_t seq, struct ssh *ssh)
 	}
 
 	/* sign H */
-	if ((r = kex->sign(server_host_private, server_host_public, &signature,
-	     &slen, hash, hashlen, kex->hostkey_alg, ssh->compat)) < 0)
+	if ((r = kex->sign(ssh, server_host_private, server_host_public,
+	    &signature, &slen, hash, hashlen, kex->hostkey_alg,
+	    ssh->compat)) < 0)
 		goto out;
 
 	/* destroy_sensitive_data(); */

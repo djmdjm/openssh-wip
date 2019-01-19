@@ -102,8 +102,6 @@
 #include "ssh-pkcs11.h"
 #endif
 
-extern struct ssh *active_state; /* XXX remove after sshconnect2.c updated */
-
 extern char *__progname;
 
 /* Flag indicating whether debug mode is on.  May be set on the command line. */
@@ -626,7 +624,6 @@ main(int ac, char **av)
 	 */
 	if ((ssh = ssh_alloc_session_state()) == NULL)
 		fatal("Couldn't allocate session state");
-	active_state = ssh; /* XXX */
 	channel_init_channels(ssh);
 
 	/* Parse command-line arguments. */
