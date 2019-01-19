@@ -1591,8 +1591,7 @@ session_pty_req(struct ssh *ssh, Session *s)
 	    (r = sshpkt_get_u32(ssh, &s->col)) != 0 ||
 	    (r = sshpkt_get_u32(ssh, &s->row)) != 0 ||
 	    (r = sshpkt_get_u32(ssh, &s->xpixel)) != 0 ||
-	    (r = sshpkt_get_u32(ssh, &s->ypixel)) != 0 ||
-	    (r = sshpkt_get_end(ssh)) != 0)
+	    (r = sshpkt_get_u32(ssh, &s->ypixel)) != 0)
 		sshpkt_fatal(ssh, r, "%s: parse packet", __func__);
 
 	if (strcmp(s->term, "") == 0) {
@@ -1614,6 +1613,9 @@ session_pty_req(struct ssh *ssh, Session *s)
 	debug("session_pty_req: session %d alloc %s", s->self, s->tty);
 
 	ssh_tty_parse_modes(ssh, s->ttyfd);
+
+	if ((r = sshpkt_get_end(ssh)) != 0)
+		sshpkt_fatal(ssh, r, "%s: parse packet", __func__);
 
 	if (!use_privsep)
 		pty_setowner(s->pw, s->tty);
