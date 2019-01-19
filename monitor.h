@@ -83,5 +83,6 @@ void monitor_apply_keystate(struct ssh *, struct monitor *);
 void mm_request_send(int, enum monitor_reqtype, struct sshbuf *);
 void mm_request_receive(int, struct sshbuf *);
 void mm_request_receive_expect(int, enum monitor_reqtype, struct sshbuf *);
+void mm_get_keystate(struct ssh *, struct monitor *);
 
 #endif /* _MONITOR_H_ */
