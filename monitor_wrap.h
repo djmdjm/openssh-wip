@@ -33,6 +33,7 @@ extern int use_privsep;
 
 enum mm_keytype { MM_NOKEY, MM_HOSTKEY, MM_USERKEY };
 
+struct ssh;
 struct monitor;
 struct Authctxt;
 struct sshkey;
@@ -44,7 +45,7 @@ DH *mm_choose_dh(int, int, int);
 int mm_sshkey_sign(struct sshkey *, u_char **, size_t *, const u_char *, size_t,
     const char *, u_int compat);
 void mm_inform_authserv(char *, char *);
-struct passwd *mm_getpwnamallow(const char *);
+struct passwd *mm_getpwnamallow(struct ssh *, const char *);
 char *mm_auth2_read_banner(void);
 int mm_auth_password(struct ssh *, char *);
 int mm_key_allowed(enum mm_keytype, const char *, const char *, struct sshkey *,

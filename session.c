@@ -344,7 +344,7 @@ do_authenticated(struct ssh *ssh, Authctxt *authctxt)
 		else
 			channel_permit_all(ssh, FORWARD_REMOTE);
 	}
-	auth_debug_send();
+	auth_debug_send(ssh);
 
 	prepare_auth_info_file(authctxt->pw, authctxt->session_info);
 

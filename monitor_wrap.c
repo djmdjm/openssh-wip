@@ -246,9 +246,8 @@ mm_sshkey_sign(struct sshkey *key, u_char **sigp, size_t *lenp,
 }
 
 struct passwd *
-mm_getpwnamallow(const char *username)
+mm_getpwnamallow(struct ssh *ssh, const char *username)
 {
-	struct ssh *ssh = active_state;		/* XXX */
 	struct sshbuf *m;
 	struct passwd *pw;
 	size_t len;
