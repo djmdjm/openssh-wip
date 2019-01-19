@@ -1485,22 +1485,29 @@ client_request_forwarded_tcpip(struct ssh *ssh, const char *request_type,
 	Channel *c = NULL;
 	struct sshbuf *b = NULL;
 	char *listen_address, *originator_address;
-	u_short listen_port, originator_port;
+	u_int listen_port, originator_port;
 	int r;
 
 	/* Get rest of the packet */
 	if ((r = sshpkt_get_cstring(ssh, &listen_address, NULL)) != 0 ||
-	    (r = sshpkt_get_u32(ssh, (u_int *)&listen_port)) != 0 ||
+	    (r = sshpkt_get_u32(ssh, &listen_port)) != 0 ||
 	    (r = sshpkt_get_cstring(ssh, &originator_address, NULL)) != 0 ||
-	    (r = sshpkt_get_u32(ssh, (u_int *)&originator_port)) != 0 ||
+	    (r = sshpkt_get_u32(ssh, &originator_port)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
 
 	debug("%s: listen %s port %d, originator %s port %d", __func__,
 	    listen_address, listen_port, originator_address, originator_port);
 
-	c = channel_connect_by_listen_address(ssh, listen_address, listen_port,
-	    "forwarded-tcpip", originator_address);
+	if (listen_port > 0xffff)
+		error("%s: invalid listen port", __func__);
+	else if (originator_port > 0xffff)
+		error("%s: invalid originator port", __func__);
+	else {
+		c = channel_connect_by_listen_address(ssh,
+		    listen_address, listen_port, "forwarded-tcpip",
+		    originator_address);
+	}
 
 	if (c != NULL && c->type == SSH_CHANNEL_MUX_CLIENT) {
 		if ((b = sshbuf_new()) == NULL) {
@@ -1693,9 +1700,23 @@ client_input_channel_open(int type, u_int32_t seq, struct ssh *ssh)
 		c->remote_window = rwindow;
 		c->remote_maxpacket = rmaxpack;
 		if (c->type != SSH_CHANNEL_CONNECTING) {
+			if ((r = sshpkt_start(ssh, SSH2_MSG_CHANNEL_OPEN_CONFIRMATION)) != 0 ||
+			    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
+			    (r = sshpkt_put_u32(ssh, c->self)) != 0 ||
+			    (r = sshpkt_put_u32(ssh, c->local_window)) != 0 ||
+			    (r = sshpkt_put_u32(ssh, c->local_maxpacket)) != 0 ||
+			    (r = sshpkt_send(ssh)) != 0)
+				sshpkt_fatal(ssh, r, "%s: send reply", __func__);
 		}
 	} else {
 		debug("failure %s", ctype);
+		if ((r = sshpkt_start(ssh, SSH2_MSG_CHANNEL_OPEN_FAILURE)) != 0 ||
+		    (r = sshpkt_put_u32(ssh, rchan)) != 0 ||
+		    (r = sshpkt_put_u32(ssh, SSH2_OPEN_ADMINISTRATIVELY_PROHIBITED)) != 0 ||
+		    (r = sshpkt_put_cstring(ssh, "open failed")) != 0 ||
+		    (r = sshpkt_put_cstring(ssh, "")) != 0 ||
+		    (r = sshpkt_send(ssh)) != 0)
+			sshpkt_fatal(ssh, r, "%s: send failure", __func__);
 	}
 	r = 0;
  out:
@@ -1754,6 +1775,11 @@ client_input_channel_req(int type, u_int32_t seq, struct ssh *ssh)
 		if (!c->have_remote_id)
 			fatal("%s: channel %d: no remote_id",
 			    __func__, c->self);
+		if ((r = sshpkt_start(ssh, success ?
+		    SSH2_MSG_CHANNEL_SUCCESS : SSH2_MSG_CHANNEL_FAILURE)) != 0 ||
+		    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
+		    (r = sshpkt_send(ssh)) != 0)
+			sshpkt_fatal(ssh, r, "%s: send failure", __func__);
 	}
 	r = 0;
  out:
