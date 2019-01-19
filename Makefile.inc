@@ -105,7 +105,6 @@ SRCS_PROT+=	channels.c
 SRCS_PROT+=	crc32.c
 SRCS_PROT+=	monitor_fdpass.c
 SRCS_PROT+=	nchan.c
-SRCS_PROT+=	opacket.c
 SRCS_PROT+=	ttymodes.c
 
 SRCS_UTL+=	addrmatch.c
