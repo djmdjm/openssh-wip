@@ -45,7 +45,7 @@ dispatch_protocol_error(int type, u_int32_t seq, struct ssh *ssh)
 	    (r = sshpkt_put_u32(ssh, seq)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0 ||
 	    (r = ssh_packet_write_wait(ssh)) != 0)
-		sshpkt_fatal(ssh, __func__, r);
+		sshpkt_fatal(ssh, r, "%s", __func__);
 	return 0;
 }
 
@@ -129,5 +129,5 @@ ssh_dispatch_run_fatal(struct ssh *ssh, int mode, volatile sig_atomic_t *done)
 	int r;
 
 	if ((r = ssh_dispatch_run(ssh, mode, done)) != 0)
-		sshpkt_fatal(ssh, __func__, r);
+		sshpkt_fatal(ssh, r, "%s", __func__);
 }
