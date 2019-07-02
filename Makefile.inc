@@ -67,6 +67,7 @@ SRCS_KEY+=	poly1305.c
 .if (${OPENSSL:L} == "yes")
 SRCS_KEY+=	ssh-dss.c
 SRCS_KEY+=	ssh-ecdsa.c
+SRCS_KEY+=	ssh-ecdsa-sk.c
 SRCS_KEY+=	ssh-rsa.c
 SRCS_KEY+=	sshbuf-getput-crypto.c
 SRCS_KEY+=	digest-openssl.c
