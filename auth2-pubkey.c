@@ -535,16 +535,6 @@ match_principals_command(struct ssh *ssh, struct passwd *user_pw,
 	return found_principal;
 }
 
-static void
-skip_space(char **cpp)
-{
-	char *cp;
-
-	for (cp = *cpp; *cp == ' ' || *cp == '\t'; cp++)
-		;
-	*cpp = cp;
-}
-
 /*
  * Advanced *cpp past the end of key options, defined as the first unquoted
  * whitespace character. Returns 0 on success or -1 on failure (e.g.
