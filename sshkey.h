@@ -208,6 +208,7 @@ int	 sshkey_verify(const struct sshkey *, const u_char *, size_t,
     const u_char *, size_t, const char *, u_int);
 int	 sshkey_check_sigtype(const u_char *, size_t, const char *);
 const char *sshkey_sigalg_by_name(const char *);
+int	 sshkey_get_sigtype(const u_char *, size_t, char **);
 
 /* for debug */
 void	sshkey_dump_ec_point(const EC_GROUP *, const EC_POINT *);
