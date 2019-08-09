@@ -164,6 +164,11 @@ int	 safe_path(const char *, struct stat *, const char *, uid_t,
 int	 safe_path_fd(int, const char *, struct passwd *,
 	     char *err, size_t errlen);
 
+/* authorized_key-style options parsing helpers */
+int	opt_flag(const char *opt, int allow_negate, const char **optsp);
+char	*opt_dequote(const char **sp, const char **errstrp);
+int	opt_match(const char **opts, const char *term);
+
 /* readpass.c */
 
 #define RP_ECHO			0x0001
