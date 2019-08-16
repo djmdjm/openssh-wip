@@ -21,6 +21,9 @@
 struct sshbuf;
 struct sshkey;
 
+/* Version of protocol between ssh-agent and ssh-sk-helper */
+#define SSH_SK_HELPER_VERSION	1
+
 /*
  * Enroll (generate) a new security-key hosted private key via the specified
  * provider middleware.
