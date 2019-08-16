@@ -303,7 +303,7 @@ add_file(int agent_fd, const char *filename, int key_only, int qflag)
 	}
 
 	if ((r = ssh_add_identity_constrained(agent_fd, private, comment,
-	    lifetime, confirm, maxsign)) == 0) {
+	    lifetime, confirm, maxsign, NULL)) == 0) {
 		ret = 0;
 		if (!qflag) {
 			fprintf(stderr, "Identity added: %s (%s)\n",
@@ -356,7 +356,7 @@ add_file(int agent_fd, const char *filename, int key_only, int qflag)
 	sshkey_free(cert);
 
 	if ((r = ssh_add_identity_constrained(agent_fd, private, comment,
-	    lifetime, confirm, maxsign)) != 0) {
+	    lifetime, confirm, maxsign, NULL)) != 0) {
 		error("Certificate %s (%s) add failed: %s", certpath,
 		    private->cert->key_id, ssh_err(r));
 		goto out;

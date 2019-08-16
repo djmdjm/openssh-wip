@@ -1387,7 +1387,7 @@ maybe_add_key_to_agent(char *authfile, struct sshkey *private,
 	}
 
 	if ((r = ssh_add_identity_constrained(auth_sock, private, comment, 0,
-	    (options.add_keys_to_agent == 3), 0)) == 0)
+	    (options.add_keys_to_agent == 3), 0, NULL)) == 0)
 		debug("identity added to agent: %s", authfile);
 	else
 		debug("could not add identity to agent: %s (%d)", authfile, r);
