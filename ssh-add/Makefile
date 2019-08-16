@@ -4,7 +4,7 @@
 
 SRCS=	ssh-add.c
 SRCS+=	atomicio.c authfd.c cleanup.c fatal.c readpass.c
-SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} ${SRCS_KRL} ${SRCS_UTL}
+SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} ${SRCS_KRL} ${SRCS_UTL} ${SRCS_SK}
 
 PROG=	ssh-add
 
