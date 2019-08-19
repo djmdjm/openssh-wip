@@ -310,6 +310,8 @@ ssh_free_identitylist(struct ssh_identitylist *idl)
 		if (idl->comments != NULL)
 			free(idl->comments[i]);
 	}
+	free(idl->keys);
+	free(idl->comments);
 	free(idl);
 }
 
