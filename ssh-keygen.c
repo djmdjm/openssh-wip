@@ -211,6 +211,30 @@ type_bits_valid(int type, const char *name, u_int32_t *bitsp)
 #endif
 }
 
+/*
+ * Checks whether a file exists and, if so, asks the user whether they wish
+ * to overwrite it.
+ * Returns nonzero if the file does not already exist or if the user agrees to
+ * overwrite, or zero otherwise.
+ */
+static int
+confirm_overwrite(const char *filename)
+{
+	char yesno[3];
+	struct stat st;
+
+	if (stat(filename, &st) != 0)
+		return 1;
+	printf("%s already exists.\n", filename);
+	printf("Overwrite (y/n)? ");
+	fflush(stdout);
+	if (fgets(yesno, sizeof(yesno), stdin) == NULL)
+		return 0;
+	if (yesno[0] != 'y' && yesno[0] != 'Y')
+		return 0;
+	return 1;
+}
+
 static void
 ask_filename(struct passwd *pw, const char *prompt)
 {
@@ -2861,16 +2885,8 @@ main(int argc, char **argv)
 		}
 	}
 	/* If the file already exists, ask the user to confirm. */
-	if (stat(identity_file, &st) >= 0) {
-		char yesno[3];
-		printf("%s already exists.\n", identity_file);
-		printf("Overwrite (y/n)? ");
-		fflush(stdout);
-		if (fgets(yesno, sizeof(yesno), stdin) == NULL)
-			exit(1);
-		if (yesno[0] != 'y' && yesno[0] != 'Y')
-			exit(1);
-	}
+	if (!confirm_overwrite(identity_file))
+		exit(1);
 	/* Ask for a passphrase (twice). */
 	if (identity_passphrase)
 		passphrase1 = xstrdup(identity_passphrase);
