@@ -2640,10 +2640,10 @@ verify(const char *signature, const char *sig_namespace, const char *principal,
 	fp = NULL;
 
 	if (revoked_keys != NULL) {
-	    if ((r = sshkey_check_revoked(sign_key, revoked_keys)) != 0) {
-		    debug3("sshkey_check_revoked failed: %s", ssh_err(r));
-		    goto done;
-	    }
+		if ((r = sshkey_check_revoked(sign_key, revoked_keys)) != 0) {
+			debug3("sshkey_check_revoked failed: %s", ssh_err(r));
+			goto done;
+		}
 	}
 
 	if ((r = sshsig_check_allowed_keys(allowed_keys, sign_key,
