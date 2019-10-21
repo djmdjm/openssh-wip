@@ -4271,6 +4271,12 @@ sshkey_parse_private2(struct sshbuf *blob, int type, const char *passphrase,
 	    &decrypted, &pubkey)) != 0)
 		goto out;
 
+	if (type != KEY_UNSPEC &&
+	    sshkey_type_plain(type) != sshkey_type_plain(pubkey->type)) {
+		r = SSH_ERR_KEY_TYPE_MISMATCH;
+		goto out;
+	}
+
 	/* Load the private key and comment */
 	if ((r = sshkey_private_deserialize(decrypted, &k)) != 0 ||
 	    (r = sshbuf_get_cstring(decrypted, &comment, NULL)) != 0)
