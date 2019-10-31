@@ -1,4 +1,4 @@
-/* $OpenBSD$ */
+/* $OpenBSD: ssh-ecdsa-sk.c,v 1.1 2019/10/31 21:15:14 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  * Copyright (c) 2010 Damien Miller.  All rights reserved.
