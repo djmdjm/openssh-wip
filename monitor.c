@@ -612,7 +612,7 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 
 	if ((key = get_hostkey_by_index(keyid)) != NULL) {
 		if ((r = sshkey_sign(key, &signature, &siglen, p, datlen, alg,
-		    compat)) != 0)
+		    NULL, compat)) != 0)
 			fatal("%s: sshkey_sign failed: %s",
 			    __func__, ssh_err(r));
 	} else if ((key = get_hostkey_public_by_index(keyid, ssh)) != NULL &&

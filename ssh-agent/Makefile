@@ -4,7 +4,7 @@
 
 SRCS=	ssh-agent.c ${SRCS_PKCS11_CLIENT}
 SRCS+=	atomicio.c compat.c fatal.c readpass.c msg.c
-SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} ${SRCS_KRL} ${SRCS_UTL} ${SRCS_SK}
+SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} ${SRCS_KRL} ${SRCS_UTL}
 
 PROG=	ssh-agent
 BINOWN=	root

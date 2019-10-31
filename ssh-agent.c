@@ -415,12 +415,13 @@ process_sign_request2(SocketEntry *e)
 		if ((r = provider_sign(id->sk_provider, id->key, &signature,
 		    &slen, data, dlen, agent_decode_alg(key, flags),
 		    compat)) != 0) {
-			error("%s: sshkey_sign: %s", __func__, ssh_err(r));
+			error("%s: sign: %s", __func__, ssh_err(r));
 			goto send;
 		}
 	} else {
 		if ((r = sshkey_sign(id->key, &signature, &slen,
-		    data, dlen, agent_decode_alg(key, flags), compat)) != 0) {
+		    data, dlen, agent_decode_alg(key, flags),
+		    NULL, compat)) != 0) {
 			error("%s: sshkey_sign: %s", __func__, ssh_err(r));
 			goto send;
 		}

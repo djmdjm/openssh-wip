@@ -4,7 +4,7 @@
 
 SRCS=	ssh-sk-helper.c
 SRCS+=	atomicio.c fatal.c cleanup.c msg.c
-SRCS+=	${SRCS_KEY} ${SRCS_UTL} ${SRCS_BASE} ${SRCS_SK}
+SRCS+=	${SRCS_KEY} ${SRCS_UTL} ${SRCS_BASE}
 
 PROG=	ssh-sk-helper
 

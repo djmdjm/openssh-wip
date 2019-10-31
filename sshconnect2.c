@@ -1170,19 +1170,8 @@ identity_sign(struct identity *id, u_char **sigp, size_t *lenp,
 		}
 		sign_key = prv;
 	}
-
-	if (sshkey_type_plain(sign_key->type) == KEY_ECDSA_SK) {
-		if (options.sk_provider == NULL) {
-			/* Shouldn't happen here; checked in pubkey_prepare() */
-			fatal("%s: missing SecurityKeyProvider", __func__);
-		}
-		if ((r = sshsk_ecdsa_sign(options.sk_provider, sign_key,
-		    sigp, lenp, data, datalen, compat)) != 0) {
-			debug("%s: sshsk_ecdsa_sign: %s", __func__, ssh_err(r));
-			goto out;
-		}
-	} else if ((r = sshkey_sign(sign_key, sigp, lenp, data, datalen,
-	    alg, compat)) != 0) {
+	if ((r = sshkey_sign(sign_key, sigp, lenp, data, datalen,
+	    alg, options.sk_provider, compat)) != 0) {
 		debug("%s: sshkey_sign: %s", __func__, ssh_err(r));
 		goto out;
 	}
