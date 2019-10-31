@@ -1,4 +1,4 @@
-/* $OpenBSD: sshconnect.c,v 1.320 2019/10/31 21:19:15 djm Exp $ */
+/* $OpenBSD: sshconnect.c,v 1.321 2019/10/31 21:20:38 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
