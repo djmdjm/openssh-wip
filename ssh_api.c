@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh_api.c,v 1.18 2019/09/13 04:36:43 dtucker Exp $ */
+/* $OpenBSD: ssh_api.c,v 1.19 2019/10/31 21:23:19 djm Exp $ */
 /*
  * Copyright (c) 2012 Markus Friedl.  All rights reserved.
  *

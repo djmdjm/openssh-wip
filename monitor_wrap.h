@@ -1,4 +1,4 @@
-/* $OpenBSD: monitor_wrap.h,v 1.42 2019/09/06 05:23:55 djm Exp $ */
+/* $OpenBSD: monitor_wrap.h,v 1.43 2019/10/31 21:23:19 djm Exp $ */
 
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>

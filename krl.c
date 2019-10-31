@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $OpenBSD: krl.c,v 1.44 2019/09/06 04:53:27 djm Exp $ */
+/* $OpenBSD: krl.c,v 1.45 2019/10/31 21:23:19 djm Exp $ */
 
 #include <sys/types.h>
 #include <sys/tree.h>

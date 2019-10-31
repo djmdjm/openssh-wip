@@ -1,4 +1,4 @@
-/* $OpenBSD: sshconnect2.c,v 1.309 2019/10/31 21:18:28 djm Exp $ */
+/* $OpenBSD: sshconnect2.c,v 1.310 2019/10/31 21:23:19 djm Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  * Copyright (c) 2008 Damien Miller.  All rights reserved.
