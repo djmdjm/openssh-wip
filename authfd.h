@@ -1,4 +1,4 @@
-/* $OpenBSD: authfd.h,v 1.46 2019/09/03 08:29:15 djm Exp $ */
+/* $OpenBSD: authfd.h,v 1.47 2019/10/31 21:19:15 djm Exp $ */
 
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
