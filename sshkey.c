@@ -2687,8 +2687,8 @@ sshkey_sign(struct sshkey *key,
 #  ifdef ENABLE_SK
 	case KEY_ECDSA_SK_CERT:
 	case KEY_ECDSA_SK:
-		r = sshsk_ecdsa_sign(sk_provider, key, sigp, lenp,
-		    data, datalen, compat);
+		r = sshsk_sign(sk_provider, key, sigp, lenp, data, datalen,
+		    compat);
 		break;
 #  endif /* ENABLE_SK */
 # endif /* OPENSSL_HAS_ECC */
