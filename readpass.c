@@ -197,3 +197,86 @@ ask_permission(const char *fmt, ...)
 
 	return (allowed);
 }
+
+struct notifier_ctx {
+	pid_t pid;
+	void (*osigchld)(int);
+};
+
+struct notifier_ctx *
+notify_start(int force_askpass, const char *fmt, ...)
+{
+	va_list args;
+	char *prompt = NULL;
+	int ttyfd, devnull;
+	pid_t pid;
+	void (*osigchld)(int);
+	const char *askpass;
+	struct notifier_ctx *ret;
+
+	va_start(args, fmt);
+	xvasprintf(&prompt, fmt, args);
+	va_end(args);
+
+	if (fflush(NULL) != 0)
+		error("%s: fflush: %s", __func__, strerror(errno));
+	if (!force_askpass) {
+		if ((ttyfd = open(_PATH_TTY, O_RDWR)) >= 0) {
+			(void)write(ttyfd, "\r", 1);
+			(void)write(ttyfd, prompt, strlen(prompt));
+			(void)write(ttyfd, "\r\n", 2);
+			close(ttyfd);
+			return NULL;
+		}
+	}
+	if (getenv("DISPLAY") == NULL ||
+	    (askpass = getenv("SSH_ASKPASS")) == NULL || *askpass == '\0') {
+		debug3("%s: cannot notify", __func__);
+		return NULL;
+	}
+	osigchld = signal(SIGCHLD, SIG_DFL);
+	if ((pid = fork()) == -1) {
+		error("%s: fork: %s", __func__, strerror(errno));
+		signal(SIGCHLD, osigchld);
+		return NULL;
+	}
+	if (pid == 0) {
+		if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1)
+			fatal("%s: open %s", __func__, strerror(errno));
+		if (dup2(devnull, STDIN_FILENO) == -1 ||
+		    dup2(devnull, STDOUT_FILENO) == -1)
+			fatal("%s: dup2: %s", __func__, strerror(errno));
+		closefrom(STDERR_FILENO + 1);
+		setenv("SSH_ASKPASS_NOREPLY", "1", 1); /* hint to not prompt */
+		execlp(askpass, askpass, prompt, (char *)NULL);
+		fatal("%s: exec(%s): %s", __func__, askpass, strerror(errno));
+		/* NOTREACHED */
+	}
+	if ((ret = calloc(1, sizeof(*ret))) == NULL)
+		fatal("%s: calloc failed", __func__);
+	ret->pid = pid;
+	ret->osigchld = osigchld;
+	return ret;
+}
+
+void
+notify_complete(struct notifier_ctx *ctx)
+{
+	int ret;
+
+	if (ctx == NULL || ctx->pid <= 0) {
+		free(ctx);
+		return;
+	}
+	kill(ctx->pid, SIGTERM);
+	while ((ret = waitpid(ctx->pid, NULL, 0)) == -1) {
+		if (errno != EINTR)
+			break;
+	}
+	if (ret == -1)
+		fatal("%s: waitpid: %s", __func__, strerror(errno));
+	signal(SIGCHLD, ctx->osigchld);
+	free(ctx);
+}
+
+

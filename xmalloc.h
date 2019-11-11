@@ -24,3 +24,5 @@ char	*xstrdup(const char *);
 int	 xasprintf(char **, const char *, ...)
                 __attribute__((__format__ (printf, 2, 3)))
                 __attribute__((__nonnull__ (2)));
+int	 xvasprintf(char **, const char *, va_list)
+		__attribute__((__nonnull__ (2)));
