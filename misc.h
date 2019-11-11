@@ -178,8 +178,13 @@ int	opt_match(const char **opts, const char *term);
 #define RP_ALLOW_EOF		0x0004
 #define RP_USE_ASKPASS		0x0008
 
+struct notifier_ctx;
+
 char	*read_passphrase(const char *, int);
 int	 ask_permission(const char *, ...) __attribute__((format(printf, 1, 2)));
+struct notifier_ctx *notify_start(int, const char *, ...)
+	__attribute__((format(printf, 2, 3)));
+void	notify_complete(struct notifier_ctx *);
 
 #define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
 #define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
