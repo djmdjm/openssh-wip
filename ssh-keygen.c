@@ -2502,14 +2502,23 @@ sign_one(struct sshkey *signkey, const char *filename, int fd,
 {
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	int r = SSH_ERR_INTERNAL_ERROR, wfd = -1, oerrno;
-	char *wfile = NULL;
-	char *asig = NULL;
+	char *wfile = NULL, *asig = NULL, *fp = NULL;
 
 	if (!quiet) {
 		if (fd == STDIN_FILENO)
 			fprintf(stderr, "Signing data on standard input\n");
 		else
 			fprintf(stderr, "Signing file %s\n", filename);
+	}
+	if (signer == NULL &&
+	    sshkey_type_plain(signkey->type) == KEY_ECDSA_SK &&
+	    (signkey->sk_flags & SSH_SK_USER_PRESENCE_REQD)) {
+		if ((fp = sshkey_fingerprint(signkey, fingerprint_hash,
+		    SSH_FP_DEFAULT)) == NULL)
+			fatal("%s: sshkey_fingerprint failed", __func__);
+		fprintf(stderr, "Confirm user presence for key %s %s\n",
+		    sshkey_type(signkey), fp);
+		free(fp);
 	}
 	if ((r = sshsig_sign_fd(signkey, NULL, sk_provider, fd, sig_namespace,
 	    &sigbuf, signer, signer_ctx)) != 0) {
