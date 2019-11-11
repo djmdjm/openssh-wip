@@ -481,6 +481,7 @@ sshsk_sign(const char *provider_path, const struct sshkey *key,
 	case KEY_ECDSA_SK:
 		if ((r = sshsk_ecdsa_inner_sig(resp, &inner_sig)) != 0)
 			goto out;
+		break;
 	case KEY_ED25519_SK:
 		if ((r = sshsk_ed25519_inner_sig(resp, &inner_sig)) != 0)
 			goto out;
