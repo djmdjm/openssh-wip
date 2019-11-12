@@ -301,7 +301,7 @@ sshsk_enroll(int type, const char *provider_path, const char *application,
 	/* Check response validity */
 	if (resp->public_key == NULL || resp->key_handle == NULL ||
 	    resp->signature == NULL ||
-	    (resp->attestation_cert == NULL && resp->attestation_cert != 0)) {
+	    (resp->attestation_cert == NULL && resp->attestation_cert_len != 0)) {
 		error("%s: sk_enroll response invalid", __func__);
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
