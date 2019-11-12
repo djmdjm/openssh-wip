@@ -208,7 +208,7 @@ notify_start(int force_askpass, const char *fmt, ...)
 {
 	va_list args;
 	char *prompt = NULL;
-	int ttyfd, devnull;
+	int devnull;
 	pid_t pid;
 	void (*osigchld)(int);
 	const char *askpass;
@@ -220,14 +220,11 @@ notify_start(int force_askpass, const char *fmt, ...)
 
 	if (fflush(NULL) != 0)
 		error("%s: fflush: %s", __func__, strerror(errno));
-	if (!force_askpass) {
-		if ((ttyfd = open(_PATH_TTY, O_RDWR)) >= 0) {
-			(void)write(ttyfd, "\r", 1);
-			(void)write(ttyfd, prompt, strlen(prompt));
-			(void)write(ttyfd, "\r\n", 2);
-			close(ttyfd);
-			return NULL;
-		}
+	if (!force_askpass && isatty(STDERR_FILENO)) {
+		(void)write(STDERR_FILENO, "\r", 1);
+		(void)write(STDERR_FILENO, prompt, strlen(prompt));
+		(void)write(STDERR_FILENO, "\r\n", 2);
+		return NULL;
 	}
 	if (getenv("DISPLAY") == NULL ||
 	    (askpass = getenv("SSH_ASKPASS")) == NULL || *askpass == '\0') {

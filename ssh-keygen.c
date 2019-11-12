@@ -2514,8 +2514,7 @@ sign_one(struct sshkey *signkey, const char *filename, int fd,
 		else
 			fprintf(stderr, "Signing file %s\n", filename);
 	}
-	if (signer == NULL &&
-	    sshkey_type_plain(signkey->type) == KEY_ECDSA_SK &&
+	if (signer == NULL && sshkey_is_sk(signkey) &&
 	    (signkey->sk_flags & SSH_SK_USER_PRESENCE_REQD)) {
 		if ((fp = sshkey_fingerprint(signkey, fingerprint_hash,
 		    SSH_FP_DEFAULT)) == NULL)

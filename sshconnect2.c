@@ -1180,7 +1180,7 @@ identity_sign(struct identity *id, u_char **sigp, size_t *lenp,
 			goto out;
 		}
 		sign_key = prv;
-		if (sshkey_type_plain(sign_key->type) == KEY_ECDSA_SK &&
+		if (sshkey_is_sk(sign_key) &&
 		    (sign_key->sk_flags & SSH_SK_USER_PRESENCE_REQD)) {
 			/* XXX match batch mode should just skip these keys? */
 			if ((fp = sshkey_fingerprint(sign_key,
