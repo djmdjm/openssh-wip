@@ -224,17 +224,20 @@ notify_start(int force_askpass, const char *fmt, ...)
 		(void)write(STDERR_FILENO, "\r", 1);
 		(void)write(STDERR_FILENO, prompt, strlen(prompt));
 		(void)write(STDERR_FILENO, "\r\n", 2);
+		free(prompt);
 		return NULL;
 	}
 	if (getenv("DISPLAY") == NULL ||
 	    (askpass = getenv("SSH_ASKPASS")) == NULL || *askpass == '\0') {
 		debug3("%s: cannot notify", __func__);
+		free(prompt);
 		return NULL;
 	}
 	osigchld = signal(SIGCHLD, SIG_DFL);
 	if ((pid = fork()) == -1) {
 		error("%s: fork: %s", __func__, strerror(errno));
 		signal(SIGCHLD, osigchld);
+		free(prompt);
 		return NULL;
 	}
 	if (pid == 0) {
@@ -249,10 +252,13 @@ notify_start(int force_askpass, const char *fmt, ...)
 		fatal("%s: exec(%s): %s", __func__, askpass, strerror(errno));
 		/* NOTREACHED */
 	}
-	if ((ret = calloc(1, sizeof(*ret))) == NULL)
+	if ((ret = calloc(1, sizeof(*ret))) == NULL) {
+		kill(pid, SIGTERM);
 		fatal("%s: calloc failed", __func__);
+	}
 	ret->pid = pid;
 	ret->osigchld = osigchld;
+	free(prompt);
 	return ret;
 }
 
