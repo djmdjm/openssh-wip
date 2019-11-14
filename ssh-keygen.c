@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-keygen.c,v 1.358 2019/10/31 21:23:19 djm Exp $ */
+/* $OpenBSD: ssh-keygen.c,v 1.363 2019/11/12 22:36:44 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1994 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -273,6 +273,10 @@ ask_filename(struct passwd *pw, const char *prompt)
 		case KEY_ED25519:
 		case KEY_ED25519_CERT:
 			name = _PATH_SSH_CLIENT_ID_ED25519;
+			break;
+		case KEY_ED25519_SK:
+		case KEY_ED25519_SK_CERT:
+			name = _PATH_SSH_CLIENT_ID_ED25519_SK;
 			break;
 		case KEY_XMSS:
 		case KEY_XMSS_CERT:
@@ -1690,7 +1694,7 @@ load_pkcs11_key(char *path)
 static int
 agent_signer(struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen,
-    const char *alg, const char *sk_provider, u_int compat, void *ctx)
+    const char *alg, const char *provider, u_int compat, void *ctx)
 {
 	int *agent_fdp = (int *)ctx;
 
@@ -2483,14 +2487,22 @@ sign_one(struct sshkey *signkey, const char *filename, int fd,
 {
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	int r = SSH_ERR_INTERNAL_ERROR, wfd = -1, oerrno;
-	char *wfile = NULL;
-	char *asig = NULL;
+	char *wfile = NULL, *asig = NULL, *fp = NULL;
 
 	if (!quiet) {
 		if (fd == STDIN_FILENO)
 			fprintf(stderr, "Signing data on standard input\n");
 		else
 			fprintf(stderr, "Signing file %s\n", filename);
+	}
+	if (signer == NULL && sshkey_is_sk(signkey) &&
+	    (signkey->sk_flags & SSH_SK_USER_PRESENCE_REQD)) {
+		if ((fp = sshkey_fingerprint(signkey, fingerprint_hash,
+		    SSH_FP_DEFAULT)) == NULL)
+			fatal("%s: sshkey_fingerprint failed", __func__);
+		fprintf(stderr, "Confirm user presence for key %s %s\n",
+		    sshkey_type(signkey), fp);
+		free(fp);
 	}
 	if ((r = sshsig_sign_fd(signkey, NULL, sk_provider, fd, sig_namespace,
 	    &sigbuf, signer, signer_ctx)) != 0) {
@@ -2706,7 +2718,8 @@ usage(void)
 {
 	fprintf(stderr,
 	    "usage: ssh-keygen [-q] [-b bits] [-C comment] [-f output_keyfile] [-m format]\n"
-	    "                  [-N new_passphrase] [-t dsa | ecdsa | ed25519 | rsa]\n"
+	    "                  [-t dsa | ecdsa | ecdsa-sk | ed25519 | rsa]\n"
+	    "                  [-N new_passphrase] [-w provider] [-x flags]\n"
 	    "       ssh-keygen -p [-f keyfile] [-m format] [-N new_passphrase]\n"
 	    "                   [-P old_passphrase]\n"
 	    "       ssh-keygen -i [-f input_keyfile] [-m key_format]\n"
@@ -2801,7 +2814,7 @@ main(int argc, char **argv)
 	sk_provider = getenv("SSH_SK_PROVIDER");
 
 	/* Remaining character: d */
-	while ((opt = getopt(argc, argv, "ABHLQUXceghiklopquvxy"
+	while ((opt = getopt(argc, argv, "ABHLQUXceghiklopquvy"
 	    "C:D:E:F:G:I:J:K:M:N:O:P:R:S:T:V:W:Y:Z:"
 	    "a:b:f:g:j:m:n:r:s:t:w:x:z:")) != -1) {
 		switch (opt) {
@@ -3231,13 +3244,19 @@ main(int argc, char **argv)
 	if (!quiet)
 		printf("Generating public/private %s key pair.\n",
 		    key_type_name);
-	if (type == KEY_ECDSA_SK) {
-		if (sshsk_enroll(sk_provider,
+	switch (type) {
+	case KEY_ECDSA_SK:
+	case KEY_ED25519_SK:
+		if (sshsk_enroll(type, sk_provider,
 		    cert_key_id == NULL ? "ssh:" : cert_key_id,
 		    sk_flags, NULL, &private, NULL) != 0)
 			exit(1); /* error message already printed */
-	} else if ((r = sshkey_generate(type, bits, &private)) != 0)
-		fatal("sshkey_generate failed");
+		break;
+	default:
+		if ((r = sshkey_generate(type, bits, &private)) != 0)
+			fatal("sshkey_generate failed");
+		break;
+	}
 	if ((r = sshkey_from_private(private, &public)) != 0)
 		fatal("sshkey_from_private failed: %s\n", ssh_err(r));
 

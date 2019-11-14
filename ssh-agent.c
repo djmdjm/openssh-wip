@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-agent.c,v 1.239 2019/10/31 21:23:19 djm Exp $ */
+/* $OpenBSD: ssh-agent.c,v 1.242 2019/11/13 07:53:10 markus Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -274,9 +274,10 @@ provider_sign(const char *provider, struct sshkey *key,
 {
 	int status, pair[2], r = SSH_ERR_INTERNAL_ERROR;
 	pid_t pid;
-	char *helper, *verbosity = NULL;
+	char *helper, *verbosity = NULL, *fp = NULL;
 	struct sshbuf *kbuf, *req, *resp;
 	u_char version;
+	struct notifier_ctx *notifier = NULL;
 
 	debug3("%s: start for provider %s", __func__, provider);
 
@@ -329,10 +330,17 @@ provider_sign(const char *provider, struct sshkey *key,
 		error("%s: send: %s", __func__, ssh_err(r));
 		goto out;
 	}
+	if ((fp = sshkey_fingerprint(key, SSH_FP_HASH_DEFAULT,
+	    SSH_FP_DEFAULT)) == NULL)
+		fatal("%s: sshkey_fingerprint failed", __func__);
+	notifier = notify_start(0,
+	    "Confirm user presence for key %s %s", sshkey_type(key), fp);
 	if ((r = ssh_msg_recv(pair[0], resp)) != 0) {
 		error("%s: receive: %s", __func__, ssh_err(r));
 		goto out;
 	}
+	notify_complete(notifier);
+	notifier = NULL;
 	if ((r = sshbuf_get_u8(resp, &version)) != 0) {
 		error("%s: parse version: %s", __func__, ssh_err(r));
 		goto out;
@@ -360,6 +368,7 @@ provider_sign(const char *provider, struct sshkey *key,
 		if (errno != EINTR)
 			fatal("%s: waitpid: %s", __func__, ssh_err(r));
 	}
+	notify_complete(notifier);
 	if (!WIFEXITED(status)) {
 		error("%s: helper %s exited abnormally", __func__, helper);
 		if (r == 0)
@@ -536,10 +545,6 @@ process_add_identity(SocketEntry *e)
 		error("%s: decode private key: %s", __func__, ssh_err(r));
 		goto err;
 	}
-	if ((r = sshkey_shield_private(k)) != 0) {
-		error("%s: shield private key: %s", __func__, ssh_err(r));
-		goto err;
-	}
 	while (sshbuf_len(e->request)) {
 		if ((r = sshbuf_get_u8(e->request, &ctype)) != 0) {
 			error("%s: buffer error: %s", __func__, ssh_err(r));
@@ -607,7 +612,7 @@ process_add_identity(SocketEntry *e)
 		}
 	}
 	if (sk_provider != NULL) {
-		if (sshkey_type_plain(k->type) != KEY_ECDSA_SK) {
+		if (!sshkey_is_sk(k)) {
 			error("Cannot add provider: %s is not a security key",
 			    sshkey_type(k));
 			free(sk_provider);
@@ -620,6 +625,10 @@ process_add_identity(SocketEntry *e)
 			free(sk_provider);
 			goto send;
 		}
+	}
+	if ((r = sshkey_shield_private(k)) != 0) {
+		error("%s: shield private key: %s", __func__, ssh_err(r));
+		goto err;
 	}
 
 	success = 1;

@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-sk-helper.c,v 1.1 2019/10/31 21:22:01 djm Exp $ */
+/* $OpenBSD: ssh-sk-helper.c,v 1.3 2019/11/12 19:33:08 markus Exp $ */
 /*
  * Copyright (c) 2019 Google LLC
  *
@@ -111,7 +111,7 @@ main(int argc, char **argv)
 	if ((r = sshbuf_froms(req, &kbuf)) != 0 ||
 	    (r = sshkey_private_deserialize(kbuf, &key)) != 0)
 		fatal("Unable to parse key: %s", ssh_err(r));
-	if (sshkey_type_plain(key->type) != KEY_ECDSA_SK)
+	if (!sshkey_is_sk(key))
 		fatal("Unsupported key type %s", sshkey_ssh_name(key));
 
 	if ((r = sshbuf_get_cstring(req, &provider, NULL)) != 0 ||
@@ -125,7 +125,7 @@ main(int argc, char **argv)
 	    "msg len %zu, compat 0x%lx", __progname, sshkey_type(key),
 	    provider, msglen, (u_long)compat);
 
-	if ((r = sshsk_ecdsa_sign(provider, key, &sig, &siglen,
+	if ((r = sshsk_sign(provider, key, &sig, &siglen,
 	    message, msglen, compat)) != 0)
 		fatal("Signing failed: %s", ssh_err(r));
 
