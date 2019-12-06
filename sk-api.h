@@ -23,6 +23,8 @@
 
 /* Flags */
 #define SSH_SK_USER_PRESENCE_REQD	0x01
+#define SSH_SK_USER_VERIFICATION_REQD	0x04
+#define SSH_SK_RESIDENT_KEY		0x20
 
 /* Algs */
 #define SSH_SK_ECDSA			0x00

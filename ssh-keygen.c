@@ -3116,6 +3116,8 @@ main(int argc, char **argv)
 				fatal("Missing security key flags");
 			if (strcasecmp(optarg, "no-touch-required") == 0)
 				sk_flags &= ~SSH_SK_USER_PRESENCE_REQD;
+			else if (strcasecmp(optarg, "resident") == 0)
+				sk_flags |= SSH_SK_RESIDENT_KEY;
 			else {
 				ull = strtoull(optarg, &ep, 0);
 				if (*ep != '\0')
