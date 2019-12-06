@@ -45,5 +45,14 @@ int sshsk_sign(const char *provider_path, struct sshkey *key,
     u_char **sigp, size_t *lenp, const u_char *data, size_t datalen,
     u_int compat);
 
+/*
+ * Enumerates and loads all SSH-compatible resident keys from a security
+ * key.
+ *
+ * Returns 0 on success or a ssherr.h error code on failure.
+ */
+int sshsk_load_resident(const char *provider_path, const char *pin,
+    struct sshkey ***keysp, size_t *nkeysp);
+
 #endif /* _SSH_SK_H */
 
