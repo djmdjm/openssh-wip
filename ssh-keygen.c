@@ -3347,7 +3347,7 @@ main(int argc, char **argv)
 		fflush(stdout);
 		if (sshsk_enroll(type, sk_provider,
 		    cert_key_id == NULL ? "ssh:" : cert_key_id,
-		    sk_flags, NULL, &private, NULL) != 0)
+		    sk_flags, NULL, NULL, &private, NULL) != 0)
 			exit(1); /* error message already printed */
 		break;
 	default:

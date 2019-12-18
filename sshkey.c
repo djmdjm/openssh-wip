@@ -2718,7 +2718,7 @@ sshkey_sign(struct sshkey *key,
 	case KEY_ECDSA_SK_CERT:
 	case KEY_ECDSA_SK:
 		r = sshsk_sign(sk_provider, key, sigp, lenp, data,
-		    datalen, compat);
+		    datalen, compat, /* XXX PIN */ NULL);
 		break;
 #ifdef WITH_XMSS
 	case KEY_XMSS:

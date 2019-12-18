@@ -45,14 +45,6 @@
 #define SSH_RSA_MINIMUM_MODULUS_SIZE	1024
 #define SSH_KEY_MAX_SIGN_DATA_SIZE	(1 << 20)
 
-/* Version of protocol expected from ssh-sk-helper */
-#define SSH_SK_HELPER_VERSION		2
-
-/* ssh-sk-helper messages */
-#define SSH_SK_HELPER_SIGN		1
-#define SSH_SK_HELPER_ENROLL		2
-#define SSH_SK_HELPER_LOAD_RESIDENT	3
-
 struct sshbuf;
 
 /* Key types */
