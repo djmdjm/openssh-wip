@@ -51,6 +51,7 @@
 /* ssh-sk-helper messages */
 #define SSH_SK_HELPER_SIGN		1
 #define SSH_SK_HELPER_ENROLL		2
+#define SSH_SK_HELPER_LOAD_RESIDENT	3
 
 struct sshbuf;
 
