@@ -1,4 +1,4 @@
-/* $OpenBSD: sk-api.h,v 1.3 2019/12/30 09:19:52 djm Exp $ */
+/* $OpenBSD: sk-api.h,v 1.4 2019/12/30 09:21:16 djm Exp $ */
 /*
  * Copyright (c) 2019 Google LLC
  *
