@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-sk-helper.c,v 1.5 2019/12/30 09:21:59 djm Exp $ */
+/* $OpenBSD: ssh-sk-helper.c,v 1.6 2019/12/30 09:23:28 djm Exp $ */
 /*
  * Copyright (c) 2019 Google LLC
  *
