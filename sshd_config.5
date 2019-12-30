@@ -33,13 +33,13 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.\" $OpenBSD: sshd_config.5,v 1.291 2019/11/07 08:38:38 naddy Exp $
-.Dd $Mdocdate: November 7 2019 $
+.\" $OpenBSD: sshd_config.5,v 1.297 2019/12/21 20:22:34 naddy Exp $
+.Dd $Mdocdate: December 21 2019 $
 .Dt SSHD_CONFIG 5
 .Os
 .Sh NAME
 .Nm sshd_config
-.Nd OpenSSH SSH daemon configuration file
+.Nd OpenSSH daemon configuration file
 .Sh DESCRIPTION
 .Xr sshd 8
 reads configuration data from
@@ -691,12 +691,16 @@ The default for this option is:
 ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ecdsa-sha2-nistp384-cert-v01@openssh.com,
 ecdsa-sha2-nistp521-cert-v01@openssh.com,
+sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ssh-ed25519-cert-v01@openssh.com,
+sk-ssh-ed25519-cert-v01@openssh.com,
 rsa-sha2-512-cert-v01@openssh.com,
 rsa-sha2-256-cert-v01@openssh.com,
 ssh-rsa-cert-v01@openssh.com,
 ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,
-ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa
+sk-ecdsa-sha2-nistp256@openssh.com,
+ssh-ed25519,sk-ssh-ed25519@openssh.com,
+rsa-sha2-512,rsa-sha2-256,ssh-rsa
 .Ed
 .Pp
 The list of available key types may also be obtained using
@@ -770,12 +774,16 @@ The default for this option is:
 ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ecdsa-sha2-nistp384-cert-v01@openssh.com,
 ecdsa-sha2-nistp521-cert-v01@openssh.com,
+sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ssh-ed25519-cert-v01@openssh.com,
+sk-ssh-ed25519-cert-v01@openssh.com,
 rsa-sha2-512-cert-v01@openssh.com,
 rsa-sha2-256-cert-v01@openssh.com,
 ssh-rsa-cert-v01@openssh.com,
 ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,
-ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa
+sk-ecdsa-sha2-nistp256@openssh.com,
+ssh-ed25519,sk-ssh-ed25519@openssh.com,
+rsa-sha2-512,rsa-sha2-256,ssh-rsa
 .Ed
 .Pp
 The list of available key types may also be obtained using
@@ -1429,21 +1437,47 @@ character, then the specified key types will be placed at the head of the
 default set.
 The default for this option is:
 .Bd -literal -offset 3n
-sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ecdsa-sha2-nistp384-cert-v01@openssh.com,
 ecdsa-sha2-nistp521-cert-v01@openssh.com,
+sk-ecdsa-sha2-nistp256-cert-v01@openssh.com,
 ssh-ed25519-cert-v01@openssh.com,
+sk-ssh-ed25519-cert-v01@openssh.com,
 rsa-sha2-512-cert-v01@openssh.com,
 rsa-sha2-256-cert-v01@openssh.com,
 ssh-rsa-cert-v01@openssh.com,
-sk-ecdsa-sha2-nistp256@openssh.com,
 ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,
-ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa
+sk-ecdsa-sha2-nistp256@openssh.com,
+ssh-ed25519,sk-ssh-ed25519@openssh.com,
+rsa-sha2-512,rsa-sha2-256,ssh-rsa
 .Ed
 .Pp
 The list of available key types may also be obtained using
 .Qq ssh -Q key .
+.It Cm PubkeyAuthOptions
+Sets one or more public key authentication options.
+Two option keywords are currently supported:
+.Cm none
+(the default; indicating no additional options are enabled)
+and
+.Cm touch-required .
+.Pp
+The
+.Cm touch-required
+option causes public key authentication using a FIDO authenticator algorithm
+(i.e.\&
+.Cm ecdsa-sk
+or
+.Cm ed25519-sk )
+to always require the signature to attest that a physically present user
+explicitly confirmed the authentication (usually by touching the authenticator).
+By default,
+.Xr sshd 8
+requires user presence unless overridden with an authorized_keys option.
+The
+.Cm touch-required
+flag disables this override.
+This option has no effect for other, non-authenticator public key types.
 .It Cm PubkeyAuthentication
 Specifies whether public key authentication is allowed.
 The default is
@@ -1494,6 +1528,10 @@ will be bound to this
 If the routing domain is set to
 .Cm \&%D ,
 then the domain in which the incoming connection was received will be applied.
+.It Cm SecurityKeyProvider
+Specifies a path to a library that will be used when loading
+FIDO authenticator-hosted keys, overriding the default of using
+the built-in USB HID support.
 .It Cm SetEnv
 Specifies one or more environment variables to set in child sessions started
 by

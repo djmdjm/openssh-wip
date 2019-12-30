@@ -1,4 +1,4 @@
-/* $OpenBSD: monitor_wrap.c,v 1.114 2019/10/31 21:23:19 djm Exp $ */
+/* $OpenBSD: monitor_wrap.c,v 1.117 2019/12/15 18:57:30 djm Exp $ */
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * Copyright 2002 Markus Friedl <markus@openbsd.org>
@@ -34,6 +34,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
 
 #ifdef WITH_OPENSSL
@@ -219,8 +220,6 @@ mm_sshkey_sign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
 	int r;
 
 	debug3("%s entering", __func__);
-	if (sk_provider != NULL)
-		fatal("%s: sk_provider != NULL", __func__);
 	if ((m = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
 	if ((r = sshbuf_put_u32(m, ndx)) != 0 ||
@@ -476,15 +475,19 @@ mm_key_allowed(enum mm_keytype type, const char *user, const char *host,
 
 int
 mm_sshkey_verify(const struct sshkey *key, const u_char *sig, size_t siglen,
-    const u_char *data, size_t datalen, const char *sigalg, u_int compat)
+    const u_char *data, size_t datalen, const char *sigalg, u_int compat,
+    struct sshkey_sig_details **sig_detailsp)
 {
 	struct sshbuf *m;
 	u_int encoded_ret = 0;
 	int r;
+	u_char sig_details_present, flags;
+	u_int counter;
 
 	debug3("%s entering", __func__);
 
-
+	if (sig_detailsp != NULL)
+		*sig_detailsp = NULL;
 	if ((m = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __func__);
 	if ((r = sshkey_puts(key, m)) != 0 ||
@@ -499,8 +502,19 @@ mm_sshkey_verify(const struct sshkey *key, const u_char *sig, size_t siglen,
 	mm_request_receive_expect(pmonitor->m_recvfd,
 	    MONITOR_ANS_KEYVERIFY, m);
 
-	if ((r = sshbuf_get_u32(m, &encoded_ret)) != 0)
+	if ((r = sshbuf_get_u32(m, &encoded_ret)) != 0 ||
+	    (r = sshbuf_get_u8(m, &sig_details_present)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
+	if (sig_details_present && encoded_ret == 0) {
+		if ((r = sshbuf_get_u32(m, &counter)) != 0 ||
+		    (r = sshbuf_get_u8(m, &flags)) != 0)
+			fatal("%s: buffer error: %s", __func__, ssh_err(r));
+		if (sig_detailsp != NULL) {
+			*sig_detailsp = xcalloc(1, sizeof(**sig_detailsp));
+			(*sig_detailsp)->sk_counter = counter;
+			(*sig_detailsp)->sk_flags = flags;
+		}
+	}
 
 	sshbuf_free(m);
 

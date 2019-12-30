@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-add.c,v 1.144 2019/11/12 19:33:08 markus Exp $ */
+/* $OpenBSD: ssh-add.c,v 1.147 2019/11/25 00:51:37 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <limits.h>
 
@@ -443,7 +444,7 @@ test_key(int agent_fd, const char *filename)
 		goto done;
 	}
 	if ((r = sshkey_verify(key, sig, slen, data, sizeof(data),
-	    NULL, 0)) != 0) {
+	    NULL, 0, NULL)) != 0) {
 		error("Signature verification failed for %s: %s",
 		    filename, ssh_err(r));
 		goto done;
@@ -706,6 +707,9 @@ main(int argc, char **argv)
 			ret = 1;
 		goto done;
 	}
+
+	if (skprovider == NULL)
+		skprovider = "internal";
 
 	argc -= optind;
 	argv += optind;

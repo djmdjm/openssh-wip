@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-sk.c,v 1.11 2019/11/13 20:25:45 markus Exp $ */
+/* $OpenBSD: ssh-sk.c,v 1.18 2019/12/13 19:09:10 djm Exp $ */
 /*
  * Copyright (c) 2019 Google LLC
  *
@@ -23,8 +23,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef WITH_OPENSSL
 #include <openssl/objects.h>
 #include <openssl/ec.h>
+#endif /* WITH_OPENSSL */
 
 #include "log.h"
 #include "misc.h"
@@ -56,6 +58,15 @@ struct sshsk_provider {
 	    uint8_t flags, struct sk_sign_response **sign_response);
 };
 
+/* Built-in version */
+int ssh_sk_enroll(int alg, const uint8_t *challenge,
+    size_t challenge_len, const char *application, uint8_t flags,
+    struct sk_enroll_response **enroll_response);
+int ssh_sk_sign(int alg, const uint8_t *message, size_t message_len,
+    const char *application,
+    const uint8_t *key_handle, size_t key_handle_len,
+    uint8_t flags, struct sk_sign_response **sign_response);
+
 static void
 sshsk_free(struct sshsk_provider *p)
 {
@@ -80,6 +91,12 @@ sshsk_open(const char *path)
 	if ((ret->path = strdup(path)) == NULL) {
 		error("%s: strdup failed", __func__);
 		goto fail;
+	}
+	/* Skip the rest if we're using the linked in middleware */
+	if (strcasecmp(ret->path, "internal") == 0) {
+		ret->sk_enroll = ssh_sk_enroll;
+		ret->sk_sign = ssh_sk_sign;
+		return ret;
 	}
 	if ((ret->dlhandle = dlopen(path, RTLD_NOW)) == NULL) {
 		error("Security key provider %s dlopen failed: %s",
@@ -128,7 +145,7 @@ sshsk_free_enroll_response(struct sk_enroll_response *r)
 	freezero(r->signature, r->signature_len);
 	freezero(r->attestation_cert, r->attestation_cert_len);
 	freezero(r, sizeof(*r));
-};
+}
 
 static void
 sshsk_free_sign_response(struct sk_sign_response *r)
@@ -138,8 +155,9 @@ sshsk_free_sign_response(struct sk_sign_response *r)
 	freezero(r->sig_r, r->sig_r_len);
 	freezero(r->sig_s, r->sig_s_len);
 	freezero(r, sizeof(*r));
-};
+}
 
+#ifdef WITH_OPENSSL
 /* Assemble key from response */
 static int
 sshsk_ecdsa_assemble(struct sk_enroll_response *resp, struct sshkey **keyp)
@@ -194,6 +212,7 @@ sshsk_ecdsa_assemble(struct sk_enroll_response *resp, struct sshkey **keyp)
 	sshbuf_free(b);
 	return r;
 }
+#endif /* WITH_OPENSSL */
 
 static int
 sshsk_ed25519_assemble(struct sk_enroll_response *resp, struct sshkey **keyp)
@@ -241,13 +260,19 @@ sshsk_enroll(int type, const char *provider_path, const char *application,
 	int r = SSH_ERR_INTERNAL_ERROR;
 	int alg;
 
+	debug("%s: provider \"%s\", application \"%s\", flags 0x%02x, "
+	    "challenge len %zu", __func__, provider_path, application,
+	    flags, challenge_buf == NULL ? 0 : sshbuf_len(challenge_buf));
+
 	*keyp = NULL;
 	if (attest)
 		sshbuf_reset(attest);
 	switch (type) {
+#ifdef WITH_OPENSSL
 	case KEY_ECDSA_SK:
 		alg = SSH_SK_ECDSA;
 		break;
+#endif /* WITH_OPENSSL */
 	case KEY_ED25519_SK:
 		alg = SSH_SK_ED25519;
 		break;
@@ -303,10 +328,12 @@ sshsk_enroll(int type, const char *provider_path, const char *application,
 		goto out;
 	}
 	switch (type) {
+#ifdef WITH_OPENSSL
 	case KEY_ECDSA_SK:
 		if ((r = sshsk_ecdsa_assemble(resp, &key)) != 0)
 			goto out;
 		break;
+#endif /* WITH_OPENSSL */
 	case KEY_ED25519_SK:
 		if ((r = sshsk_ed25519_assemble(resp, &key)) != 0)
 			goto out;
@@ -355,6 +382,7 @@ sshsk_enroll(int type, const char *provider_path, const char *application,
 	return r;
 }
 
+#ifdef WITH_OPENSSL
 static int
 sshsk_ecdsa_sig(struct sk_sign_response *resp, struct sshbuf *sig)
 {
@@ -375,13 +403,13 @@ sshsk_ecdsa_sig(struct sk_sign_response *resp, struct sshbuf *sig)
 	if ((r = sshbuf_put_bignum2_bytes(inner_sig,
 	    resp->sig_r, resp->sig_r_len)) != 0 ||
 	    (r = sshbuf_put_bignum2_bytes(inner_sig,
-	    resp->sig_s, resp->sig_s_len)) != 0 ||
-	    (r = sshbuf_put_u8(inner_sig, resp->flags)) != 0 ||
-	    (r = sshbuf_put_u32(inner_sig, resp->counter)) != 0) {
+	    resp->sig_s, resp->sig_s_len)) != 0) {
 		debug("%s: buffer error: %s", __func__, ssh_err(r));
 		goto out;
 	}
-	if ((r = sshbuf_put_stringb(sig, inner_sig)) != 0) {
+	if ((r = sshbuf_put_stringb(sig, inner_sig)) != 0 ||
+	    (r = sshbuf_put_u8(sig, resp->flags)) != 0 ||
+	    (r = sshbuf_put_u32(sig, resp->counter)) != 0) {
 		debug("%s: buffer error: %s", __func__, ssh_err(r));
 		goto out;
 	}
@@ -398,6 +426,7 @@ sshsk_ecdsa_sig(struct sk_sign_response *resp, struct sshbuf *sig)
 	sshbuf_free(inner_sig);
 	return r;
 }
+#endif /* WITH_OPENSSL */
 
 static int
 sshsk_ed25519_sig(struct sk_sign_response *resp, struct sshbuf *sig)
@@ -427,7 +456,7 @@ sshsk_ed25519_sig(struct sk_sign_response *resp, struct sshbuf *sig)
 }
 
 int
-sshsk_sign(const char *provider_path, const struct sshkey *key,
+sshsk_sign(const char *provider_path, struct sshkey *key,
     u_char **sigp, size_t *lenp, const u_char *data, size_t datalen,
     u_int compat)
 {
@@ -438,15 +467,20 @@ sshsk_sign(const char *provider_path, const struct sshkey *key,
 	struct sshbuf *inner_sig = NULL, *sig = NULL;
 	uint8_t message[32];
 
+	debug("%s: provider \"%s\", key %s, flags 0x%02x", __func__,
+	    provider_path, sshkey_type(key), key->sk_flags);
+
 	if (sigp != NULL)
 		*sigp = NULL;
 	if (lenp != NULL)
 		*lenp = 0;
 	type = sshkey_type_plain(key->type);
 	switch (type) {
+#ifdef WITH_OPENSSL
 	case KEY_ECDSA_SK:
 		alg = SSH_SK_ECDSA;
 		break;
+#endif /* WITH_OPENSSL */
 	case KEY_ED25519_SK:
 		alg = SSH_SK_ED25519;
 		break;
@@ -488,10 +522,12 @@ sshsk_sign(const char *provider_path, const struct sshkey *key,
 		goto out;
 	}
 	switch (type) {
+#ifdef WITH_OPENSSL
 	case KEY_ECDSA_SK:
 		if ((r = sshsk_ecdsa_sig(resp, sig)) != 0)
 			goto out;
 		break;
+#endif /* WITH_OPENSSL */
 	case KEY_ED25519_SK:
 		if ((r = sshsk_ed25519_sig(resp, sig)) != 0)
 			goto out;

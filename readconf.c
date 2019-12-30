@@ -1,4 +1,4 @@
-/* $OpenBSD: readconf.c,v 1.313 2019/11/13 05:42:26 deraadt Exp $ */
+/* $OpenBSD: readconf.c,v 1.319 2019/12/21 02:19:13 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -107,8 +107,6 @@
      ForwardAgent no
      ForwardX11 no
      PasswordAuthentication yes
-     RSAAuthentication yes
-     RhostsRSAAuthentication yes
      StrictHostKeyChecking yes
      TcpKeepAlive no
      IdentityFile ~/.ssh/identity
@@ -132,15 +130,15 @@ typedef enum {
 	oHost, oMatch, oInclude,
 	oForwardAgent, oForwardX11, oForwardX11Trusted, oForwardX11Timeout,
 	oGatewayPorts, oExitOnForwardFailure,
-	oPasswordAuthentication, oRSAAuthentication,
+	oPasswordAuthentication,
 	oChallengeResponseAuthentication, oXAuthLocation,
-	oIdentityFile, oHostname, oPort, oCipher, oRemoteForward, oLocalForward,
+	oIdentityFile, oHostname, oPort, oRemoteForward, oLocalForward,
 	oCertificateFile, oAddKeysToAgent, oIdentityAgent,
-	oUser, oEscapeChar, oRhostsRSAAuthentication, oProxyCommand,
+	oUser, oEscapeChar, oProxyCommand,
 	oGlobalKnownHostsFile, oUserKnownHostsFile, oConnectionAttempts,
 	oBatchMode, oCheckHostIP, oStrictHostKeyChecking, oCompression,
-	oCompressionLevel, oTCPKeepAlive, oNumberOfPasswordPrompts,
-	oUsePrivilegedPort, oLogFacility, oLogLevel, oCiphers, oMacs,
+	oTCPKeepAlive, oNumberOfPasswordPrompts,
+	oLogFacility, oLogLevel, oCiphers, oMacs,
 	oPubkeyAuthentication,
 	oKbdInteractiveAuthentication, oKbdInteractiveDevices, oHostKeyAlias,
 	oDynamicForward, oPreferredAuthentications, oHostbasedAuthentication,
@@ -185,6 +183,9 @@ static struct {
 	{ "afstokenpassing", oUnsupported },
 	{ "kerberosauthentication", oUnsupported },
 	{ "kerberostgtpassing", oUnsupported },
+	{ "rsaauthentication", oUnsupported },
+	{ "rhostsrsaauthentication", oUnsupported },
+	{ "compressionlevel", oUnsupported },
 
 	/* Sometimes-unsupported options */
 #if defined(GSSAPI)
@@ -201,10 +202,6 @@ static struct {
 	{ "smartcarddevice", oUnsupported },
 	{ "pkcs11provider", oUnsupported },
 #endif
-	{ "securitykeyprovider", oSecurityKeyProvider },
-	{ "rsaauthentication", oUnsupported },
-	{ "rhostsrsaauthentication", oUnsupported },
-	{ "compressionlevel", oUnsupported },
 
 	{ "forwardagent", oForwardAgent },
 	{ "forwardx11", oForwardX11 },
@@ -298,6 +295,7 @@ static struct {
 	{ "pubkeyacceptedkeytypes", oPubkeyAcceptedKeyTypes },
 	{ "ignoreunknown", oIgnoreUnknown },
 	{ "proxyjump", oProxyJump },
+	{ "securitykeyprovider", oSecurityKeyProvider },
 
 	{ NULL, oBadOption }
 };
@@ -907,6 +905,34 @@ parse_time:
 
 	case oForwardAgent:
 		intptr = &options->forward_agent;
+
+		arg = strdelim(&s);
+		if (!arg || *arg == '\0')
+			fatal("%s line %d: missing argument.",
+			    filename, linenum);
+
+		value = -1;
+		multistate_ptr = multistate_flag;
+		for (i = 0; multistate_ptr[i].key != NULL; i++) {
+			if (strcasecmp(arg, multistate_ptr[i].key) == 0) {
+				value = multistate_ptr[i].value;
+				break;
+			}
+		}
+		if (value != -1) {
+			if (*activep && *intptr == -1)
+				*intptr = value;
+			break;
+		}
+		/* ForwardAgent wasn't 'yes' or 'no', assume a path */
+		if (*activep && *intptr == -1)
+			*intptr = 1;
+
+		charptr = &options->forward_agent_sock_path;
+		goto parse_agent_path;
+
+	case oForwardX11:
+		intptr = &options->forward_x11;
  parse_flag:
 		multistate_ptr = multistate_flag;
  parse_multistate:
@@ -927,10 +953,6 @@ parse_time:
 		if (*activep && *intptr == -1)
 			*intptr = value;
 		break;
-
-	case oForwardX11:
-		intptr = &options->forward_x11;
-		goto parse_flag;
 
 	case oForwardX11Trusted:
 		intptr = &options->forward_x11_trusted;
@@ -1724,6 +1746,7 @@ parse_keytypes:
 		if (!arg || *arg == '\0')
 			fatal("%.200s line %d: Missing argument.",
 			    filename, linenum);
+  parse_agent_path:
 		/* Extra validation if the string represents an env var. */
 		if (arg[0] == '$' && !valid_env_name(arg + 1)) {
 			fatal("%.200s line %d: Invalid environment name %s.",
@@ -1841,6 +1864,7 @@ initialize_options(Options * options)
 {
 	memset(options, 'X', sizeof(*options));
 	options->forward_agent = -1;
+	options->forward_agent_sock_path = NULL;
 	options->forward_x11 = -1;
 	options->forward_x11_trusted = -1;
 	options->forward_x11_timeout = -1;
@@ -2114,7 +2138,7 @@ fill_default_options(Options * options)
 	if (options->update_hostkeys == -1)
 		options->update_hostkeys = 0;
 	if (options->sk_provider == NULL)
-		options->sk_provider = xstrdup("$SSH_SK_PROVIDER");
+		options->sk_provider = xstrdup("internal");
 
 	/* Expand KEX name lists */
 	all_cipher = cipher_alg_list(',', 0);
@@ -2132,7 +2156,7 @@ fill_default_options(Options * options)
 	ASSEMBLE(macs, KEX_CLIENT_MAC, all_mac);
 	ASSEMBLE(kex_algorithms, KEX_CLIENT_KEX, all_kex);
 	ASSEMBLE(hostbased_key_types, KEX_DEFAULT_PK_ALG, all_key);
-	ASSEMBLE(pubkey_key_types, PUBKEY_DEFAULT_PK_ALG, all_key);
+	ASSEMBLE(pubkey_key_types, KEX_DEFAULT_PK_ALG, all_key);
 	ASSEMBLE(ca_sign_algorithms, SSH_ALLOWED_CA_SIGALGS, all_sig);
 #undef ASSEMBLE
 	free(all_cipher);
@@ -2617,7 +2641,6 @@ dump_client_config(Options *o, const char *host)
 	dump_cfg_fmtint(oClearAllForwardings, o->clear_forwardings);
 	dump_cfg_fmtint(oExitOnForwardFailure, o->exit_on_forward_failure);
 	dump_cfg_fmtint(oFingerprintHash, o->fingerprint_hash);
-	dump_cfg_fmtint(oForwardAgent, o->forward_agent);
 	dump_cfg_fmtint(oForwardX11, o->forward_x11);
 	dump_cfg_fmtint(oForwardX11Trusted, o->forward_x11_trusted);
 	dump_cfg_fmtint(oGatewayPorts, o->fwd_opts.gateway_ports);
@@ -2692,6 +2715,12 @@ dump_client_config(Options *o, const char *host)
 	dump_cfg_strarray(oSetEnv, o->num_setenv, o->setenv);
 
 	/* Special cases */
+
+	/* oForwardAgent */
+	if (o->forward_agent_sock_path == NULL)
+		dump_cfg_fmtint(oForwardAgent, o->forward_agent);
+	else
+		dump_cfg_string(oForwardAgent, o->forward_agent_sock_path);
 
 	/* oConnectTimeout */
 	if (o->connection_timeout == -1)

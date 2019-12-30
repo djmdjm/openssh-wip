@@ -1,4 +1,4 @@
-/* $OpenBSD: myproposal.h,v 1.61 2019/11/12 19:33:08 markus Exp $ */
+/* $OpenBSD: myproposal.h,v 1.64 2019/12/16 03:16:58 djm Exp $ */
 
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
@@ -44,14 +44,18 @@
 	"ecdsa-sha2-nistp256-cert-v01@openssh.com," \
 	"ecdsa-sha2-nistp384-cert-v01@openssh.com," \
 	"ecdsa-sha2-nistp521-cert-v01@openssh.com," \
+	"sk-ecdsa-sha2-nistp256-cert-v01@openssh.com," \
 	"ssh-ed25519-cert-v01@openssh.com," \
+	"sk-ssh-ed25519-cert-v01@openssh.com," \
 	"rsa-sha2-512-cert-v01@openssh.com," \
 	"rsa-sha2-256-cert-v01@openssh.com," \
 	"ssh-rsa-cert-v01@openssh.com," \
 	"ecdsa-sha2-nistp256," \
 	"ecdsa-sha2-nistp384," \
 	"ecdsa-sha2-nistp521," \
+	"sk-ecdsa-sha2-nistp256@openssh.com," \
 	"ssh-ed25519," \
+	"sk-ssh-ed25519@openssh.com," \
 	"rsa-sha2-512," \
 	"rsa-sha2-256," \
 	"ssh-rsa"
@@ -82,27 +86,9 @@
 	"ecdsa-sha2-nistp256," \
 	"ecdsa-sha2-nistp384," \
 	"ecdsa-sha2-nistp521," \
-	"ssh-ed25519," \
-	"rsa-sha2-512," \
-	"rsa-sha2-256," \
-	"ssh-rsa"
-
-#define	PUBKEY_DEFAULT_PK_ALG	\
-	"sk-ecdsa-sha2-nistp256-cert-v01@openssh.com," \
-	"ecdsa-sha2-nistp256-cert-v01@openssh.com," \
-	"ecdsa-sha2-nistp384-cert-v01@openssh.com," \
-	"ecdsa-sha2-nistp521-cert-v01@openssh.com," \
-	"sk-ssh-ed25519-cert-v01@openssh.com," \
-	"ssh-ed25519-cert-v01@openssh.com," \
-	"rsa-sha2-512-cert-v01@openssh.com," \
-	"rsa-sha2-256-cert-v01@openssh.com," \
-	"ssh-rsa-cert-v01@openssh.com," \
 	"sk-ecdsa-sha2-nistp256@openssh.com," \
-	"ecdsa-sha2-nistp256," \
-	"ecdsa-sha2-nistp384," \
-	"ecdsa-sha2-nistp521," \
-	"sk-ssh-ed25519@openssh.com," \
 	"ssh-ed25519," \
+	"sk-ssh-ed25519@openssh.com," \
 	"rsa-sha2-512," \
 	"rsa-sha2-256," \
 	"ssh-rsa"
@@ -115,7 +101,6 @@
 #define	KEX_DEFAULT_PK_ALG	\
 	"ssh-ed25519-cert-v01@openssh.com," \
 	"ssh-ed25519"
-#define PUBKEY_DEFAULT_PK_ALG KEX_DEFAULT_PK_ALG
 #define	KEX_SERVER_ENCRYPT \
 	"chacha20-poly1305@openssh.com," \
 	"aes128-ctr,aes192-ctr,aes256-ctr"
@@ -135,7 +120,7 @@
 #define	KEX_CLIENT_ENCRYPT KEX_SERVER_ENCRYPT
 #define KEX_CLIENT_MAC KEX_SERVER_MAC
 
-#define	SSH_ALLOWED_CA_SIGALGS	"ssh-ed25519"
+#define	SSH_ALLOWED_CA_SIGALGS	"ssh-ed25519,sk-ssh-ed25519@openssh.com"
 
 #endif /* WITH_OPENSSL */
 

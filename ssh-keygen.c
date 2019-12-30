@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-keygen.c,v 1.363 2019/11/12 22:36:44 djm Exp $ */
+/* $OpenBSD: ssh-keygen.c,v 1.374 2019/12/10 22:37:20 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1994 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <limits.h>
 #include <locale.h>
@@ -113,11 +114,12 @@ static u_int64_t cert_valid_from = 0;
 static u_int64_t cert_valid_to = ~0ULL;
 
 /* Certificate options */
-#define CERTOPT_X_FWD	(1)
-#define CERTOPT_AGENT_FWD	(1<<1)
-#define CERTOPT_PORT_FWD	(1<<2)
-#define CERTOPT_PTY		(1<<3)
-#define CERTOPT_USER_RC	(1<<4)
+#define CERTOPT_X_FWD				(1)
+#define CERTOPT_AGENT_FWD			(1<<1)
+#define CERTOPT_PORT_FWD			(1<<2)
+#define CERTOPT_PTY				(1<<3)
+#define CERTOPT_USER_RC				(1<<4)
+#define CERTOPT_NO_REQUIRE_USER_PRESENCE	(1<<5)
 #define CERTOPT_DEFAULT	(CERTOPT_X_FWD|CERTOPT_AGENT_FWD| \
 			 CERTOPT_PORT_FWD|CERTOPT_PTY|CERTOPT_USER_RC)
 static u_int32_t certflags_flags = CERTOPT_DEFAULT;
@@ -569,7 +571,7 @@ do_convert_private_ssh2(struct sshbuf *b)
 	if (sshkey_sign(key, &sig, &slen, data, sizeof(data),
 	    NULL, NULL, 0) != 0 ||
 	    sshkey_verify(key, sig, slen, data, sizeof(data),
-	    NULL, 0) != 0) {
+	    NULL, 0, NULL) != 0) {
 		sshkey_free(key);
 		free(sig);
 		return NULL;
@@ -1645,6 +1647,9 @@ prepare_options_buf(struct sshbuf *c, int which)
 	    (certflags_flags & CERTOPT_USER_RC) != 0)
 		add_flag_option(c, "permit-user-rc");
 	if ((which & OPTIONS_CRITICAL) != 0 &&
+	    (certflags_flags & CERTOPT_NO_REQUIRE_USER_PRESENCE) != 0)
+		add_flag_option(c, "no-touch-required");
+	if ((which & OPTIONS_CRITICAL) != 0 &&
 	    certflags_src_addr != NULL)
 		add_string_option(c, "source-address", certflags_src_addr);
 	for (i = 0; i < ncert_userext; i++) {
@@ -1710,10 +1715,12 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 	int r, i, fd, found, agent_fd = -1;
 	u_int n;
 	struct sshkey *ca, *public;
-	char valid[64], *otmp, *tmp, *cp, *out, *comment, **plist = NULL;
+	char valid[64], *otmp, *tmp, *cp, *out, *comment;
+	char *ca_fp = NULL, **plist = NULL;
 	FILE *f;
 	struct ssh_identitylist *agent_ids;
 	size_t j;
+	struct notifier_ctx *notifier = NULL;
 
 #ifdef ENABLE_PKCS11
 	pkcs11_init(1);
@@ -1759,6 +1766,7 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 		fatal("CA key type %s doesn't match specified %s",
 		    sshkey_ssh_name(ca), key_type_name);
 	}
+	ca_fp = sshkey_fingerprint(ca, fingerprint_hash, SSH_FP_DEFAULT);
 
 	for (i = 0; i < argc; i++) {
 		/* Split list of principals */
@@ -1780,9 +1788,7 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 		if ((r = sshkey_load_public(tmp, &public, &comment)) != 0)
 			fatal("%s: unable to open \"%s\": %s",
 			    __func__, tmp, ssh_err(r));
-		if (public->type != KEY_RSA && public->type != KEY_DSA &&
-		    public->type != KEY_ECDSA && public->type != KEY_ED25519 &&
-		    public->type != KEY_XMSS)
+		if (sshkey_is_cert(public))
 			fatal("%s: key \"%s\" type %s cannot be certified",
 			    __func__, tmp, sshkey_type(public));
 
@@ -1811,8 +1817,16 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 				fatal("Couldn't certify key %s via agent: %s",
 				    tmp, ssh_err(r));
 		} else {
-			if ((sshkey_certify(public, ca, key_type_name,
-			    sk_provider)) != 0)
+			if (sshkey_is_sk(ca) &&
+			    (ca->sk_flags & SSH_SK_USER_PRESENCE_REQD)) {
+				notifier = notify_start(0,
+				    "Confirm user presence for key %s %s",
+				    sshkey_type(ca), ca_fp);
+			}
+			r = sshkey_certify(public, ca, key_type_name,
+			    sk_provider);
+			notify_complete(notifier);
+			if (r != 0)
 				fatal("Couldn't certify key %s: %s",
 				    tmp, ssh_err(r));
 		}
@@ -1850,6 +1864,7 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 		if (cert_serial_autoinc)
 			cert_serial++;
 	}
+	free(ca_fp);
 #ifdef ENABLE_PKCS11
 	pkcs11_terminate();
 #endif
@@ -1948,6 +1963,10 @@ add_cert_option(char *opt)
 		certflags_flags &= ~CERTOPT_USER_RC;
 	else if (strcasecmp(opt, "permit-user-rc") == 0)
 		certflags_flags |= CERTOPT_USER_RC;
+	else if (strcasecmp(opt, "touch-required") == 0)
+		certflags_flags &= ~CERTOPT_NO_REQUIRE_USER_PRESENCE;
+	else if (strcasecmp(opt, "no-touch-required") == 0)
+		certflags_flags |= CERTOPT_NO_REQUIRE_USER_PRESENCE;
 	else if (strncasecmp(opt, "force-command=", 14) == 0) {
 		val = opt + 14;
 		if (*val == '\0')
@@ -2001,9 +2020,10 @@ show_options(struct sshbuf *optbuf, int in_critical)
 		    strcmp(name, "permit-agent-forwarding") == 0 ||
 		    strcmp(name, "permit-port-forwarding") == 0 ||
 		    strcmp(name, "permit-pty") == 0 ||
-		    strcmp(name, "permit-user-rc") == 0))
+		    strcmp(name, "permit-user-rc") == 0 ||
+		    strcmp(name, "no-touch-required") == 0)) {
 			printf("\n");
-		else if (in_critical &&
+		} else if (in_critical &&
 		    (strcmp(name, "force-command") == 0 ||
 		    strcmp(name, "source-address") == 0)) {
 			if ((r = sshbuf_get_cstring(option, &arg, NULL)) != 0)
@@ -2640,7 +2660,9 @@ verify(const char *signature, const char *sig_namespace, const char *principal,
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	struct sshkey *sign_key = NULL;
 	char *fp = NULL;
+	struct sshkey_sig_details *sig_details = NULL;
 
+	memset(&sig_details, 0, sizeof(sig_details));
 	if ((abuf = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new() failed", __func__);
 
@@ -2658,13 +2680,17 @@ verify(const char *signature, const char *sig_namespace, const char *principal,
 		return r;
 	}
 	if ((r = sshsig_verify_fd(sigbuf, STDIN_FILENO, sig_namespace,
-	    &sign_key)) != 0)
+	    &sign_key, &sig_details)) != 0)
 		goto done; /* sshsig_verify() prints error */
 
 	if ((fp = sshkey_fingerprint(sign_key, fingerprint_hash,
 	    SSH_FP_DEFAULT)) == NULL)
 		fatal("%s: sshkey_fingerprint failed", __func__);
 	debug("Valid (unverified) signature from key %s", fp);
+	if (sig_details != NULL) {
+		debug2("%s: signature details: counter = %u, flags = 0x%02x",
+		    __func__, sig_details->sk_counter, sig_details->sk_flags);
+	}
 	free(fp);
 	fp = NULL;
 
@@ -2709,6 +2735,7 @@ done:
 	sshbuf_free(sigbuf);
 	sshbuf_free(abuf);
 	sshkey_free(sign_key);
+	sshkey_sig_details_free(sig_details);
 	free(fp);
 	return ret;
 }
@@ -2718,7 +2745,7 @@ usage(void)
 {
 	fprintf(stderr,
 	    "usage: ssh-keygen [-q] [-b bits] [-C comment] [-f output_keyfile] [-m format]\n"
-	    "                  [-t dsa | ecdsa | ecdsa-sk | ed25519 | rsa]\n"
+	    "                  [-t dsa | ecdsa | ecdsa-sk | ed25519 | ed25519-sk | rsa]\n"
 	    "                  [-N new_passphrase] [-w provider] [-x flags]\n"
 	    "       ssh-keygen -p [-f keyfile] [-m format] [-N new_passphrase]\n"
 	    "                   [-P old_passphrase]\n"
@@ -2972,19 +2999,26 @@ main(int argc, char **argv)
 			break;
 		case 'Y':
 			sign_op = optarg;
+			break;
 		case 'w':
 			sk_provider = optarg;
 			break;
 		case 'x':
 			if (*optarg == '\0')
 				fatal("Missing security key flags");
-			ull = strtoull(optarg, &ep, 0);
-			if (*ep != '\0')
-				fatal("Security key flags \"%s\" is not a "
-				    "number", optarg);
-			if (ull > 0xff)
-				fatal("Invalid security key flags 0x%llx", ull);
-			sk_flags = (uint8_t)ull;
+			if (strcasecmp(optarg, "no-touch-required") == 0)
+				sk_flags &= ~SSH_SK_USER_PRESENCE_REQD;
+			else {
+				ull = strtoull(optarg, &ep, 0);
+				if (*ep != '\0')
+					fatal("Security key flags \"%s\" is "
+					    "not a number", optarg);
+				if (ull > 0xff) {
+					fatal("Invalid security key "
+					    "flags 0x%llx", ull);
+				}
+				sk_flags = (uint8_t)ull;
+			}
 			break;
 		case 'z':
 			errno = 0;
@@ -3046,6 +3080,9 @@ main(int argc, char **argv)
 			usage();
 		}
 	}
+
+	if (sk_provider == NULL)
+		sk_provider = "internal";
 
 	/* reinit */
 	log_init(argv[0], log_level, SYSLOG_FACILITY_USER, 1);
@@ -3247,6 +3284,11 @@ main(int argc, char **argv)
 	switch (type) {
 	case KEY_ECDSA_SK:
 	case KEY_ED25519_SK:
+		if (!quiet) {
+			printf("You may need to touch your security key "
+			    "to authorize key generation.\n");
+		}
+		fflush(stdout);
 		if (sshsk_enroll(type, sk_provider,
 		    cert_key_id == NULL ? "ssh:" : cert_key_id,
 		    sk_flags, NULL, &private, NULL) != 0)
