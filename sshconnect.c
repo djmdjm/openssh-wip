@@ -1,4 +1,4 @@
-/* $OpenBSD: sshconnect.c,v 1.323 2019/11/13 04:47:52 deraadt Exp $ */
+/* $OpenBSD: sshconnect.c,v 1.325 2020/01/11 16:23:10 naddy Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -129,7 +129,7 @@ ssh_proxy_fdpass_connect(struct ssh *ssh, const char *host,
 		    "proxy dialer: %.100s", strerror(errno));
 
 	command_string = expand_proxy_command(proxy_command, options.user,
-	    host_arg, host, port);
+	    host, host_arg, port);
 	debug("Executing proxy dialer command: %.500s", command_string);
 
 	/* Fork and execute the proxy command. */
@@ -212,7 +212,7 @@ ssh_proxy_connect(struct ssh *ssh, const char *host, const char *host_arg,
 		    strerror(errno));
 
 	command_string = expand_proxy_command(proxy_command, options.user,
-	    host_arg, host, port);
+	    host, host_arg, port);
 	debug("Executing proxy command: %.500s", command_string);
 
 	/* Fork and execute the proxy command. */

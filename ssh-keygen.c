@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-keygen.c,v 1.381 2020/01/02 22:40:09 djm Exp $ */
+/* $OpenBSD: ssh-keygen.c,v 1.383 2020/01/14 15:07:30 naddy Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1994 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -2897,7 +2897,7 @@ skip_ssh_url_preamble(const char *s)
 }
 
 static int
-do_download_sk(const char *skprovider)
+do_download_sk(const char *skprovider, const char *device)
 {
 	struct sshkey **keys;
 	size_t nkeys, i;
@@ -2909,7 +2909,8 @@ do_download_sk(const char *skprovider)
 		fatal("Cannot download keys without provider");
 
 	pin = read_passphrase("Enter PIN for security key: ", RP_ALLOW_STDIN);
-	if ((r = sshsk_load_resident(skprovider, pin, &keys, &nkeys)) != 0) {
+	if ((r = sshsk_load_resident(skprovider, device, pin,
+	    &keys, &nkeys)) != 0) {
 		freezero(pin, strlen(pin));
 		error("Unable to load resident keys: %s", ssh_err(r));
 		return -1;
@@ -2990,7 +2991,7 @@ usage(void)
 	fprintf(stderr,
 	    "usage: ssh-keygen [-q] [-b bits] [-C comment] [-f output_keyfile] [-m format]\n"
 	    "                  [-t dsa | ecdsa | ecdsa-sk | ed25519 | ed25519-sk | rsa]\n"
-	    "                  [-N new_passphrase] [-w provider] [-x flags]\n"
+	    "                  [-N new_passphrase] [-O option] [-w provider]\n"
 	    "       ssh-keygen -p [-f keyfile] [-m format] [-N new_passphrase]\n"
 	    "                   [-P old_passphrase]\n"
 	    "       ssh-keygen -i [-f input_keyfile] [-m key_format]\n"
@@ -3004,15 +3005,14 @@ usage(void)
 	    "       ssh-keygen -D pkcs11\n");
 #endif
 	fprintf(stderr,
-	    "       ssh-keygen -K path [-w sk_provider]\n");
-	fprintf(stderr,
 	    "       ssh-keygen -F hostname [-lv] [-f known_hosts_file]\n"
 	    "       ssh-keygen -H [-f known_hosts_file]\n"
+	    "       ssh-keygen -K [-w provider]\n"
 	    "       ssh-keygen -R hostname [-f known_hosts_file]\n"
 	    "       ssh-keygen -r hostname [-g] [-f input_keyfile]\n"
 #ifdef WITH_OPENSSL
-	    "       ssh-keygen -M generate [-O option] output\n"
-	    "       ssh-keygen -M screen [-f input_file] [-O option] [-a rounds] output_file\n"
+	    "       ssh-keygen -M generate [-O option] output_file\n"
+	    "       ssh-keygen -M screen [-f input_file] [-O option] output_file\n"
 #endif
 	    "       ssh-keygen -I certificate_identity -s ca_key [-hU] [-D pkcs11_provider]\n"
 	    "                  [-n principals] [-O option] [-V validity_interval]\n"
@@ -3049,6 +3049,7 @@ main(int argc, char **argv)
 	int do_gen_candidates = 0, do_screen_candidates = 0, download_sk = 0;
 	unsigned long long cert_serial = 0;
 	char *identity_comment = NULL, *ca_key_path = NULL, **opts = NULL;
+	char *sk_application = NULL, *sk_device = NULL, *sk_user = NULL;
 	size_t i, nopts = 0;
 	u_int32_t bits = 0;
 	uint8_t sk_flags = SSH_SK_USER_PRESENCE_REQD;
@@ -3375,8 +3376,17 @@ main(int argc, char **argv)
 	}
 	if (pkcs11provider != NULL)
 		do_download(pw);
-	if (download_sk)
-		return do_download_sk(sk_provider);
+	if (download_sk) {
+		for (i = 0; i < nopts; i++) {
+			if (strncasecmp(opts[i], "device=", 7) == 0) {
+				sk_device = xstrdup(opts[i] + 7);
+			} else {
+				fatal("Option \"%s\" is unsupported for "
+				    "FIDO authenticator download", opts[i]);
+			}
+		}
+		return do_download_sk(sk_provider, sk_device);
+	}
 	if (print_fingerprint || print_bubblebabble)
 		do_fingerprint(pw);
 	if (change_passphrase)
@@ -3463,6 +3473,13 @@ main(int argc, char **argv)
 				sk_flags &= ~SSH_SK_USER_PRESENCE_REQD;
 			} else if (strcasecmp(opts[i], "resident") == 0) {
 				sk_flags |= SSH_SK_RESIDENT_KEY;
+			} else if (strncasecmp(opts[i], "device=", 7) == 0) {
+				sk_device = xstrdup(opts[i] + 7);
+			} else if (strncasecmp(opts[i], "user=", 5) == 0) {
+				sk_user = xstrdup(opts[i] + 5);
+			} else if (strncasecmp(opts[i],
+			    "application=", 12) == 0) {
+				sk_application = xstrdup(opts[i] + 12);
 			} else {
 				fatal("Option \"%s\" is unsupported for "
 				    "FIDO authenticator enrollment", opts[i]);
@@ -3474,14 +3491,11 @@ main(int argc, char **argv)
 		}
 		passphrase = NULL;
 		for (i = 0 ; i < 3; i++) {
-			if (!quiet) {
-				printf("You may need to touch your security "
-				    "key to authorize key generation.\n");
-			}
 			fflush(stdout);
-			r = sshsk_enroll(type, sk_provider,
-			    cert_key_id == NULL ? "ssh:" : cert_key_id,
-			    sk_flags, passphrase, NULL, &private, NULL);
+			r = sshsk_enroll(type, sk_provider, sk_device,
+			    sk_application == NULL ? "ssh:" : sk_application,
+			    sk_user, sk_flags, passphrase, NULL,
+			    &private, NULL);
 			if (r == 0)
 				break;
 			if (r != SSH_ERR_KEY_WRONG_PASSPHRASE)

@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-sk-helper.c,v 1.6 2019/12/30 09:23:28 djm Exp $ */
+/* $OpenBSD: ssh-sk-helper.c,v 1.8 2020/01/10 23:43:26 djm Exp $ */
 /*
  * Copyright (c) 2019 Google LLC
  *
@@ -74,6 +74,17 @@ reply_error(int r, char *fmt, ...)
 	return resp;
 }
 
+/* If the specified string is zero length, then free it and replace with NULL */
+static void
+null_empty(char **s)
+{
+	if (s == NULL || *s == NULL || **s != '\0')
+		return;
+
+	free(*s);
+	*s = NULL;
+}
+
 static struct sshbuf *
 process_sign(struct sshbuf *req)
 {
@@ -105,10 +116,7 @@ process_sign(struct sshbuf *req)
 	    "msg len %zu, compat 0x%lx", __progname, sshkey_type(key),
 	    provider, msglen, (u_long)compat);
 
-	if (*pin == 0) {
-		free(pin);
-		pin = NULL;
-	}
+	null_empty(&pin);
 
 	if ((r = sshsk_sign(provider, key, &sig, &siglen,
 	    message, msglen, compat, pin)) != 0) {
@@ -135,7 +143,7 @@ process_enroll(struct sshbuf *req)
 {
 	int r;
 	u_int type;
-	char *provider, *application, *pin;
+	char *provider, *application, *pin, *device, *userid;
 	uint8_t flags;
 	struct sshbuf *challenge, *attest, *kbuf, *resp;
 	struct sshkey *key;
@@ -146,7 +154,9 @@ process_enroll(struct sshbuf *req)
 
 	if ((r = sshbuf_get_u32(req, &type)) != 0 ||
 	    (r = sshbuf_get_cstring(req, &provider, NULL)) != 0 ||
+	    (r = sshbuf_get_cstring(req, &device, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(req, &application, NULL)) != 0 ||
+	    (r = sshbuf_get_cstring(req, &userid, NULL)) != 0 ||
 	    (r = sshbuf_get_u8(req, &flags)) != 0 ||
 	    (r = sshbuf_get_cstring(req, &pin, NULL)) != 0 ||
 	    (r = sshbuf_froms(req, &challenge)) != 0)
@@ -160,13 +170,12 @@ process_enroll(struct sshbuf *req)
 		sshbuf_free(challenge);
 		challenge = NULL;
 	}
-	if (*pin == 0) {
-		free(pin);
-		pin = NULL;
-	}
+	null_empty(&device);
+	null_empty(&userid);
+	null_empty(&pin);
 
-	if ((r = sshsk_enroll((int)type, provider, application, flags, pin,
-	    challenge, &key, attest)) != 0) {
+	if ((r = sshsk_enroll((int)type, provider, device, application, userid,
+	    flags, pin, challenge, &key, attest)) != 0) {
 		resp = reply_error(r, "Enrollment failed: %s", ssh_err(r));
 		goto out;
 	}
@@ -197,7 +206,7 @@ static struct sshbuf *
 process_load_resident(struct sshbuf *req)
 {
 	int r;
-	char *provider, *pin;
+	char *provider, *pin, *device;
 	struct sshbuf *kbuf, *resp;
 	struct sshkey **keys = NULL;
 	size_t nkeys = 0, i;
@@ -206,17 +215,17 @@ process_load_resident(struct sshbuf *req)
 		fatal("%s: sshbuf_new failed", __progname);
 
 	if ((r = sshbuf_get_cstring(req, &provider, NULL)) != 0 ||
+	    (r = sshbuf_get_cstring(req, &device, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(req, &pin, NULL)) != 0)
 		fatal("%s: buffer error: %s", __progname, ssh_err(r));
 	if (sshbuf_len(req) != 0)
 		fatal("%s: trailing data in request", __progname);
 
-	if (*pin == 0) {
-		free(pin);
-		pin = NULL;
-	}
+	null_empty(&device);
+	null_empty(&pin);
 
-	if ((r = sshsk_load_resident(provider, pin, &keys, &nkeys)) != 0) {
+	if ((r = sshsk_load_resident(provider, device, pin,
+	    &keys, &nkeys)) != 0) {
 		resp = reply_error(r, " sshsk_load_resident failed: %s",
 		    ssh_err(r));
 		goto out;
@@ -257,9 +266,9 @@ main(int argc, char **argv)
 	SyslogFacility log_facility = SYSLOG_FACILITY_AUTH;
 	LogLevel log_level = SYSLOG_LEVEL_ERROR;
 	struct sshbuf *req, *resp;
-	int in, out, ch, r, log_stderr = 0;
-	u_int rtype;
-	uint8_t version;
+	int in, out, ch, r, vflag = 0;
+	u_int rtype, ll = 0;
+	uint8_t version, log_stderr = 0;
 
 	sanitise_stdfd();
 	log_init(__progname, log_level, log_facility, log_stderr);
@@ -267,7 +276,7 @@ main(int argc, char **argv)
 	while ((ch = getopt(argc, argv, "v")) != -1) {
 		switch (ch) {
 		case 'v':
-			log_stderr = 1;
+			vflag = 1;
 			if (log_level == SYSLOG_LEVEL_ERROR)
 				log_level = SYSLOG_LEVEL_DEBUG1;
 			else if (log_level < SYSLOG_LEVEL_DEBUG3)
@@ -278,7 +287,7 @@ main(int argc, char **argv)
 			exit(1);
 		}
 	}
-	log_init(__progname, log_level, log_facility, log_stderr);
+	log_init(__progname, log_level, log_facility, vflag);
 
 	/*
 	 * Rearrange our file descriptors a little; we don't trust the
@@ -305,8 +314,13 @@ main(int argc, char **argv)
 		    version, SSH_SK_HELPER_VERSION);
 	}
 
-	if ((r = sshbuf_get_u32(req, &rtype)) != 0)
+	if ((r = sshbuf_get_u32(req, &rtype)) != 0 ||
+	    (r = sshbuf_get_u8(req, &log_stderr)) != 0 ||
+	    (r = sshbuf_get_u32(req, &ll)) != 0)
 		fatal("%s: buffer error: %s", __progname, ssh_err(r));
+
+	if (!vflag && log_level_name((LogLevel)ll) != NULL)
+		log_init(__progname, (LogLevel)ll, log_facility, log_stderr);
 
 	switch (rtype) {
 	case SSH_SK_HELPER_SIGN:
