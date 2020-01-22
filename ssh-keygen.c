@@ -1768,10 +1768,14 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 	}
 	free(tmp);
 
-	if (key_type_name != NULL &&
-	    sshkey_type_from_name(key_type_name) != ca->type)  {
-		fatal("CA key type %s doesn't match specified %s",
-		    sshkey_ssh_name(ca), key_type_name);
+	if (key_type_name != NULL) {
+		if (sshkey_type_from_name(key_type_name) != ca->type) {
+			fatal("CA key type %s doesn't match specified %s",
+			    sshkey_ssh_name(ca), key_type_name);
+		}
+	} else if (ca->type == KEY_RSA) {
+		/* Default to a good signature algorithm */
+		key_type_name = "rsa-sha2-512";
 	}
 	ca_fp = sshkey_fingerprint(ca, fingerprint_hash, SSH_FP_DEFAULT);
 

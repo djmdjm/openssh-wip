@@ -46,7 +46,6 @@
 	"sk-ssh-ed25519-cert-v01@openssh.com," \
 	"rsa-sha2-512-cert-v01@openssh.com," \
 	"rsa-sha2-256-cert-v01@openssh.com," \
-	"ssh-rsa-cert-v01@openssh.com," \
 	"ecdsa-sha2-nistp256," \
 	"ecdsa-sha2-nistp384," \
 	"ecdsa-sha2-nistp521," \
@@ -54,8 +53,7 @@
 	"ssh-ed25519," \
 	"sk-ssh-ed25519@openssh.com," \
 	"rsa-sha2-512," \
-	"rsa-sha2-256," \
-	"ssh-rsa"
+	"rsa-sha2-256"
 
 #define	KEX_SERVER_ENCRYPT \
 	"chacha20-poly1305@openssh.com," \
@@ -87,8 +85,7 @@
 	"ssh-ed25519," \
 	"sk-ssh-ed25519@openssh.com," \
 	"rsa-sha2-512," \
-	"rsa-sha2-256," \
-	"ssh-rsa"
+	"rsa-sha2-256"
 
 #define	KEX_DEFAULT_COMP	"none,zlib@openssh.com"
 #define	KEX_DEFAULT_LANG	""
