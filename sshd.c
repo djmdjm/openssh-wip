@@ -240,6 +240,8 @@ void destroy_sensitive_data(void);
 void demote_sensitive_data(void);
 static void do_ssh2_kex(struct ssh *);
 
+static char *listener_proctitle;
+
 /*
  * Close all listening sockets
  */
@@ -1032,9 +1034,9 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s)
 	 */
 	for (;;) {
 		if (ostartups != startups) {
-			setproctitle("[listener] %d of %d-%d startups",
-			    startups, options.max_startups_begin,
-			    options.max_startups);
+			setproctitle("%s [listener] %d of %d-%d startups",
+			    listener_proctitle, startups,
+			    options.max_startups_begin, options.max_startups);
 			ostartups = startups;
 		}
 		if (received_sighup) {
@@ -1345,6 +1347,41 @@ accumulate_host_timing_secret(struct sshbuf *server_cfg,
 		fatal("%s: ssh_digest_update", __func__);
 	sshbuf_reset(buf);
 	sshbuf_free(buf);
+}
+
+static void
+xextendf(char **s, const char *sep, const char *fmt, ...)
+    __attribute__((__format__ (printf, 3, 4))) __attribute__((__nonnull__ (3)));
+static void
+xextendf(char **sp, const char *sep, const char *fmt, ...)
+{
+	va_list ap;
+	char *tmp1, *tmp2;
+
+	va_start(ap, fmt);
+	xvasprintf(&tmp1, fmt, ap);
+	va_end(ap);
+
+	if (*sp == NULL || **sp == '\0') {
+		free(*sp);
+		*sp = tmp1;
+		return;
+	}
+	xasprintf(&tmp2, "%s%s%s", *sp, sep, tmp1);
+	free(tmp1);
+	free(*sp);
+	*sp = tmp2;
+}
+
+static char *
+prepare_proctitle(int ac, char **av)
+{
+	char *ret = NULL;
+	int i;
+
+	for (i = 0; i < ac; i++)
+		xextendf(&ret, " ", "%s", av[i]);
+	return ret;
 }
 
 /*
@@ -1774,6 +1811,7 @@ main(int ac, char **av)
 		rexec_argv[rexec_argc] = "-R";
 		rexec_argv[rexec_argc + 1] = NULL;
 	}
+	listener_proctitle = prepare_proctitle(ac, av);
 
 	/* Ensure that umask disallows at least group and world write */
 	new_umask = umask(0077) | 0022;
