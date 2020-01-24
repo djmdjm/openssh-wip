@@ -123,15 +123,27 @@ read_passphrase(const char *prompt, int flags)
 	int rppflags, use_askpass = 0, ttyfd;
 	const char *askpass_hint = NULL;
 
+	if ((askpass = getenv(SSH_ASKPASS_ENV)) != NULL) {
+		if (strncasecmp(askpass, "always:", 7) == 0) {
+			askpass += 7;
+			use_askpass = 2; /* force use */
+		} else if (strncasecmp(askpass, "never:", 6) == 0) {
+			askpass += 6;
+			use_askpass = -1; /* never use */
+		}
+	}
+
 	rppflags = (flags & RP_ECHO) ? RPP_ECHO_ON : RPP_ECHO_OFF;
-	if (flags & RP_USE_ASKPASS)
-		use_askpass = 1;
-	else if (flags & RP_ALLOW_STDIN) {
+	if (flags & RP_USE_ASKPASS) {
+		if (use_askpass == 0)
+			use_askpass = 1;
+	} else if (flags & RP_ALLOW_STDIN) {
 		if (!isatty(STDIN_FILENO)) {
 			debug("read_passphrase: stdin is not a tty");
-			use_askpass = 1;
+			if (use_askpass == 0)
+				use_askpass = 1;
 		}
-	} else {
+	} else if (use_askpass != 2) {
 		rppflags |= RPP_REQUIRE_TTY;
 		ttyfd = open(_PATH_TTY, O_RDWR);
 		if (ttyfd >= 0) {
@@ -146,17 +158,16 @@ read_passphrase(const char *prompt, int flags)
 		} else {
 			debug("read_passphrase: can't open %s: %s", _PATH_TTY,
 			    strerror(errno));
-			use_askpass = 1;
+			if (use_askpass == 0)
+				use_askpass = 1;
 		}
 	}
 
 	if ((flags & RP_USE_ASKPASS) && getenv("DISPLAY") == NULL)
 		return (flags & RP_ALLOW_EOF) ? NULL : xstrdup("");
 
-	if (use_askpass && getenv("DISPLAY")) {
-		if (getenv(SSH_ASKPASS_ENV))
-			askpass = getenv(SSH_ASKPASS_ENV);
-		else
+	if (use_askpass > 0 && (use_askpass == 2 || getenv("DISPLAY"))) {
+		if (askpass == NULL)
 			askpass = _PATH_SSH_ASKPASS_DEFAULT;
 		if ((flags & RP_ASK_PERMISSION) != 0)
 			askpass_hint = "confirm";
@@ -224,6 +235,16 @@ notify_start(int force_askpass, const char *fmt, ...)
 	xvasprintf(&prompt, fmt, args);
 	va_end(args);
 
+	if ((askpass = getenv(SSH_ASKPASS_ENV)) == NULL)
+		askpass = _PATH_SSH_ASKPASS_DEFAULT;
+	else if (strncasecmp(askpass, "always:", 7) == 0) {
+		askpass += 7;
+		force_askpass = 2;
+	} else if (strncasecmp(askpass, "never:", 7) == 0) {
+		askpass = NULL;
+		force_askpass = -1;
+	}
+
 	if (fflush(NULL) != 0)
 		error("%s: fflush: %s", __func__, strerror(errno));
 	if (!force_askpass && isatty(STDERR_FILENO)) {
@@ -233,9 +254,9 @@ notify_start(int force_askpass, const char *fmt, ...)
 		free(prompt);
 		return NULL;
 	}
-	if ((askpass = getenv("SSH_ASKPASS")) == NULL)
-		askpass = _PATH_SSH_ASKPASS_DEFAULT;
-	if (getenv("DISPLAY") == NULL || *askpass == '\0') {
+
+	if ((getenv("DISPLAY") == NULL && force_askpass != 2) ||
+	    *askpass == '\0') {
 		debug3("%s: cannot notify", __func__);
 		free(prompt);
 		return NULL;

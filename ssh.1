@@ -1398,6 +1398,13 @@ or related script.
 may be necessary to redirect the input from
 .Pa /dev/null
 to make this work.)
+The path listed in
+.Ev SSH_ASKPASS
+may be prefixed by either
+.Dq always:
+or
+.Dq never:
+to respectively force use of the passphrase helper or to prohibit its use.
 .It Ev SSH_AUTH_SOCK
 Identifies the path of a
 .Ux Ns -domain
