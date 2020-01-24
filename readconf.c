@@ -2155,7 +2155,7 @@ fill_default_options(Options * options)
 	if (options->fingerprint_hash == -1)
 		options->fingerprint_hash = SSH_FP_HASH_DEFAULT;
 	if (options->update_hostkeys == -1)
-		options->update_hostkeys = 0;
+		options->update_hostkeys = SSH_UPDATE_HOSTKEYS_ASK;
 	if (options->sk_provider == NULL)
 		options->sk_provider = xstrdup("internal");
 
