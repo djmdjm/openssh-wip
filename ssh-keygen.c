@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-keygen.c,v 1.389 2020/01/24 00:00:31 djm Exp $ */
+/* $OpenBSD: ssh-keygen.c,v 1.390 2020/01/24 00:27:04 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1994 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
