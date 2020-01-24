@@ -564,6 +564,7 @@ hostfile_replace_entries(const char *filename, const char *host, const char *ip,
 	/* Remove all entries for the specified host from the file */
 	if ((r = hostkeys_foreach(filename, host_delete, &ctx, host, ip,
 	    HKF_WANT_PARSE_KEY)) != 0) {
+		oerrno = errno;
 		error("%s: hostkeys_foreach failed: %s", __func__, ssh_err(r));
 		goto fail;
 	}
