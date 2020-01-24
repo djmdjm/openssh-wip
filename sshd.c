@@ -1,4 +1,4 @@
-/* $OpenBSD: sshd.c,v 1.544 2020/01/23 07:10:22 dtucker Exp $ */
+/* $OpenBSD: sshd.c,v 1.545 2020/01/24 23:56:01 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -1347,30 +1347,6 @@ accumulate_host_timing_secret(struct sshbuf *server_cfg,
 		fatal("%s: ssh_digest_update", __func__);
 	sshbuf_reset(buf);
 	sshbuf_free(buf);
-}
-
-static void
-xextendf(char **s, const char *sep, const char *fmt, ...)
-    __attribute__((__format__ (printf, 3, 4))) __attribute__((__nonnull__ (3)));
-static void
-xextendf(char **sp, const char *sep, const char *fmt, ...)
-{
-	va_list ap;
-	char *tmp1, *tmp2;
-
-	va_start(ap, fmt);
-	xvasprintf(&tmp1, fmt, ap);
-	va_end(ap);
-
-	if (*sp == NULL || **sp == '\0') {
-		free(*sp);
-		*sp = tmp1;
-		return;
-	}
-	xasprintf(&tmp2, "%s%s%s", *sp, sep, tmp1);
-	free(tmp1);
-	free(*sp);
-	*sp = tmp2;
 }
 
 static char *
