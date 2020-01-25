@@ -65,6 +65,7 @@
 #define SSH_SK_ERR_GENERAL		-1
 #define SSH_SK_ERR_UNSUPPORTED		-2
 #define SSH_SK_ERR_PIN_REQUIRED		-3
+#define SSH_SK_ERR_DEVICE_NOT_FOUND	-4
 
 struct sk_enroll_response {
 	uint8_t *public_key;
@@ -437,6 +438,7 @@ fidoerr_to_skerr(int fidoerr)
 {
 	switch (fidoerr) {
 	case FIDO_ERR_UNSUPPORTED_OPTION:
+	case FIDO_ERR_UNSUPPORTED_ALGORITHM:
 		return SSH_SK_ERR_UNSUPPORTED;
 	case FIDO_ERR_PIN_REQUIRED:
 	case FIDO_ERR_PIN_INVALID:
@@ -524,6 +526,7 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 		goto out;
 	}
 	if (device == NULL && (device = pick_first_device()) == NULL) {
+		ret = SSH_SK_ERR_DEVICE_NOT_FOUND;
 		skdebug(__func__, "pick_first_device failed");
 		goto out;
 	}

@@ -143,6 +143,8 @@ ssh_err(int n)
 		return "signature algorithm not supported";
 	case SSH_ERR_FEATURE_UNSUPPORTED:
 		return "requested feature not supported";
+	case SSH_ERR_DEVICE_NOT_FOUND:
+		return "device not found";
 	default:
 		return "unknown error";
 	}

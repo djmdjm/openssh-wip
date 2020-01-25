@@ -3582,7 +3582,7 @@ main(int argc, char **argv)
 			if (r == 0)
 				break;
 			if (r != SSH_ERR_KEY_WRONG_PASSPHRASE)
-				exit(1); /* error message already printed */
+				fatal("Key enrollment failed: %s", ssh_err(r));
 			if (passphrase != NULL)
 				freezero(passphrase, strlen(passphrase));
 			passphrase = read_passphrase("Enter PIN for security "

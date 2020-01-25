@@ -60,7 +60,7 @@ reply_error(int r, char *fmt, ...)
 	va_start(ap, fmt);
 	xvasprintf(&msg, fmt, ap);
 	va_end(ap);
-	error("%s: %s", __progname, msg);
+	debug("%s: %s", __progname, msg);
 	free(msg);
 
 	if (r >= 0)
