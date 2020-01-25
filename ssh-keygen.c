@@ -2167,15 +2167,10 @@ static void
 load_krl(const char *path, struct ssh_krl **krlp)
 {
 	struct sshbuf *krlbuf;
-	int r, fd;
+	int r;
 
-	if ((krlbuf = sshbuf_new()) == NULL)
-		fatal("sshbuf_new failed");
-	if ((fd = open(path, O_RDONLY)) == -1)
-		fatal("open %s: %s", path, strerror(errno));
-	if ((r = sshkey_load_file(fd, krlbuf)) != 0)
+	if ((r = sshbuf_load_file(path, &krlbuf)) != 0)
 		fatal("Unable to load KRL: %s", ssh_err(r));
-	close(fd);
 	/* XXX check sigs */
 	if ((r = ssh_krl_from_blob(krlbuf, krlp, NULL, 0)) != 0 ||
 	    *krlp == NULL)
@@ -2669,25 +2664,18 @@ static int
 sig_verify(const char *signature, const char *sig_namespace,
     const char *principal, const char *allowed_keys, const char *revoked_keys)
 {
-	int r, ret = -1, sigfd = -1;
+	int r, ret = -1;
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	struct sshkey *sign_key = NULL;
 	char *fp = NULL;
 	struct sshkey_sig_details *sig_details = NULL;
 
 	memset(&sig_details, 0, sizeof(sig_details));
-	if ((abuf = sshbuf_new()) == NULL)
-		fatal("%s: sshbuf_new() failed", __func__);
-
-	if ((sigfd = open(signature, O_RDONLY)) < 0) {
-		error("Couldn't open signature file %s", signature);
-		goto done;
-	}
-
-	if ((r = sshkey_load_file(sigfd, abuf)) != 0) {
+	if ((r = sshbuf_load_file(signature, &abuf)) != 0) {
 		error("Couldn't read signature file: %s", ssh_err(r));
 		goto done;
 	}
+
 	if ((r = sshsig_dearmor(abuf, &sigbuf)) != 0) {
 		error("%s: sshsig_armor: %s", __func__, ssh_err(r));
 		goto done;
@@ -2743,8 +2731,6 @@ done:
 			printf("Could not verify signature.\n");
 		}
 	}
-	if (sigfd != -1)
-		close(sigfd);
 	sshbuf_free(sigbuf);
 	sshbuf_free(abuf);
 	sshkey_free(sign_key);
@@ -2755,20 +2741,12 @@ done:
 
 static int
 sig_find_principals(const char *signature, const char *allowed_keys) {
-	int r, ret = -1, sigfd = -1;
+	int r, ret = -1;
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	struct sshkey *sign_key = NULL;
 	char *principals = NULL, *cp, *tmp;
 
-	if ((abuf = sshbuf_new()) == NULL)
-		fatal("%s: sshbuf_new() failed", __func__);
-
-	if ((sigfd = open(signature, O_RDONLY)) < 0) {
-		error("Couldn't open signature file %s", signature);
-		goto done;
-	}
-
-	if ((r = sshkey_load_file(sigfd, abuf)) != 0) {
+	if ((r = sshbuf_load_file(signature, &abuf)) != 0) {
 		error("Couldn't read signature file: %s", ssh_err(r));
 		goto done;
 	}
@@ -2797,8 +2775,6 @@ done:
 	} else {
 		fprintf(stderr, "No principal matched.\n");
 	}
-	if (sigfd != -1)
-		close(sigfd);
 	sshbuf_free(sigbuf);
 	sshbuf_free(abuf);
 	sshkey_free(sign_key);

@@ -292,6 +292,15 @@ sshbuf_find(const struct sshbuf *b, size_t start_offset,
  */
 char *sshbuf_dup_string(struct sshbuf *buf);
 
+/*
+ * Fill a buffer from a file descriptor or filename. Both allocate the
+ * buffer for the caller.
+ */
+int sshbuf_load_fd(int, struct sshbuf **)
+    __attribute__((__nonnull__ (2)));
+int sshbuf_load_file(const char *, struct sshbuf **)
+    __attribute__((__nonnull__ (2)));
+
 /* Macros for decoding/encoding integers */
 #define PEEK_U64(p) \
 	(((u_int64_t)(((const u_char *)(p))[0]) << 56) | \

@@ -3,7 +3,7 @@
 .PATH:		${.CURDIR}/..
 
 SRCS=	sftp-server.c sftp-common.c sftp-server-main.c sftp-realpath.c
-SRCS+=	fatal.c
+SRCS+=	atomicio.c fatal.c
 SRCS+=	${SRCS_BASE} ${SRCS_UTL}
 
 PROG=	sftp-server

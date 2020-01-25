@@ -35,7 +35,6 @@ struct sshkey;
 
 int sshkey_save_private(struct sshkey *, const char *,
     const char *, const char *, int, const char *, int);
-int sshkey_load_file(int, struct sshbuf *);
 int sshkey_load_cert(const char *, struct sshkey **);
 int sshkey_load_public(const char *, struct sshkey **, char **);
 int sshkey_load_private(const char *, const char *, struct sshkey **, char **);

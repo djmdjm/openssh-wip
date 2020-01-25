@@ -17,19 +17,24 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
+
+#include <ctype.h>
 #include <errno.h>
-#include <stdlib.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <resolv.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
-#include <resolv.h>
-#include <ctype.h>
+#include <unistd.h>
 
 #include "ssherr.h"
 #define SSHBUF_INTERNAL
 #include "sshbuf.h"
+#include "atomicio.h"
 
 void
 sshbuf_dump_data(const void *s, size_t len, FILE *f)
@@ -225,3 +230,72 @@ sshbuf_find(const struct sshbuf *b, size_t start_offset,
 		*offsetp = (const u_char *)p - sshbuf_ptr(b);
 	return 0;
 }
+
+/* Load a file from a fd into a buffer */
+int
+sshbuf_load_fd(int fd, struct sshbuf **blobp)
+{
+	u_char buf[4096];
+	size_t len;
+	struct stat st;
+	int r;
+	struct sshbuf *blob;
+
+	*blobp = NULL;
+
+	if (fstat(fd, &st) == -1)
+		return SSH_ERR_SYSTEM_ERROR;
+	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
+	    st.st_size > SSHBUF_SIZE_MAX)
+		return SSH_ERR_INVALID_FORMAT;
+	if ((blob = sshbuf_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	for (;;) {
+		if ((len = atomicio(read, fd, buf, sizeof(buf))) == 0) {
+			if (errno == EPIPE)
+				break;
+			r = SSH_ERR_SYSTEM_ERROR;
+			goto out;
+		}
+		if ((r = sshbuf_put(blob, buf, len)) != 0)
+			goto out;
+		if (sshbuf_len(blob) > SSHBUF_SIZE_MAX) {
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+	}
+	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
+	    st.st_size != (off_t)sshbuf_len(blob)) {
+		r = SSH_ERR_FILE_CHANGED;
+		goto out;
+	}
+	/* success */
+	*blobp = blob;
+	blob = NULL; /* transferred */
+	r = 0;
+ out:
+	explicit_bzero(buf, sizeof(buf));
+	sshbuf_free(blob);
+	return r;
+}
+
+int
+sshbuf_load_file(const char *path, struct sshbuf **bufp)
+{
+	int r, fd, oerrno;
+
+	*bufp = NULL;
+	if ((fd = open(path, O_RDONLY)) == -1)
+		return SSH_ERR_SYSTEM_ERROR;
+	if ((r = sshbuf_load_fd(fd, bufp)) != 0)
+		goto out;
+	/* success */
+	r = 0;
+ out:
+	oerrno = errno;
+	close(fd);
+	if (r != 0)
+		errno = oerrno;
+	return r;
+}
+

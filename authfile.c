@@ -90,49 +90,6 @@ sshkey_save_private(struct sshkey *key, const char *filename,
 	return r;
 }
 
-/* Load a key from a fd into a buffer */
-int
-sshkey_load_file(int fd, struct sshbuf *blob)
-{
-	u_char buf[1024];
-	size_t len;
-	struct stat st;
-	int r;
-
-	if (fstat(fd, &st) == -1)
-		return SSH_ERR_SYSTEM_ERROR;
-	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
-	    st.st_size > MAX_KEY_FILE_SIZE)
-		return SSH_ERR_INVALID_FORMAT;
-	for (;;) {
-		if ((len = atomicio(read, fd, buf, sizeof(buf))) == 0) {
-			if (errno == EPIPE)
-				break;
-			r = SSH_ERR_SYSTEM_ERROR;
-			goto out;
-		}
-		if ((r = sshbuf_put(blob, buf, len)) != 0)
-			goto out;
-		if (sshbuf_len(blob) > MAX_KEY_FILE_SIZE) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
-	}
-	if ((st.st_mode & (S_IFSOCK|S_IFCHR|S_IFIFO)) == 0 &&
-	    st.st_size != (off_t)sshbuf_len(blob)) {
-		r = SSH_ERR_FILE_CHANGED;
-		goto out;
-	}
-	r = 0;
-
- out:
-	explicit_bzero(buf, sizeof(buf));
-	if (r != 0)
-		sshbuf_reset(blob);
-	return r;
-}
-
-
 /* XXX remove error() calls from here? */
 int
 sshkey_perm_ok(int fd, const char *filename)
@@ -194,11 +151,7 @@ sshkey_load_private_type_fd(int fd, int type, const char *passphrase,
 
 	if (keyp != NULL)
 		*keyp = NULL;
-	if ((buffer = sshbuf_new()) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	if ((r = sshkey_load_file(fd, buffer)) != 0 ||
+	if ((r = sshbuf_load_fd(fd, &buffer)) != 0 ||
 	    (r = sshkey_parse_private_fileblob_type(buffer, type,
 	    passphrase, keyp, commentp)) != 0)
 		goto out;
@@ -229,12 +182,7 @@ sshkey_load_private(const char *filename, const char *passphrase,
 		r = SSH_ERR_KEY_BAD_PERMISSIONS;
 		goto out;
 	}
-
-	if ((buffer = sshbuf_new()) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	if ((r = sshkey_load_file(fd, buffer)) != 0 ||
+	if ((r = sshbuf_load_fd(fd, &buffer)) != 0 ||
 	    (r = sshkey_parse_private_fileblob(buffer, passphrase, keyp,
 	    commentp)) != 0)
 		goto out;
