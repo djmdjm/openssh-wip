@@ -2372,7 +2372,7 @@ do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
 	struct ssh_krl *krl;
 	struct stat sb;
 	struct sshkey *ca = NULL;
-	int fd, i, r, wild_ca = 0;
+	int i, r, wild_ca = 0;
 	char *tmp;
 	struct sshbuf *kbuf;
 
@@ -2414,12 +2414,8 @@ do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
 		fatal("sshbuf_new failed");
 	if (ssh_krl_to_blob(krl, kbuf, NULL, 0) != 0)
 		fatal("Couldn't generate KRL");
-	if ((fd = open(identity_file, O_WRONLY|O_CREAT|O_TRUNC, 0644)) == -1)
-		fatal("open %s: %s", identity_file, strerror(errno));
-	if (atomicio(vwrite, fd, sshbuf_mutable_ptr(kbuf), sshbuf_len(kbuf)) !=
-	    sshbuf_len(kbuf))
+	if ((r = sshbuf_write_file(identity_file, kbuf)) != 0)
 		fatal("write %s: %s", identity_file, strerror(errno));
-	close(fd);
 	sshbuf_free(kbuf);
 	ssh_krl_free(krl);
 	sshkey_free(ca);

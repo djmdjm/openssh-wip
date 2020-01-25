@@ -301,6 +301,13 @@ int sshbuf_load_fd(int, struct sshbuf **)
 int sshbuf_load_file(const char *, struct sshbuf **)
     __attribute__((__nonnull__ (2)));
 
+/*
+ * Write a buffer to a path, creating/truncating as needed (mode 0644,
+ * subject to umask). The buffer contents are not modified.
+ */
+int sshbuf_write_file(const char *path, struct sshbuf *buf)
+    __attribute__((__nonnull__ (2)));
+
 /* Macros for decoding/encoding integers */
 #define PEEK_U64(p) \
 	(((u_int64_t)(((const u_char *)(p))[0]) << 56) | \

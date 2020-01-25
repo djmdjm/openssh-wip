@@ -299,3 +299,20 @@ sshbuf_load_file(const char *path, struct sshbuf **bufp)
 	return r;
 }
 
+int
+sshbuf_write_file(const char *path, struct sshbuf *buf)
+{
+	int fd, oerrno;
+
+	if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)) == -1)
+		return SSH_ERR_SYSTEM_ERROR;
+	if (atomicio(vwrite, fd, sshbuf_mutable_ptr(buf),
+	    sshbuf_len(buf)) != sshbuf_len(buf) || close(fd) != 0) {
+		oerrno = errno;
+		close(fd);
+		unlink(path);
+		errno = oerrno;
+		return SSH_ERR_SYSTEM_ERROR;
+	}
+	return 0;
+}
