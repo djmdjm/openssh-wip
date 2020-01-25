@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-pkcs11.c,v 1.46 2019/10/01 10:22:53 djm Exp $ */
+/* $OpenBSD: ssh-pkcs11.c,v 1.47 2020/01/25 00:03:36 djm Exp $ */
 /*
  * Copyright (c) 2010 Markus Friedl.  All rights reserved.
  * Copyright (c) 2014 Pedro Martelletto. All rights reserved.
@@ -949,13 +949,12 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	X509_NAME_free(x509_name);
 
 	cp = cert_attr[2].pValue;
-	if ((x509 = d2i_X509(&x509, &cp, cert_attr[2].ulValueLen)) == NULL) {
+	if ((x509 = d2i_X509(NULL, &cp, cert_attr[2].ulValueLen)) == NULL) {
 		error("d2i_x509 failed");
 		goto out;
 	}
 
-	evp = X509_get_pubkey(x509);
-	if (evp == NULL) {
+	if ((evp = X509_get_pubkey(x509)) == NULL) {
 		error("X509_get_pubkey failed");
 		goto out;
 	}
