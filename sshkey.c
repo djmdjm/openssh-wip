@@ -3341,13 +3341,33 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 	if ((r = sshbuf_get_cstring(buf, &tname, NULL)) != 0)
 		goto out;
 	type = sshkey_type_from_name(tname);
-	switch (type) {
-#ifdef WITH_OPENSSL
-	case KEY_DSA:
+	if (sshkey_type_is_cert(type)) {
+		/*
+		 * Certificate key private keys begin with the certificate
+		 * itself. Make sure this matches the type of the enclosing
+		 * private key.
+		 */
+		if ((r = sshkey_froms(buf, &k)) != 0)
+			goto out;
+		if (k->type != type) {
+			r = SSH_ERR_KEY_CERT_MISMATCH;
+			goto out;
+		}
+		/* For ECDSA keys, the group must match too */
+		if (k->type == KEY_ECDSA &&
+		    k->ecdsa_nid != sshkey_ecdsa_nid_from_name(tname)) {
+			r = SSH_ERR_KEY_CERT_MISMATCH;
+			goto out;
+		}
+	} else {
 		if ((k = sshkey_new(type)) == NULL) {
 			r = SSH_ERR_ALLOC_FAIL;
 			goto out;
 		}
+	}
+	switch (type) {
+#ifdef WITH_OPENSSL
+	case KEY_DSA:
 		if ((r = sshbuf_get_bignum2(buf, &dsa_p)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &dsa_q)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &dsa_g)) != 0 ||
@@ -3366,13 +3386,8 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		dsa_pub_key = dsa_priv_key = NULL; /* transferred */
 		break;
 	case KEY_DSA_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0 ||
-		    (r = sshbuf_get_bignum2(buf, &dsa_priv_key)) != 0)
+		if ((r = sshbuf_get_bignum2(buf, &dsa_priv_key)) != 0)
 			goto out;
-		if (k->type != type) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
 		if (!DSA_set0_key(k->dsa, NULL, dsa_priv_key)) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
@@ -3380,10 +3395,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		dsa_priv_key = NULL; /* transferred */
 		break;
 	case KEY_ECDSA:
-		if ((k = sshkey_new(type)) == NULL) {
-			r = SSH_ERR_ALLOC_FAIL;
-			goto out;
-		}
 		if ((k->ecdsa_nid = sshkey_ecdsa_nid_from_name(tname)) == -1) {
 			r = SSH_ERR_INVALID_ARGUMENT;
 			goto out;
@@ -3412,14 +3423,8 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 			goto out;
 		break;
 	case KEY_ECDSA_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0 ||
-		    (r = sshbuf_get_bignum2(buf, &exponent)) != 0)
+		if ((r = sshbuf_get_bignum2(buf, &exponent)) != 0)
 			goto out;
-		if (k->type != type ||
-		    k->ecdsa_nid != sshkey_ecdsa_nid_from_name(tname)) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
 		if (EC_KEY_set_private_key(k->ecdsa, exponent) != 1) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
@@ -3430,10 +3435,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 			goto out;
 		break;
 	case KEY_ECDSA_SK:
-		if ((k = sshkey_new(type)) == NULL) {
-			r = SSH_ERR_ALLOC_FAIL;
-			goto out;
-		}
 		if ((k->ecdsa_nid = sshkey_ecdsa_nid_from_name(tname)) == -1) {
 			r = SSH_ERR_INVALID_ARGUMENT;
 			goto out;
@@ -3466,8 +3467,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 			goto out;
 		break;
 	case KEY_ECDSA_SK_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0)
-			goto out;
 		if ((k->sk_key_handle = sshbuf_new()) == NULL ||
 		    (k->sk_reserved = sshbuf_new()) == NULL) {
 			r = SSH_ERR_ALLOC_FAIL;
@@ -3484,10 +3483,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 			goto out;
 		break;
 	case KEY_RSA:
-		if ((k = sshkey_new(type)) == NULL) {
-			r = SSH_ERR_ALLOC_FAIL;
-			goto out;
-		}
 		if ((r = sshbuf_get_bignum2(buf, &rsa_n)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &rsa_e)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &rsa_d)) != 0 ||
@@ -3511,16 +3506,11 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 			goto out;
 		break;
 	case KEY_RSA_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0 ||
-		    (r = sshbuf_get_bignum2(buf, &rsa_d)) != 0 ||
+		if ((r = sshbuf_get_bignum2(buf, &rsa_d)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &rsa_iqmp)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &rsa_p)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &rsa_q)) != 0)
 			goto out;
-		if (k->type != type) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
 		if (!RSA_set0_key(k->rsa, NULL, NULL, rsa_d)) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
@@ -3538,10 +3528,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		break;
 #endif /* WITH_OPENSSL */
 	case KEY_ED25519:
-		if ((k = sshkey_new(type)) == NULL) {
-			r = SSH_ERR_ALLOC_FAIL;
-			goto out;
-		}
 		if ((r = sshbuf_get_string(buf, &ed25519_pk, &pklen)) != 0 ||
 		    (r = sshbuf_get_string(buf, &ed25519_sk, &sklen)) != 0)
 			goto out;
@@ -3554,14 +3540,9 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		ed25519_pk = ed25519_sk = NULL;
 		break;
 	case KEY_ED25519_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0 ||
-		    (r = sshbuf_get_string(buf, &ed25519_pk, &pklen)) != 0 ||
+		if ((r = sshbuf_get_string(buf, &ed25519_pk, &pklen)) != 0 ||
 		    (r = sshbuf_get_string(buf, &ed25519_sk, &sklen)) != 0)
 			goto out;
-		if (k->type != type) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
 		if (pklen != ED25519_PK_SZ || sklen != ED25519_SK_SZ) {
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
@@ -3571,10 +3552,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		ed25519_pk = ed25519_sk = NULL; /* transferred */
 		break;
 	case KEY_ED25519_SK:
-		if ((k = sshkey_new(type)) == NULL) {
-			r = SSH_ERR_ALLOC_FAIL;
-			goto out;
-		}
 		if ((r = sshbuf_get_string(buf, &ed25519_pk, &pklen)) != 0)
 			goto out;
 		if (pklen != ED25519_PK_SZ) {
@@ -3596,13 +3573,8 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		ed25519_pk = NULL;
 		break;
 	case KEY_ED25519_SK_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0 ||
-		    (r = sshbuf_get_string(buf, &ed25519_pk, &pklen)) != 0)
+		if ((r = sshbuf_get_string(buf, &ed25519_pk, &pklen)) != 0)
 			goto out;
-		if (k->type != type) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
 		if (pklen != ED25519_PK_SZ) {
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
@@ -3623,10 +3595,6 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		break;
 #ifdef WITH_XMSS
 	case KEY_XMSS:
-		if ((k = sshkey_new(type)) == NULL) {
-			r = SSH_ERR_ALLOC_FAIL;
-			goto out;
-		}
 		if ((r = sshbuf_get_cstring(buf, &xmss_name, NULL)) != 0 ||
 		    (r = sshkey_xmss_init(k, xmss_name)) != 0 ||
 		    (r = sshbuf_get_string(buf, &xmss_pk, &pklen)) != 0 ||
@@ -3645,16 +3613,12 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 			goto out;
 		break;
 	case KEY_XMSS_CERT:
-		if ((r = sshkey_froms(buf, &k)) != 0 ||
-		    (r = sshbuf_get_cstring(buf, &xmss_name, NULL)) != 0 ||
+		if ((r = sshbuf_get_cstring(buf, &xmss_name, NULL)) != 0 ||
 		    (r = sshbuf_get_string(buf, &xmss_pk, &pklen)) != 0 ||
 		    (r = sshbuf_get_string(buf, &xmss_sk, &sklen)) != 0)
 			goto out;
-		if (k->type != type || strcmp(xmss_name, k->xmss_name) != 0) {
-			r = SSH_ERR_INVALID_FORMAT;
-			goto out;
-		}
-		if (pklen != sshkey_xmss_pklen(k) ||
+		if (strcmp(xmss_name, k->xmss_name) != 0 ||
+		    pklen != sshkey_xmss_pklen(k) ||
 		    sklen != sshkey_xmss_sklen(k)) {
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
