@@ -3371,20 +3371,19 @@ sshkey_private_deserialize(struct sshbuf *buf, struct sshkey **kp)
 		if ((r = sshbuf_get_bignum2(buf, &dsa_p)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &dsa_q)) != 0 ||
 		    (r = sshbuf_get_bignum2(buf, &dsa_g)) != 0 ||
-		    (r = sshbuf_get_bignum2(buf, &dsa_pub_key)) != 0 ||
-		    (r = sshbuf_get_bignum2(buf, &dsa_priv_key)) != 0)
+		    (r = sshbuf_get_bignum2(buf, &dsa_pub_key)) != 0)
 			goto out;
 		if (!DSA_set0_pqg(k->dsa, dsa_p, dsa_q, dsa_g)) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
 		}
 		dsa_p = dsa_q = dsa_g = NULL; /* transferred */
-		if (!DSA_set0_key(k->dsa, dsa_pub_key, dsa_priv_key)) {
+		if (!DSA_set0_key(k->dsa, dsa_pub_key, NULL)) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
 		}
-		dsa_pub_key = dsa_priv_key = NULL; /* transferred */
-		break;
+		dsa_pub_key = NULL; /* transferred */
+		/* FALLTHROUGH */
 	case KEY_DSA_CERT:
 		if ((r = sshbuf_get_bignum2(buf, &dsa_priv_key)) != 0)
 			goto out;
