@@ -71,6 +71,8 @@ struct sshauthopt {
 
 	/* Key requires user presence asserted */
 	int no_require_user_presence;
+	/* Key requires user verification (e.g. PIN) */
+	int require_verify;
 };
 
 struct sshauthopt *sshauthopt_new(void);

@@ -1460,6 +1460,8 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 				continue;
 			if (strcasecmp(arg, "touch-required") == 0)
 				value |= PUBKEYAUTH_TOUCH_REQUIRED;
+			else if (strcasecmp(arg, "verify-required") == 0)
+				value |= PUBKEYAUTH_VERIFY_REQUIRED;
 			else {
 				fatal("%s line %d: unsupported "
 				    "PubkeyAuthOptions option %s",
@@ -2857,5 +2859,7 @@ dump_config(ServerOptions *o)
 		printf(" none");
 	if (o->pubkey_auth_options & PUBKEYAUTH_TOUCH_REQUIRED)
 		printf(" touch-required");
+	if (o->pubkey_auth_options & PUBKEYAUTH_VERIFY_REQUIRED)
+		printf(" verify-required");
 	printf("\n");
 }

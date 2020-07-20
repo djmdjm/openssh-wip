@@ -604,6 +604,13 @@ This option only makes sense for the FIDO authenticator algorithms
 .Cm ecdsa-sk
 and
 .Cm ed25519-sk .
+.It Cm verify-required
+Require that signatures made using this key attest that they verified
+the user, e.g. via a PIN.
+This option only makes sense for the FIDO authenticator algorithms
+.Cm ecdsa-sk
+and
+.Cm ed25519-sk .
 .It Cm restrict
 Enable all restrictions, i.e. disable port, agent and X11 forwarding,
 as well as disabling PTY allocation
