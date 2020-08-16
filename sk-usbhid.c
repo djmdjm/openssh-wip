@@ -37,6 +37,7 @@
 #ifndef SK_STANDALONE
 # include "log.h"
 # include "xmalloc.h"
+# include "misc.h"
 /*
  * If building as part of OpenSSH, then rename exported functions.
  * This must be done before including sk-api.h.
@@ -57,7 +58,10 @@
 #define SSH_FIDO_INIT_ARG	0
 #endif
 
-#define MAX_FIDO_DEVICES	256
+#define MAX_FIDO_DEVICES	8
+#define FIDO2_POLL_MS		50
+#define U2F_POLL_MS		300
+#define SELECT_MS		15000
 
 /* Compatibility with OpenSSH 1.0.x */
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L)
@@ -67,6 +71,11 @@
 		(*ps) = sig->s; \
 	} while (0)
 #endif
+
+struct sk_usbhid {
+	fido_dev_t *dev;
+	char *path;
+};
 
 /* Return the version of the middleware API */
 uint32_t sk_api_version(void);
@@ -121,37 +130,214 @@ sk_api_version(void)
 	return SSH_SK_VERSION_MAJOR;
 }
 
-/* Select the first identified FIDO device attached to the system */
-static char *
-pick_first_device(void)
+static struct sk_usbhid *
+sk_open(const char *path)
 {
-	char *ret = NULL;
-	fido_dev_info_t *devlist = NULL;
-	size_t olen = 0;
+	struct sk_usbhid *sk;
 	int r;
-	const fido_dev_info_t *di;
 
-	if ((devlist = fido_dev_info_new(1)) == NULL) {
-		skdebug(__func__, "fido_dev_info_new failed");
+	if (path == NULL) {
+		skdebug(__func__, "path == NULL");
+		return NULL;
+	}
+	if ((sk = calloc(1, sizeof(*sk))) == NULL) {
+		skdebug(__func__, "calloc sk failed");
+		return NULL;
+	}
+	if ((sk->path = strdup(path)) == NULL) {
+		skdebug(__func__, "strdup path failed");
+		free(sk);
+		return NULL;
+	}
+	if ((sk->dev = fido_dev_new()) == NULL) {
+		skdebug(__func__, "fido_dev_new failed");
+		free(sk->path);
+		free(sk);
+		return NULL;
+	}
+	if ((r = fido_dev_open(sk->dev, sk->path)) != FIDO_OK) {
+		skdebug(__func__, "fido_dev_open %s failed: %s", sk->path,
+		    fido_strerr(r));
+		fido_dev_free(&sk->dev);
+		free(sk->path);
+		free(sk);
+		return NULL;
+	}
+	return sk;
+}
+
+static void
+sk_close(struct sk_usbhid *sk)
+{
+	if (sk == NULL)
+		return;
+	fido_dev_cancel(sk->dev); /* cancel any pending operation */
+	fido_dev_close(sk->dev);
+	fido_dev_free(&sk->dev);
+	free(sk->path);
+	free(sk);
+}
+
+static struct sk_usbhid **
+sk_openv(const fido_dev_info_t *devlist, size_t ndevs, size_t *nopen)
+{
+	const fido_dev_info_t *di;
+	struct sk_usbhid **skv;
+	size_t i;
+
+	*nopen = 0;
+	if ((skv = calloc(ndevs, sizeof(*skv))) == NULL) {
+		skdebug(__func__, "calloc skv failed");
+		return NULL;
+	}
+	for (i = 0; i < ndevs; i++) {
+		if ((di = fido_dev_info_ptr(devlist, i)) == NULL)
+			skdebug(__func__, "fido_dev_info_ptr failed");
+		else if ((skv[*nopen] = sk_open(fido_dev_info_path(di))) == NULL)
+			skdebug(__func__, "sk_open failed");
+		else
+			(*nopen)++;
+	}
+	if (*nopen == 0) {
+		for (i = 0; i < ndevs; i++)
+			sk_close(skv[i]);
+		free(skv);
+		skv = NULL;
+	}
+
+	return skv;
+}
+
+static void
+sk_closev(struct sk_usbhid **skv, size_t nsk)
+{
+	size_t i;
+
+	for (i = 0; i < nsk; i++)
+		sk_close(skv[i]);
+	free(skv);
+}
+
+static int
+sk_touch_begin(struct sk_usbhid **skv, size_t nsk)
+{
+	size_t i, ok = 0;
+	int r;
+
+	for (i = 0; i < nsk; i++)
+		if ((r = fido_dev_get_touch_begin(skv[i]->dev)) != FIDO_OK)
+			skdebug(__func__, "fido_dev_get_touch_begin %s failed:"
+			    " %s", skv[i]->path, fido_strerr(r));
+		else
+			ok++;
+
+	return ok ? 0 : -1;
+}
+
+static int
+sk_touch_poll(struct sk_usbhid **skv, size_t nsk, int *touch, size_t *idx)
+{
+	size_t npoll, i;
+	int ms, r;
+
+	npoll = nsk;
+	for (i = 0; i < nsk; i++) {
+		if (skv[i] == NULL)
+			continue; /* device discarded */
+		ms = fido_dev_is_fido2(skv[i]->dev) ?
+		    FIDO2_POLL_MS : U2F_POLL_MS;
+		skdebug(__func__, "polling %s", skv[i]->path);
+		if ((r = fido_dev_get_touch_status(skv[i]->dev, touch,
+		    ms)) != FIDO_OK) {
+			skdebug(__func__, "fido_dev_get_touch_status %s: %s",
+			    skv[i]->path, fido_strerr(r));
+			sk_close(skv[i]); /* discard device */
+			if (--npoll == 0) {
+				skdebug(__func__, "no device left to poll");
+				return -1;
+			}
+		} else if (*touch) {
+			*idx = i;
+			return 0;
+		}
+	}
+	*touch = 0;
+	return 0;
+}
+
+static struct sk_usbhid *
+sk_select(const fido_dev_info_t *devlist, size_t ndevs)
+{
+	struct sk_usbhid **skv, *sk;
+	struct timeval tv_start, tv_now, tv_delta;
+	size_t skvcnt, idx;
+	int touch, ms_remain;
+
+	if (ndevs == 0)
+		return NULL; /* nothing to do */
+	if ((skv = sk_openv(devlist, ndevs, &skvcnt)) == NULL) {
+		skdebug(__func__, "sk_openv failed");
+		return NULL;
+	}
+	sk = NULL;
+	if (skvcnt < 2) {
+		if (skvcnt == 1) {
+			/* single candidate */
+			sk = skv[0];
+			skv[0] = NULL;
+		}
 		goto out;
 	}
-	if ((r = fido_dev_info_manifest(devlist, 1, &olen)) != FIDO_OK) {
+	if (sk_touch_begin(skv, skvcnt) == -1) {
+		skdebug(__func__, "sk_touch_begin failed");
+		goto out;
+	}
+	monotime_tv(&tv_start);
+	do {
+		if (sk_touch_poll(skv, skvcnt, &touch, &idx) == -1) {
+			skdebug(__func__, "sk_touch_poll failed");
+			goto out;
+		}
+		if (touch) {
+			sk = skv[idx];
+			skv[idx] = NULL;
+			goto out;
+		}
+		monotime_tv(&tv_now);
+		timersub(&tv_now, &tv_start, &tv_delta);
+		ms_remain = SELECT_MS - tv_delta.tv_sec * 1000 -
+		    tv_delta.tv_usec / 1000;
+	} while (ms_remain >= U2F_POLL_MS);
+	skdebug(__func__, "timeout");
+out:
+	sk_closev(skv, skvcnt);
+	return sk;
+}
+
+static struct sk_usbhid *
+sk_probe(void)
+{
+	struct sk_usbhid *sk;
+	fido_dev_info_t *devlist;
+	size_t ndevs;
+	int r;
+
+	if ((devlist = fido_dev_info_new(MAX_FIDO_DEVICES)) == NULL) {
+		skdebug(__func__, "fido_dev_info_new failed");
+		return NULL;
+	}
+	if ((r = fido_dev_info_manifest(devlist, MAX_FIDO_DEVICES,
+	    &ndevs)) != FIDO_OK) {
 		skdebug(__func__, "fido_dev_info_manifest failed: %s",
 		    fido_strerr(r));
-		goto out;
+		fido_dev_info_free(&devlist, MAX_FIDO_DEVICES);
+		return NULL;
 	}
-	if (olen != 1) {
-		skdebug(__func__, "fido_dev_info_manifest bad len %zu", olen);
-		goto out;
-	}
-	di = fido_dev_info_ptr(devlist, 0);
-	if ((ret = strdup(fido_dev_info_path(di))) == NULL) {
-		skdebug(__func__, "fido_dev_info_path failed");
-		goto out;
-	}
- out:
-	fido_dev_info_free(&devlist, 1);
-	return ret;
+	skdebug(__func__, "%zu device(s) detected", ndevs);
+	if ((sk = sk_select(devlist, ndevs)) == NULL)
+		skdebug(__func__, "sk_select failed");
+	fido_dev_info_free(&devlist, MAX_FIDO_DEVICES);
+	return sk;
 }
 
 /* Check if the specified key handle exists on a given device. */
@@ -488,9 +674,9 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
     struct sk_option **options, struct sk_enroll_response **enroll_response)
 {
 	fido_cred_t *cred = NULL;
-	fido_dev_t *dev = NULL;
 	const uint8_t *ptr;
 	uint8_t user_id[32];
+	struct sk_usbhid *sk = NULL;
 	struct sk_enroll_response *response = NULL;
 	size_t len;
 	int credprot;
@@ -505,12 +691,12 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 		skdebug(__func__, "enroll_response == NULL");
 		goto out;
 	}
+	*enroll_response = NULL;
 	memset(user_id, 0, sizeof(user_id));
-	if (check_enroll_options(options, &device,
-	    user_id, sizeof(user_id)) != 0)
+	if (check_enroll_options(options, &device, user_id,
+	    sizeof(user_id)) != 0)
 		goto out; /* error already logged */
 
-	*enroll_response = NULL;
 	switch(alg) {
 #ifdef WITH_OPENSSL
 	case SSH_SK_ECDSA:
@@ -524,12 +710,15 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 		skdebug(__func__, "unsupported key type %d", alg);
 		goto out;
 	}
-	if (device == NULL && (device = pick_first_device()) == NULL) {
-		ret = SSH_SK_ERR_DEVICE_NOT_FOUND;
-		skdebug(__func__, "pick_first_device failed");
+	if (device != NULL)
+		sk = sk_open(device);
+	else
+		sk = sk_probe();
+	if (sk == NULL) {
+		skdebug(__func__, "failed to find sk");
 		goto out;
 	}
-	skdebug(__func__, "using device %s", device);
+	skdebug(__func__, "using device %s", sk->path);
 	if ((cred = fido_cred_new()) == NULL) {
 		skdebug(__func__, "fido_cred_new failed");
 		goto out;
@@ -558,16 +747,9 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 		skdebug(__func__, "fido_cred_set_rp: %s", fido_strerr(r));
 		goto out;
 	}
-	if ((dev = fido_dev_new()) == NULL) {
-		skdebug(__func__, "fido_dev_new failed");
-		goto out;
-	}
-	if ((r = fido_dev_open(dev, device)) != FIDO_OK) {
-		skdebug(__func__, "fido_dev_open: %s", fido_strerr(r));
-		goto out;
-	}
 	if ((flags & (SSH_SK_RESIDENT_KEY|SSH_SK_USER_VERIFICATION_REQD)) != 0) {
-		if (check_sk_extensions(dev, "credProtect", &credprot) < 0) {
+		if (check_sk_extensions(sk->dev,
+		    "credProtect", &credprot) < 0) {
 			skdebug(__func__, "check_sk_extensions failed");
 			goto out;
 		}
@@ -589,7 +771,7 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 			goto out;
 		}
 	}
-	if ((r = fido_dev_make_cred(dev, cred, pin)) != FIDO_OK) {
+	if ((r = fido_dev_make_cred(sk->dev, cred, pin)) != FIDO_OK) {
 		skdebug(__func__, "fido_dev_make_cred: %s", fido_strerr(r));
 		ret = fidoerr_to_skerr(r);
 		goto out;
@@ -656,13 +838,8 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 		free(response->attestation_cert);
 		free(response);
 	}
-	if (dev != NULL) {
-		fido_dev_close(dev);
-		fido_dev_free(&dev);
-	}
-	if (cred != NULL) {
-		fido_cred_free(&cred);
-	}
+	sk_close(sk);
+	fido_cred_free(&cred);
 	return ret;
 }
 
