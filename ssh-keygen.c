@@ -3607,6 +3607,11 @@ main(int argc, char **argv)
 				fatal("Too many incorrect PINs");
 			passphrase = read_passphrase("Enter PIN for "
 			    "authenticator: ", RP_ALLOW_STDIN);
+			if (!quiet) {
+				printf("You may need to touch your "
+				    "authenticator (again) to authorize "
+				    "key generation.\n");
+			}
 		}
 		if (passphrase != NULL) {
 			freezero(passphrase, strlen(passphrase));
