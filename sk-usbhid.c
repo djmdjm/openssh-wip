@@ -1075,11 +1075,10 @@ sk_sign(uint32_t alg, const uint8_t *data, size_t datalen,
 }
 
 static int
-read_rks(const char *devpath, const char *pin,
+read_rks(struct sk_usbhid *sk, const char *pin,
     struct sk_resident_key ***rksp, size_t *nrksp)
 {
 	int ret = SSH_SK_ERR_GENERAL, r = -1;
-	fido_dev_t *dev = NULL;
 	fido_credman_metadata_t *metadata = NULL;
 	fido_credman_rp_t *rp = NULL;
 	fido_credman_rk_t *rk = NULL;
@@ -1087,30 +1086,25 @@ read_rks(const char *devpath, const char *pin,
 	const fido_cred_t *cred;
 	struct sk_resident_key *srk = NULL, **tmp;
 
-	if ((dev = fido_dev_new()) == NULL) {
-		skdebug(__func__, "fido_dev_new failed");
-		return ret;
-	}
-	if ((r = fido_dev_open(dev, devpath)) != FIDO_OK) {
-		skdebug(__func__, "fido_dev_open %s failed: %s",
-		    devpath, fido_strerr(r));
-		fido_dev_free(&dev);
-		return ret;
+	if (pin == NULL) {
+		skdebug(__func__, "no PIN specified");
+		ret = SSH_SK_ERR_PIN_REQUIRED;
+		goto out;
 	}
 	if ((metadata = fido_credman_metadata_new()) == NULL) {
 		skdebug(__func__, "alloc failed");
 		goto out;
 	}
 
-	if ((r = fido_credman_get_dev_metadata(dev, metadata, pin)) != 0) {
+	if ((r = fido_credman_get_dev_metadata(sk->dev, metadata, pin)) != 0) {
 		if (r == FIDO_ERR_INVALID_COMMAND) {
 			skdebug(__func__, "device %s does not support "
-			    "resident keys", devpath);
+			    "resident keys", sk->path);
 			ret = 0;
 			goto out;
 		}
 		skdebug(__func__, "get metadata for %s failed: %s",
-		    devpath, fido_strerr(r));
+		    sk->path, fido_strerr(r));
 		ret = fidoerr_to_skerr(r);
 		goto out;
 	}
@@ -1121,14 +1115,14 @@ read_rks(const char *devpath, const char *pin,
 		skdebug(__func__, "alloc rp failed");
 		goto out;
 	}
-	if ((r = fido_credman_get_dev_rp(dev, rp, pin)) != 0) {
+	if ((r = fido_credman_get_dev_rp(sk->dev, rp, pin)) != 0) {
 		skdebug(__func__, "get RPs for %s failed: %s",
-		    devpath, fido_strerr(r));
+		    sk->path, fido_strerr(r));
 		goto out;
 	}
 	nrp = fido_credman_rp_count(rp);
 	skdebug(__func__, "Device %s has resident keys for %zu RPs",
-	    devpath, nrp);
+	    sk->path, nrp);
 
 	/* Iterate over RP IDs that have resident keys */
 	for (i = 0; i < nrp; i++) {
@@ -1145,10 +1139,10 @@ read_rks(const char *devpath, const char *pin,
 			skdebug(__func__, "alloc rk failed");
 			goto out;
 		}
-		if ((r = fido_credman_get_dev_rk(dev, fido_credman_rp_id(rp, i),
-		    rk, pin)) != 0) {
+		if ((r = fido_credman_get_dev_rk(sk->dev,
+		    fido_credman_rp_id(rp, i), rk, pin)) != 0) {
 			skdebug(__func__, "get RKs for %s slot %zu failed: %s",
-			    devpath, i, fido_strerr(r));
+			    sk->path, i, fido_strerr(r));
 			goto out;
 		}
 		nrk = fido_credman_rk_count(rk);
@@ -1162,7 +1156,7 @@ read_rks(const char *devpath, const char *pin,
 				continue;
 			}
 			skdebug(__func__, "Device %s RP \"%s\" slot %zu: "
-			    "type %d flags 0x%02x prot 0x%02x", devpath,
+			    "type %d flags 0x%02x prot 0x%02x", sk->path,
 			    fido_credman_rp_id(rp, i), j, fido_cred_type(cred),
 			    fido_cred_flags(cred), fido_cred_prot(cred));
 
@@ -1221,8 +1215,6 @@ read_rks(const char *devpath, const char *pin,
 	}
 	fido_credman_rp_free(&rp);
 	fido_credman_rk_free(&rk);
-	fido_dev_close(dev);
-	fido_dev_free(&dev);
 	fido_credman_metadata_free(&metadata);
 	return ret;
 }
@@ -1233,10 +1225,11 @@ sk_load_resident_keys(const char *pin, struct sk_option **options,
 {
 	int ret = SSH_SK_ERR_GENERAL, r = -1;
 	fido_dev_info_t *devlist = NULL;
-	size_t i, ndev = 0, nrks = 0;
-	const fido_dev_info_t *di;
+	size_t i, nrks = 0;
 	struct sk_resident_key **rks = NULL;
+	struct sk_usbhid *sk = NULL;
 	char *device = NULL;
+
 	*rksp = NULL;
 	*nrksp = 0;
 
@@ -1244,40 +1237,19 @@ sk_load_resident_keys(const char *pin, struct sk_option **options,
 
 	if (check_sign_load_resident_options(options, &device) != 0)
 		goto out; /* error already logged */
-	if (device != NULL) {
-		skdebug(__func__, "trying %s", device);
-		if ((r = read_rks(device, pin, &rks, &nrks)) != 0) {
-			skdebug(__func__, "read_rks failed for %s", device);
-			ret = r;
-			goto out;
-		}
-	} else {
-		/* Try all devices */
-		if ((devlist = fido_dev_info_new(MAX_FIDO_DEVICES)) == NULL) {
-			skdebug(__func__, "fido_dev_info_new failed");
-			goto out;
-		}
-		if ((r = fido_dev_info_manifest(devlist,
-		    MAX_FIDO_DEVICES, &ndev)) != FIDO_OK) {
-			skdebug(__func__, "fido_dev_info_manifest failed: %s",
-			    fido_strerr(r));
-			goto out;
-		}
-		for (i = 0; i < ndev; i++) {
-			if ((di = fido_dev_info_ptr(devlist, i)) == NULL) {
-				skdebug(__func__, "no dev info at %zu", i);
-				continue;
-			}
-			skdebug(__func__, "trying %s", fido_dev_info_path(di));
-			if ((r = read_rks(fido_dev_info_path(di), pin,
-			    &rks, &nrks)) != 0) {
-				skdebug(__func__, "read_rks failed for %s",
-				    fido_dev_info_path(di));
-				/* remember last error */
-				ret = r;
-				continue;
-			}
-		}
+	if (device != NULL)
+		sk = sk_open(device);
+	else
+		sk = sk_probe();
+	if (sk == NULL) {
+		skdebug(__func__, "failed to find sk");
+		goto out;
+	}
+	skdebug(__func__, "trying %s", sk->path);
+	if ((r = read_rks(sk, pin, &rks, &nrks)) != 0) {
+		skdebug(__func__, "read_rks failed for %s", sk->path);
+		ret = r;
+		goto out;
 	}
 	/* success, unless we have no keys but a specific error */
 	if (nrks > 0 || ret == SSH_SK_ERR_GENERAL)
@@ -1287,7 +1259,7 @@ sk_load_resident_keys(const char *pin, struct sk_option **options,
 	rks = NULL;
 	nrks = 0;
  out:
-	free(device);
+	sk_close(sk);
 	for (i = 0; i < nrks; i++) {
 		free(rks[i]->application);
 		freezero(rks[i]->key.public_key, rks[i]->key.public_key_len);

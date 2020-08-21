@@ -2962,20 +2962,17 @@ do_download_sk(const char *skprovider, const char *device)
 	if (skprovider == NULL)
 		fatal("Cannot download keys without provider");
 
-	for (i = 0; i < 2; i++) {
-		if (i == 1) {
-			pin = read_passphrase("Enter PIN for authenticator: ",
-			    RP_ALLOW_STDIN);
-		}
-		if ((r = sshsk_load_resident(skprovider, device, pin,
-		    &keys, &nkeys)) != 0) {
-			if (i == 0 && r == SSH_ERR_KEY_WRONG_PASSPHRASE)
-				continue;
-			if (pin != NULL)
-				freezero(pin, strlen(pin));
-			error("Unable to load resident keys: %s", ssh_err(r));
-			return -1;
-		}
+	pin = read_passphrase("Enter PIN for authenticator: ", RP_ALLOW_STDIN);
+	if (!quiet) {
+		printf("You may need to touch your authenticator "
+		    "to authorize key download.\n");
+	}
+	if ((r = sshsk_load_resident(skprovider, device, pin,
+	    &keys, &nkeys)) != 0) {
+		if (pin != NULL)
+			freezero(pin, strlen(pin));
+		error("Unable to load resident keys: %s", ssh_err(r));
+		return -1;
 	}
 	if (nkeys == 0)
 		logit("No keys to download");

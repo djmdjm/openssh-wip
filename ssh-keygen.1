@@ -382,6 +382,8 @@ The default import format is
 Download resident keys from a FIDO authenticator.
 Public and private key files will be written to the current directory for
 each downloaded key.
+If multiple FIDO authenticators are attached, keys will be downloaded from
+the first touched authenticator.
 .It Fl k
 Generate a KRL file.
 In this mode,
