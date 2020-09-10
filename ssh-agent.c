@@ -91,7 +91,9 @@
 typedef enum {
 	AUTH_UNUSED,
 	AUTH_SOCKET,
-	AUTH_CONNECTION
+	AUTH_SOCKET_LOCAL,
+	AUTH_CONNECTION,
+	AUTH_CONNECTION_LOCAL,
 } sock_type;
 
 typedef struct {
@@ -132,9 +134,10 @@ time_t parent_alive_interval = 0;
 /* pid of process for which cleanup_socket is applicable */
 pid_t cleanup_pid = 0;
 
-/* pathname and directory for AUTH_SOCKET */
-char socket_name[PATH_MAX];
-char socket_dir[PATH_MAX];
+/* pathname and directory for AUTH_SOCKET and AUTH_SOCKET_LOCAL */
+static char socket_name[PATH_MAX];
+static char localsocket_name[PATH_MAX];
+static char socket_dir[PATH_MAX];
 
 /* Pattern-list of allowed PKCS#11/Security key paths */
 static char *allowed_providers;
@@ -493,7 +496,7 @@ reaper(void)
 }
 
 static void
-process_add_identity(SocketEntry *e)
+process_add_identity(SocketEntry *e, int islocal)
 {
 	Identity *id;
 	int success = 0, confirm = 0;
@@ -576,6 +579,11 @@ process_add_identity(SocketEntry *e)
 		if (!sshkey_is_sk(k)) {
 			error("Cannot add provider: %s is not an "
 			    "authenticator-hosted key", sshkey_type(k));
+			free(sk_provider);
+			goto send;
+		}
+		if (!islocal) {
+			error("Refusing add FIDO key from forwarded agent");
 			free(sk_provider);
 			goto send;
 		}
@@ -705,7 +713,7 @@ no_identities(SocketEntry *e)
 
 #ifdef ENABLE_PKCS11
 static void
-process_add_smartcard_key(SocketEntry *e)
+process_add_smartcard_key(SocketEntry *e, int islocal)
 {
 	char *provider = NULL, *pin = NULL, canonical_provider[PATH_MAX];
 	char **comments = NULL;
@@ -742,6 +750,10 @@ process_add_smartcard_key(SocketEntry *e)
 			error_f("Unknown constraint type %d", type);
 			goto send;
 		}
+	}
+	if (!islocal) {
+		error("Refusing add of smartcard key from forwarded agent");
+		goto send;
 	}
 	if (realpath(provider, canonical_provider) == NULL) {
 		verbose("failed PKCS#11 add of \"%.100s\": realpath: %s",
@@ -835,7 +847,7 @@ send:
  * returns 1 on success, 0 for incomplete messages or -1 on error.
  */
 static int
-process_message(u_int socknum)
+process_message(u_int socknum, int islocal)
 {
 	u_int msg_len;
 	u_char type;
@@ -905,7 +917,7 @@ process_message(u_int socknum)
 		break;
 	case SSH2_AGENTC_ADD_IDENTITY:
 	case SSH2_AGENTC_ADD_ID_CONSTRAINED:
-		process_add_identity(e);
+		process_add_identity(e, islocal);
 		break;
 	case SSH2_AGENTC_REMOVE_IDENTITY:
 		process_remove_identity(e);
@@ -916,7 +928,7 @@ process_message(u_int socknum)
 #ifdef ENABLE_PKCS11
 	case SSH_AGENTC_ADD_SMARTCARD_KEY:
 	case SSH_AGENTC_ADD_SMARTCARD_KEY_CONSTRAINED:
-		process_add_smartcard_key(e);
+		process_add_smartcard_key(e, islocal);
 		break;
 	case SSH_AGENTC_REMOVE_SMARTCARD_KEY:
 		process_remove_smartcard_key(e);
@@ -967,7 +979,7 @@ new_socket(sock_type type, int fd)
 }
 
 static int
-handle_socket_read(u_int socknum)
+handle_socket_read(u_int socknum, int islocal)
 {
 	struct sockaddr_un sunaddr;
 	socklen_t slen;
@@ -978,7 +990,8 @@ handle_socket_read(u_int socknum)
 	slen = sizeof(sunaddr);
 	fd = accept(sockets[socknum].fd, (struct sockaddr *)&sunaddr, &slen);
 	if (fd == -1) {
-		error("accept from AUTH_SOCKET: %s", strerror(errno));
+		error("accept from %s auth socket: %s",
+		    islocal ? "local" : "remote", strerror(errno));
 		return -1;
 	}
 	if (getpeereid(fd, &euid, &egid) == -1) {
@@ -992,12 +1005,12 @@ handle_socket_read(u_int socknum)
 		close(fd);
 		return -1;
 	}
-	new_socket(AUTH_CONNECTION, fd);
+	new_socket(islocal ? AUTH_CONNECTION_LOCAL : AUTH_CONNECTION, fd);
 	return 0;
 }
 
 static int
-handle_conn_read(u_int socknum)
+handle_conn_read(u_int socknum, int islocal)
 {
 	char buf[AGENT_RBUF_LEN];
 	ssize_t len;
@@ -1016,7 +1029,7 @@ handle_conn_read(u_int socknum)
 		fatal_fr(r, "compose");
 	explicit_bzero(buf, sizeof(buf));
 	for (;;) {
-		if ((r = process_message(socknum)) == -1)
+		if ((r = process_message(socknum, islocal)) == -1)
 			return -1;
 		else if (r == 0)
 			break;
@@ -1053,15 +1066,22 @@ after_poll(struct pollfd *pfd, size_t npfd, u_int maxfds)
 {
 	size_t i;
 	u_int socknum, activefds = npfd;
+	SocketEntry *s;
 
 	for (i = 0; i < npfd; i++) {
 		if (pfd[i].revents == 0)
 			continue;
 		/* Find sockets entry */
 		for (socknum = 0; socknum < sockets_alloc; socknum++) {
-			if (sockets[socknum].type != AUTH_SOCKET &&
-			    sockets[socknum].type != AUTH_CONNECTION)
+			switch (sockets[socknum].type) {
+			case AUTH_SOCKET:
+			case AUTH_SOCKET_LOCAL:
+			case AUTH_CONNECTION:
+			case AUTH_CONNECTION_LOCAL:
+				break;
+			default:
 				continue;
+			}
 			if (pfd[i].fd == sockets[socknum].fd)
 				break;
 		}
@@ -1070,8 +1090,10 @@ after_poll(struct pollfd *pfd, size_t npfd, u_int maxfds)
 			continue;
 		}
 		/* Process events */
-		switch (sockets[socknum].type) {
+		s = sockets + socknum;
+		switch (s->type) {
 		case AUTH_SOCKET:
+		case AUTH_SOCKET_LOCAL:
 			if ((pfd[i].revents & (POLLIN|POLLERR)) == 0)
 				break;
 			if (npfd > maxfds) {
@@ -1079,12 +1101,15 @@ after_poll(struct pollfd *pfd, size_t npfd, u_int maxfds)
 				    "skipping accept", activefds, maxfds);
 				break;
 			}
-			if (handle_socket_read(socknum) == 0)
+			if (handle_socket_read(socknum,
+			    s->type == AUTH_SOCKET_LOCAL) == 0)
 				activefds++;
 			break;
 		case AUTH_CONNECTION:
+		case AUTH_CONNECTION_LOCAL:
 			if ((pfd[i].revents & (POLLIN|POLLERR)) != 0 &&
-			    handle_conn_read(socknum) != 0) {
+			    handle_conn_read(socknum,
+			    s->type == AUTH_CONNECTION_LOCAL) != 0) {
 				goto close_sock;
 			}
 			if ((pfd[i].revents & (POLLOUT|POLLHUP)) != 0 &&
@@ -1115,7 +1140,9 @@ prepare_poll(struct pollfd **pfdp, size_t *npfdp, int *timeoutp, u_int maxfds)
 	for (i = 0; i < sockets_alloc; i++) {
 		switch (sockets[i].type) {
 		case AUTH_SOCKET:
+		case AUTH_SOCKET_LOCAL:
 		case AUTH_CONNECTION:
+		case AUTH_CONNECTION_LOCAL:
 			npfd++;
 			break;
 		case AUTH_UNUSED:
@@ -1134,6 +1161,7 @@ prepare_poll(struct pollfd **pfdp, size_t *npfdp, int *timeoutp, u_int maxfds)
 	for (i = j = 0; i < sockets_alloc; i++) {
 		switch (sockets[i].type) {
 		case AUTH_SOCKET:
+		case AUTH_SOCKET_LOCAL:
 			if (npfd > maxfds) {
 				debug3("out of fds (active %zu >= limit %u); "
 				    "skipping arming listener", npfd, maxfds);
@@ -1145,6 +1173,7 @@ prepare_poll(struct pollfd **pfdp, size_t *npfdp, int *timeoutp, u_int maxfds)
 			j++;
 			break;
 		case AUTH_CONNECTION:
+		case AUTH_CONNECTION_LOCAL:
 			pfd[j].fd = sockets[i].fd;
 			pfd[j].revents = 0;
 			/*
@@ -1189,6 +1218,8 @@ cleanup_socket(void)
 	debug_f("cleanup");
 	if (socket_name[0])
 		unlink(socket_name);
+	if (localsocket_name[0])
+		unlink(localsocket_name);
 	if (socket_dir[0])
 		rmdir(socket_dir);
 }
@@ -1229,9 +1260,9 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: ssh-agent [-c | -s] [-Dd] [-a bind_address] [-E fingerprint_hash]\n"
+	    "usage: ssh-agent [-c | -s] [-DdL] [-a bind_address] [-E fingerprint_hash]\n"
 	    "                 [-P allowed_providers] [-t life]\n"
-	    "       ssh-agent [-a bind_address] [-E fingerprint_hash] [-P allowed_providers]\n"
+	    "       ssh-agent [-DdL] [-a bind_address] [-E fingerprint_hash] [-P allowed_providers]\n"
 	    "                 [-t life] command [arg ...]\n"
 	    "       ssh-agent [-c | -s] -k\n");
 	exit(1);
@@ -1241,7 +1272,8 @@ int
 main(int ac, char **av)
 {
 	int c_flag = 0, d_flag = 0, D_flag = 0, k_flag = 0, s_flag = 0;
-	int sock, ch, result, saved_errno;
+	int L_flag = 0;
+	int sock, localsock = -1, ch, result, saved_errno;
 	char *shell, *format, *pidstr, *agentsocket = NULL;
 	struct rlimit rlim;
 	extern int optind;
@@ -1269,7 +1301,7 @@ main(int ac, char **av)
 	OpenSSL_add_all_algorithms();
 #endif
 
-	while ((ch = getopt(ac, av, "cDdksE:a:O:P:t:")) != -1) {
+	while ((ch = getopt(ac, av, "cDdkLsE:a:O:P:t:")) != -1) {
 		switch (ch) {
 		case 'E':
 			fingerprint_hash = ssh_digest_alg_by_name(optarg);
@@ -1283,6 +1315,9 @@ main(int ac, char **av)
 			break;
 		case 'k':
 			k_flag++;
+			break;
+		case 'L':
+			L_flag = 1;
 			break;
 		case 'O':
 			if (strcmp(optarg, "no-restrict-websafe") == 0)
@@ -1385,12 +1420,20 @@ main(int ac, char **av)
 			perror("mkdtemp: private socket dir");
 			exit(1);
 		}
-		snprintf(socket_name, sizeof socket_name, "%s/agent.%ld", socket_dir,
-		    (long)parent_pid);
+		snprintf(socket_name, sizeof socket_name,
+		    "%s/agent.%ld", socket_dir, (long)parent_pid);
+		if (!L_flag) {
+			snprintf(localsocket_name, sizeof localsocket_name,
+			    "%s/agent.local.%ld", socket_dir, (long)parent_pid);
+		}
 	} else {
 		/* Try to use specified agent socket */
 		socket_dir[0] = '\0';
 		strlcpy(socket_name, agentsocket, sizeof socket_name);
+		if (!L_flag) {
+			snprintf(localsocket_name, sizeof localsocket_name,
+			    "%s.local", agentsocket);
+		}
 	}
 
 	/*
@@ -1403,6 +1446,14 @@ main(int ac, char **av)
 		/* XXX - unix_listener() calls error() not perror() */
 		*socket_name = '\0'; /* Don't unlink any existing file */
 		cleanup_exit(1);
+	}
+	if (*localsocket_name != '\0') {
+		localsock = unix_listener(localsocket_name,
+		    SSH_LISTEN_BACKLOG, 0);
+		if (localsock < 0) {
+			*localsocket_name = '\0';
+			cleanup_exit(1);
+		}
 	}
 	umask(prev_mask);
 
@@ -1417,6 +1468,10 @@ main(int ac, char **av)
 		format = c_flag ? "setenv %s %s;\n" : "%s=%s; export %s;\n";
 		printf(format, SSH_AUTHSOCKET_ENV_NAME, socket_name,
 		    SSH_AUTHSOCKET_ENV_NAME);
+		if (*localsocket_name != '\0') {
+			printf(format, SSH_AUTHSOCKET_LOCAL_ENV_NAME,
+			    localsocket_name, SSH_AUTHSOCKET_LOCAL_ENV_NAME);
+		}
 		printf("echo Agent pid %ld;\n", (long)parent_pid);
 		fflush(stdout);
 		goto skip;
@@ -1433,13 +1488,21 @@ main(int ac, char **av)
 			format = c_flag ? "setenv %s %s;\n" : "%s=%s; export %s;\n";
 			printf(format, SSH_AUTHSOCKET_ENV_NAME, socket_name,
 			    SSH_AUTHSOCKET_ENV_NAME);
+			if (*localsocket_name != '\0') {
+				printf(format, SSH_AUTHSOCKET_LOCAL_ENV_NAME,
+				    localsocket_name,
+				    SSH_AUTHSOCKET_LOCAL_ENV_NAME);
+			}
 			printf(format, SSH_AGENTPID_ENV_NAME, pidstrbuf,
 			    SSH_AGENTPID_ENV_NAME);
 			printf("echo Agent pid %ld;\n", (long)pid);
 			exit(0);
 		}
 		if (setenv(SSH_AUTHSOCKET_ENV_NAME, socket_name, 1) == -1 ||
-		    setenv(SSH_AGENTPID_ENV_NAME, pidstrbuf, 1) == -1) {
+		    setenv(SSH_AGENTPID_ENV_NAME, pidstrbuf, 1) == -1 ||
+		    (*localsocket_name != '\0' &&
+		    setenv(SSH_AUTHSOCKET_LOCAL_ENV_NAME,
+		    localsocket_name, 1) == -1)) {
 			perror("setenv");
 			exit(1);
 		}
@@ -1473,7 +1536,13 @@ skip:
 #ifdef ENABLE_PKCS11
 	pkcs11_init(0);
 #endif
-	new_socket(AUTH_SOCKET, sock);
+	if (localsock != -1) {
+		new_socket(AUTH_SOCKET_LOCAL, localsock);
+		new_socket(AUTH_SOCKET, sock);
+	} else {
+		new_socket(AUTH_SOCKET_LOCAL, sock);
+	}
+
 	if (ac > 0)
 		parent_alive_interval = 10;
 	idtab_init();

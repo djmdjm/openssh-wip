@@ -63,6 +63,12 @@
 #define SSH_AUTHSOCKET_ENV_NAME "SSH_AUTH_SOCK"
 
 /*
+ * Name of the environment variable containing the pathname of the
+ * local authentication socket.
+ */
+#define SSH_AUTHSOCKET_LOCAL_ENV_NAME "SSH_AUTH_SOCK_LOCAL"
+
+/*
  * Environment variable for overwriting the default location of askpass
  */
 #define SSH_ASKPASS_ENV		"SSH_ASKPASS"

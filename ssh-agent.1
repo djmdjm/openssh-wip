@@ -43,7 +43,7 @@
 .Sh SYNOPSIS
 .Nm ssh-agent
 .Op Fl c | s
-.Op Fl \&Dd
+.Op Fl \&DdL
 .Op Fl a Ar bind_address
 .Op Fl E Ar fingerprint_hash
 .Op Fl P Ar allowed_providers
@@ -102,6 +102,16 @@ The default is
 Kill the current agent (given by the
 .Ev SSH_AGENT_PID
 environment variable).
+.It Fl L
+Makes
+.Nm
+listen on only the primary
+.Ev SSH_AUTH_SOCK
+instead of both that and
+.Ev SSH_AUTH_SOCK_LOCAL .
+This flag will also remove the default restrictions on adding smartcard or
+FIDO key by the main
+.Ev SSH_AUTH_SOCK .
 .It Fl P Ar allowed_providers
 Specify a pattern-list of acceptable paths for PKCS#11 provider and FIDO
 authenticator middleware shared libraries that may be used with the
@@ -203,8 +213,25 @@ When
 starts, it creates a
 .Ux Ns -domain
 socket and stores its pathname in this variable.
+This socket is used for communication with
+.Nm
+by
+.Xr ssh-add 1 ,
+.Xr ssh 1
+and other tools.
 It is accessible only to the current user,
 but is easily abused by root or another instance of the same user.
+.It Ev SSH_AUTH_SOCK_LOCAL
+Is another
+.Ux Ns -domain
+socket
+started by
+.Nm .
+It is intended to be used only locally and never forwarded by
+.Xr ssh 1 .
+This socket is permitted to perform additional operations, such as adding
+FIDO or smartcard keys that is by default restricted on the primary
+.Ev SSH_AUTH_SOCK .
 .El
 .Sh FILES
 .Bl -tag -width Ds

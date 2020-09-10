@@ -215,10 +215,12 @@ then the askpass program will be used for all passphrase input regardless
 of whether
 .Ev DISPLAY
 is set.
-.It Ev SSH_AUTH_SOCK
-Identifies the path of a
+.It Ev SSH_AUTH_SOCK | Ev SSH_AUTH_SOCK_LOCAL
+Identifies paths to
 .Ux Ns -domain
-socket used to communicate with the agent.
+sockets used to communicate with the agent.
+.Ev SSH_AUTH_SOCK_LOCAL
+is preferred if available.
 .It Ev SSH_SK_PROVIDER
 Specifies a path to a library that will be used when loading any
 FIDO authenticator-hosted keys, overriding the default of using
