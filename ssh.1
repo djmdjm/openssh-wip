@@ -1429,10 +1429,14 @@ then the askpass program will be used for all passphrase input regardless
 of whether
 .Ev DISPLAY
 is set.
-.It Ev SSH_AUTH_SOCK
-Identifies the path of a
+.It Ev SSH_AUTH_SOCK | Ev SSH_AUTH_SOCK_LOCAL
+Identifies paths of a
 .Ux Ns -domain
 socket used to communicate with the agent.
+.Ev SSH_AUTH_SOCK_LOCAL
+is preferred for user authentication.
+.Ev SSH_AUTH_SOCK
+is used for forwarding.
 .It Ev SSH_CONNECTION
 Identifies the client and server ends of the connection.
 The variable contains

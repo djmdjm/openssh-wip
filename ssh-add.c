@@ -224,7 +224,7 @@ delete_all(int agent_fd, int qflag)
 
 static int
 add_file(int agent_fd, const char *filename, int key_only, int qflag,
-    const char *skprovider)
+    int localonly, const char *skprovider)
 {
 	struct sshkey *private, *cert;
 	char *comment = NULL;
@@ -358,7 +358,7 @@ add_file(int agent_fd, const char *filename, int key_only, int qflag,
 	}
 
 	if ((r = ssh_add_identity_constrained(agent_fd, private, comment,
-	    lifetime, confirm, maxsign, skprovider)) == 0) {
+	    lifetime, confirm, maxsign, skprovider, localonly)) == 0) {
 		ret = 0;
 		if (!qflag) {
 			fprintf(stderr, "Identity added: %s (%s)\n",
@@ -410,7 +410,7 @@ add_file(int agent_fd, const char *filename, int key_only, int qflag,
 	sshkey_free(cert);
 
 	if ((r = ssh_add_identity_constrained(agent_fd, private, comment,
-	    lifetime, confirm, maxsign, skprovider)) != 0) {
+	    lifetime, confirm, maxsign, skprovider, localonly)) != 0) {
 		error_r(r, "Certificate %s (%s) add failed", certpath,
 		    private->cert->key_id);
 		goto out;
@@ -438,7 +438,7 @@ add_file(int agent_fd, const char *filename, int key_only, int qflag,
 }
 
 static int
-update_card(int agent_fd, int add, const char *id, int qflag)
+update_card(int agent_fd, int add, const char *id, int qflag, int rflag)
 {
 	char *pin = NULL;
 	int r, ret = -1;
@@ -450,7 +450,7 @@ update_card(int agent_fd, int add, const char *id, int qflag)
 	}
 
 	if ((r = ssh_update_card(agent_fd, add, id, pin == NULL ? "" : pin,
-	    lifetime, confirm)) == 0) {
+	    lifetime, confirm, rflag)) == 0) {
 		ret = 0;
 		if (!qflag) {
 			fprintf(stderr, "Card %s: %s\n",
@@ -571,7 +571,7 @@ lock_agent(int agent_fd, int lock)
 }
 
 static int
-load_resident_keys(int agent_fd, const char *skprovider, int qflag)
+load_resident_keys(int agent_fd, const char *skprovider, int qflag, int rflag)
 {
 	struct sshkey **keys;
 	size_t nkeys, i;
@@ -589,7 +589,7 @@ load_resident_keys(int agent_fd, const char *skprovider, int qflag)
 		    fingerprint_hash, SSH_FP_DEFAULT)) == NULL)
 			fatal_f("sshkey_fingerprint failed");
 		if ((r = ssh_add_identity_constrained(agent_fd, keys[i], "",
-		    lifetime, confirm, maxsign, skprovider)) != 0) {
+		    lifetime, confirm, maxsign, skprovider, rflag)) != 0) {
 			error("Unable to add key %s %s",
 			    sshkey_type(keys[i]), fp);
 			free(fp);
@@ -621,13 +621,14 @@ load_resident_keys(int agent_fd, const char *skprovider, int qflag)
 
 static int
 do_file(int agent_fd, int deleting, int key_only, char *file, int qflag,
-    const char *skprovider)
+    int rflag, const char *skprovider)
 {
 	if (deleting) {
 		if (delete_file(agent_fd, file, key_only, qflag) == -1)
 			return -1;
 	} else {
-		if (add_file(agent_fd, file, key_only, qflag, skprovider) == -1)
+		if (add_file(agent_fd, file, key_only, qflag, rflag,
+		    skprovider) == -1)
 			return -1;
 	}
 	return 0;
@@ -656,7 +657,7 @@ main(int argc, char **argv)
 	int agent_fd;
 	char *pkcs11provider = NULL, *skprovider = NULL;
 	int r, i, ch, deleting = 0, ret = 0, key_only = 0, do_download = 0;
-	int xflag = 0, lflag = 0, Dflag = 0, qflag = 0, Tflag = 0;
+	int xflag = 0, lflag = 0, Dflag = 0, qflag = 0, rflag = 0, Tflag = 0;
 	SyslogFacility log_facility = SYSLOG_FACILITY_AUTH;
 	LogLevel log_level = SYSLOG_LEVEL_INFO;
 
@@ -685,7 +686,7 @@ main(int argc, char **argv)
 
 	skprovider = getenv("SSH_SK_PROVIDER");
 
-	while ((ch = getopt(argc, argv, "vkKlLcdDTxXE:e:M:m:qs:S:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "cDdKkLlrTvXxE:e:M:m:qS:s:t:")) != -1) {
 		switch (ch) {
 		case 'v':
 			if (log_level == SYSLOG_LEVEL_INFO)
@@ -751,6 +752,9 @@ main(int argc, char **argv)
 			deleting = 1;
 			pkcs11provider = optarg;
 			break;
+		case 'r':
+			rflag = 1;
+			break;
 		case 't':
 			if ((lifetime = convtime(optarg)) == -1 ||
 			    lifetime < 0 || (u_long)lifetime > UINT32_MAX) {
@@ -788,6 +792,10 @@ main(int argc, char **argv)
 			ret = 1;
 		goto done;
 	}
+	if (rflag && getenv(SSH_AUTHSOCKET_LOCAL_ENV_NAME) == NULL) {
+		fatal("Local-only restriction requested by no $%s agent "
+		    "socket present", SSH_AUTHSOCKET_LOCAL_ENV_NAME);
+	}
 
 	if (skprovider == NULL)
 		skprovider = "internal";
@@ -804,14 +812,14 @@ main(int argc, char **argv)
 	}
 	if (pkcs11provider != NULL) {
 		if (update_card(agent_fd, !deleting, pkcs11provider,
-		    qflag) == -1)
+		    qflag, rflag) == -1)
 			ret = 1;
 		goto done;
 	}
 	if (do_download) {
 		if (skprovider == NULL)
 			fatal("Cannot download keys without provider");
-		if (load_resident_keys(agent_fd, skprovider, qflag) != 0)
+		if (load_resident_keys(agent_fd, skprovider, qflag, rflag) != 0)
 			ret = 1;
 		goto done;
 	}
@@ -834,7 +842,7 @@ main(int argc, char **argv)
 			if (stat(buf, &st) == -1)
 				continue;
 			if (do_file(agent_fd, deleting, key_only, buf,
-			    qflag, skprovider) == -1)
+			    qflag, rflag, skprovider) == -1)
 				ret = 1;
 			else
 				count++;
@@ -844,7 +852,7 @@ main(int argc, char **argv)
 	} else {
 		for (i = 0; i < argc; i++) {
 			if (do_file(agent_fd, deleting, key_only,
-			    argv[i], qflag, skprovider) == -1)
+			    argv[i], qflag, rflag, skprovider) == -1)
 				ret = 1;
 		}
 	}

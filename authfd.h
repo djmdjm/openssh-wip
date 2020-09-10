@@ -33,11 +33,11 @@ int	ssh_fetch_identitylist(int sock, struct ssh_identitylist **idlp);
 void	ssh_free_identitylist(struct ssh_identitylist *idl);
 int	ssh_add_identity_constrained(int sock, struct sshkey *key,
 	    const char *comment, u_int life, u_int confirm, u_int maxsign,
-	    const char *provider);
+	    const char *provider, u_int local);
 int	ssh_agent_has_key(int sock, const struct sshkey *key);
 int	ssh_remove_identity(int sock, const struct sshkey *key);
 int	ssh_update_card(int sock, int add, const char *reader_id,
-	    const char *pin, u_int life, u_int confirm);
+	    const char *pin, u_int life, u_int confirm, u_int local);
 int	ssh_remove_all_identities(int sock, int version);
 
 int	ssh_agent_sign(int sock, const struct sshkey *key,

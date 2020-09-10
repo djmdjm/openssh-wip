@@ -114,6 +114,7 @@ typedef struct identity {
 	char *provider;
 	time_t death;
 	u_int confirm;
+	int localonly;
 	char *sk_provider;
 } Identity;
 
@@ -232,18 +233,35 @@ send_status(SocketEntry *e, int success)
 
 /* send list of supported public keys to 'client' */
 static void
-process_request_identities(SocketEntry *e)
+process_request_identities(SocketEntry *e, int islocal)
 {
 	Identity *id;
 	struct sshbuf *msg;
 	int r;
+	u_int ntotal = 0, nentries = 0;
 
 	if ((msg = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new failed");
-	if ((r = sshbuf_put_u8(msg, SSH2_AGENT_IDENTITIES_ANSWER)) != 0 ||
-	    (r = sshbuf_put_u32(msg, idtab->nentries)) != 0)
-		fatal_fr(r, "compose");
+
+	/* count visible keys */
 	TAILQ_FOREACH(id, &idtab->idlist, next) {
+		ntotal++;
+		if (id->localonly && !islocal)
+			continue;
+		nentries++;
+	}
+	debug2_f("start local=%d, returning %u/%u", islocal,
+	    nentries, ntotal);
+
+	/* reply header */
+	if ((r = sshbuf_put_u8(msg, SSH2_AGENT_IDENTITIES_ANSWER)) != 0 ||
+	    (r = sshbuf_put_u32(msg, nentries)) != 0)
+		fatal_fr(r, "compose");
+
+	/* append visible keys */
+	TAILQ_FOREACH(id, &idtab->idlist, next) {
+		if (id->localonly && !islocal)
+			continue;
 		if ((r = sshkey_puts_opts(id->key, msg, SSHKEY_SERIALIZE_INFO))
 		     != 0 ||
 		    (r = sshbuf_put_cstring(msg, id->comment)) != 0) {
@@ -350,7 +368,7 @@ check_websafe_message_contents(struct sshkey *key,
 
 /* ssh2 only */
 static void
-process_sign_request2(SocketEntry *e)
+process_sign_request2(SocketEntry *e, int islocal)
 {
 	const u_char *data;
 	u_char *signature = NULL;
@@ -371,9 +389,13 @@ process_sign_request2(SocketEntry *e)
 		error_fr(r, "parse");
 		goto send;
 	}
-
 	if ((id = lookup_identity(key)) == NULL) {
 		verbose_f("%s key not found", sshkey_type(key));
+		goto send;
+	}
+	if (id->localonly && !islocal) {
+		verbose("%s: attempt to use local %s key via remote agent",
+		    __func__, sshkey_type(key));
 		goto send;
 	}
 	if (id->confirm && confirm_key(id) != 0) {
@@ -424,7 +446,7 @@ process_sign_request2(SocketEntry *e)
 
 /* shared */
 static void
-process_remove_identity(SocketEntry *e)
+process_remove_identity(SocketEntry *e, int islocal)
 {
 	int r, success = 0;
 	struct sshkey *key = NULL;
@@ -436,6 +458,11 @@ process_remove_identity(SocketEntry *e)
 	}
 	if ((id = lookup_identity(key)) == NULL) {
 		debug_f("key not found");
+		goto done;
+	}
+	if (id->localonly && !islocal) {
+		verbose("%s: attempt to remove local %s key via remote agent",
+		    __func__, sshkey_type(key));
 		goto done;
 	}
 	/* We have this key, free it. */
@@ -499,9 +526,9 @@ static void
 process_add_identity(SocketEntry *e, int islocal)
 {
 	Identity *id;
-	int success = 0, confirm = 0;
+	int success = 0, confirm = 0, localonly = 0;
 	u_int seconds = 0, maxsign;
-	char *fp, *comment = NULL, *ext_name = NULL, *sk_provider = NULL;
+	char *fp = NULL, *comment = NULL, *ext_name = NULL, *sk_provider = NULL;
 	char canonical_provider[PATH_MAX];
 	time_t death = 0;
 	struct sshkey *k = NULL;
@@ -557,6 +584,13 @@ process_add_identity(SocketEntry *e, int islocal)
 					error_fr(r, "parse %s", ext_name);
 					goto err;
 				}
+			} else if (strcmp(ext_name, "do-not-forward@openssh.com") == 0) {
+				if (!islocal) {
+					error("Refusing add local-only key on "
+					    "forwarded connection");
+					goto send;
+				}
+				localonly = 1;
 			} else {
 				error_f("unsupported constraint \"%s\"",
 				    ext_name);
@@ -567,11 +601,8 @@ process_add_identity(SocketEntry *e, int islocal)
 		default:
 			error_f("Unknown constraint %d", ctype);
  err:
-			free(sk_provider);
 			free(ext_name);
 			sshbuf_reset(e->request);
-			free(comment);
-			sshkey_free(k);
 			goto send;
 		}
 	}
@@ -579,12 +610,10 @@ process_add_identity(SocketEntry *e, int islocal)
 		if (!sshkey_is_sk(k)) {
 			error("Cannot add provider: %s is not an "
 			    "authenticator-hosted key", sshkey_type(k));
-			free(sk_provider);
 			goto send;
 		}
 		if (!islocal) {
 			error("Refusing add FIDO key from forwarded agent");
-			free(sk_provider);
 			goto send;
 		}
 		if (strcasecmp(sk_provider, "internal") == 0) {
@@ -594,7 +623,6 @@ process_add_identity(SocketEntry *e, int islocal)
 				verbose("failed provider \"%.100s\": "
 				    "realpath: %s", sk_provider,
 				    strerror(errno));
-				free(sk_provider);
 				goto send;
 			}
 			free(sk_provider);
@@ -603,7 +631,6 @@ process_add_identity(SocketEntry *e, int islocal)
 			    allowed_providers, 0) != 1) {
 				error("Refusing add key: "
 				    "provider %s not allowed", sk_provider);
-				free(sk_provider);
 				goto send;
 			}
 		}
@@ -631,16 +658,26 @@ process_add_identity(SocketEntry *e, int islocal)
 	id->comment = comment;
 	id->death = death;
 	id->confirm = confirm;
+	id->localonly = localonly;
 	id->sk_provider = sk_provider;
 
 	if ((fp = sshkey_fingerprint(k, SSH_FP_HASH_DEFAULT,
 	    SSH_FP_DEFAULT)) == NULL)
 		fatal_f("sshkey_fingerprint failed");
-	debug_f("add %s %s \"%.100s\" (life: %u) (confirm: %u) "
-	    "(provider: %s)", sshkey_ssh_name(k), fp, comment,
-	    seconds, confirm, sk_provider == NULL ? "none" : sk_provider);
-	free(fp);
+	debug("add %s %s \"%.100s\" (life: %u) (confirm: %u) "
+	    "(local: %s) (provider: %s)", sshkey_ssh_name(k), fp,
+	    comment, seconds, confirm, localonly ? "YES" : "NO",
+	    sk_provider == NULL ? "none" : sk_provider);
+
+	/* transferred */
+	k = NULL;
+	comment = NULL;
+	sk_provider = NULL;
 send:
+	free(fp);
+	sshkey_free(k);
+	free(comment);
+	free(sk_provider);
 	send_status(e, success);
 }
 
@@ -801,7 +838,7 @@ send:
 }
 
 static void
-process_remove_smartcard_key(SocketEntry *e)
+process_remove_smartcard_key(SocketEntry *e, int islocal)
 {
 	char *provider = NULL, *pin = NULL, canonical_provider[PATH_MAX];
 	int r, success = 0;
@@ -823,6 +860,8 @@ process_remove_smartcard_key(SocketEntry *e)
 	debug_f("remove %.100s", canonical_provider);
 	for (id = TAILQ_FIRST(&idtab->idlist); id; id = nxt) {
 		nxt = TAILQ_NEXT(id, next);
+		if (id->localonly && !islocal)
+			continue;
 		/* Skip file--based keys */
 		if (id->provider == NULL)
 			continue;
@@ -910,17 +949,17 @@ process_message(u_int socknum, int islocal)
 		break;
 	/* ssh2 */
 	case SSH2_AGENTC_SIGN_REQUEST:
-		process_sign_request2(e);
+		process_sign_request2(e, islocal);
 		break;
 	case SSH2_AGENTC_REQUEST_IDENTITIES:
-		process_request_identities(e);
+		process_request_identities(e, islocal);
 		break;
 	case SSH2_AGENTC_ADD_IDENTITY:
 	case SSH2_AGENTC_ADD_ID_CONSTRAINED:
 		process_add_identity(e, islocal);
 		break;
 	case SSH2_AGENTC_REMOVE_IDENTITY:
-		process_remove_identity(e);
+		process_remove_identity(e, islocal);
 		break;
 	case SSH2_AGENTC_REMOVE_ALL_IDENTITIES:
 		process_remove_all_identities(e);
@@ -931,7 +970,7 @@ process_message(u_int socknum, int islocal)
 		process_add_smartcard_key(e, islocal);
 		break;
 	case SSH_AGENTC_REMOVE_SMARTCARD_KEY:
-		process_remove_smartcard_key(e);
+		process_remove_smartcard_key(e, islocal);
 		break;
 #endif /* ENABLE_PKCS11 */
 	default:
