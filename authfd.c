@@ -132,6 +132,19 @@ ssh_get_authentication_socket(int *fdp)
 	return ssh_get_authentication_socket_path(authsocket, fdp);
 }
 
+/* Opens the authentication socket, preferring the privileged local socket */
+int
+ssh_get_authentication_socket_local(int *fdp)
+{
+	const char *authsocket;
+
+	if (fdp != NULL)
+		*fdp = -1;
+	if ((authsocket = getenv(SSH_AUTHSOCKET_LOCAL_ENV_NAME)) != NULL)
+		return ssh_get_authentication_socket_path(authsocket, fdp);
+	return ssh_get_authentication_socket(fdp);
+}
+
 /* Communicate with agent: send request and read reply */
 static int
 ssh_request_reply(int sock, struct sshbuf *request, struct sshbuf *reply)

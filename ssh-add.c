@@ -654,7 +654,6 @@ main(int argc, char **argv)
 	extern char *optarg;
 	extern int optind;
 	int agent_fd;
-	const char *sock_path;
 	char *pkcs11provider = NULL, *skprovider = NULL;
 	int r, i, ch, deleting = 0, ret = 0, key_only = 0, do_download = 0;
 	int xflag = 0, lflag = 0, Dflag = 0, qflag = 0, Tflag = 0;
@@ -671,15 +670,8 @@ main(int argc, char **argv)
 
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
-	if ((sock_path = getenv(SSH_AUTHSOCKET_LOCAL_ENV_NAME)) == NULL &&
-	    (sock_path = getenv(SSH_AUTHSOCKET_ENV_NAME)) == NULL) {
-		fprintf(stderr, "No $%s or $%s socket found\n",
-		    SSH_AUTHSOCKET_ENV_NAME, SSH_AUTHSOCKET_LOCAL_ENV_NAME);
-		exit(2);
-	}
-
 	/* First, get a connection to the authentication agent. */
-	switch (r = ssh_get_authentication_socket_path(sock_path, &agent_fd)) {
+	switch (r = ssh_get_authentication_socket_local(&agent_fd)) {
 	case 0:
 		break;
 	case SSH_ERR_AGENT_NOT_PRESENT:

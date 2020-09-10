@@ -24,6 +24,7 @@ struct ssh_identitylist {
 };
 
 int	ssh_get_authentication_socket(int *fdp);
+int	ssh_get_authentication_socket_local(int *fdp);
 int	ssh_get_authentication_socket_path(const char *authsocket, int *fdp);
 void	ssh_close_authentication_socket(int sock);
 
