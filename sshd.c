@@ -464,7 +464,7 @@ privsep_preauth(struct ssh *ssh)
 
 		pmonitor->m_pid = pid;
 		if (have_agent) {
-			r = ssh_get_authentication_socket(&auth_sock);
+			r = ssh_get_authentication_socket_local(&auth_sock);
 			if (r != 0) {
 				error_r(r, "Could not get agent socket");
 				have_agent = 0;
@@ -1667,7 +1667,7 @@ main(int ac, char **av)
 		if (strcmp(options.host_key_agent, SSH_AUTHSOCKET_ENV_NAME))
 			setenv(SSH_AUTHSOCKET_ENV_NAME,
 			    options.host_key_agent, 1);
-		if ((r = ssh_get_authentication_socket(NULL)) == 0)
+		if ((r = ssh_get_authentication_socket_local(NULL)) == 0)
 			have_agent = 1;
 		else
 			error_r(r, "Could not connect to agent \"%s\"",
@@ -2051,7 +2051,7 @@ main(int ac, char **av)
 		if (privsep_preauth(ssh) == 1)
 			goto authenticated;
 	} else if (have_agent) {
-		if ((r = ssh_get_authentication_socket(&auth_sock)) != 0) {
+		if ((r = ssh_get_authentication_socket_local(&auth_sock)) != 0) {
 			error_r(r, "Unable to get agent socket");
 			have_agent = 0;
 		}

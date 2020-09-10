@@ -1667,7 +1667,7 @@ maybe_add_key_to_agent(const char *authfile, struct sshkey *private,
 	if (options.add_keys_to_agent == 0)
 		return;
 
-	if ((r = ssh_get_authentication_socket(&auth_sock)) != 0) {
+	if ((r = ssh_get_authentication_socket_local(&auth_sock)) != 0) {
 		debug3("no authentication agent, not adding key");
 		return;
 	}

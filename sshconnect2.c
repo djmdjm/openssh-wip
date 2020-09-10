@@ -1687,9 +1687,9 @@ pubkey_prepare(Authctxt *authctxt)
 		TAILQ_INSERT_TAIL(preferred, id, next);
 	}
 	/* list of keys supported by the agent */
-	if ((r = ssh_get_authentication_socket(&agent_fd)) != 0) {
+	if ((r = ssh_get_authentication_socket_local(&agent_fd)) != 0) {
 		if (r != SSH_ERR_AGENT_NOT_PRESENT)
-			debug_fr(r, "ssh_get_authentication_socket");
+			debug_fr(r, "get authentication socket");
 	} else if ((r = ssh_fetch_identitylist(agent_fd, &idlist)) != 0) {
 		if (r != SSH_ERR_AGENT_NO_IDENTITIES)
 			debug_fr(r, "ssh_fetch_identitylist");

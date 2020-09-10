@@ -1739,7 +1739,7 @@ do_ca_sign(struct passwd *pw, const char *ca_key_path, int prefer_agent,
 		 */
 		if ((r = sshkey_load_public(tmp, &ca, NULL)) != 0)
 			fatal_r(r, "Cannot load CA public key %s", tmp);
-		if ((r = ssh_get_authentication_socket(&agent_fd)) != 0)
+		if ((r = ssh_get_authentication_socket_local(&agent_fd)) != 0)
 			fatal_r(r, "Cannot use public key for CA signature");
 		if ((r = ssh_fetch_identitylist(agent_fd, &agent_ids)) != 0)
 			fatal_r(r, "Retrieve agent key list");
@@ -2599,7 +2599,7 @@ sig_sign(const char *keypath, const char *sig_namespace, int argc, char **argv)
 		goto done;
 	}
 
-	if ((r = ssh_get_authentication_socket(&agent_fd)) != 0)
+	if ((r = ssh_get_authentication_socket_local(&agent_fd)) != 0)
 		debug_r(r, "Couldn't get agent socket");
 	else {
 		if ((r = ssh_agent_has_key(agent_fd, pubkey)) == 0)
