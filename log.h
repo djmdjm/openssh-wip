@@ -89,4 +89,16 @@ void	 sshfatal(const char *, const char *, int, int,
 #define logdie(...)		sshlogdie(__FILE__, __func__, __LINE__, 0, SYSLOG_LEVEL_ERROR, __VA_ARGS__)
 #define sigdie(...)		sshsigdie(__FILE__, __func__, __LINE__, 0, SYSLOG_LEVEL_ERROR, __VA_ARGS__)
 
+/* Variants that prepend the caller's function */
+#define do_log2_f(level, ...)	sshlog(__FILE__, __func__, __LINE__, 1, level, __VA_ARGS__)
+#define debug3_f(...)		sshlog(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_DEBUG3, __VA_ARGS__)
+#define debug2_f(...)		sshlog(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_DEBUG2, __VA_ARGS__)
+#define debug_f(...)		sshlog(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_DEBUG1, __VA_ARGS__)
+#define verbose_f(...)		sshlog(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_VERBOSE, __VA_ARGS__)
+#define logit_f(...)		sshlog(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_INFO, __VA_ARGS__)
+#define error_f(...)		sshlog(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_ERROR, __VA_ARGS__)
+#define fatal_f(...)		sshfatal(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_FATAL, __VA_ARGS__)
+#define logdie_f(...)		sshlogdie(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_ERROR, __VA_ARGS__)
+#define sigdie_f(...)		sshsigdie(__FILE__, __func__, __LINE__, 1, SYSLOG_LEVEL_ERROR, __VA_ARGS__)
+
 #endif
