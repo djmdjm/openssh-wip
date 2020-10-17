@@ -774,7 +774,7 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 	}
 	if ((ptr = fido_cred_x5c_ptr(cred)) != NULL) {
 		len = fido_cred_x5c_len(cred);
-		debug3("%s: attestation cert len=%zu", __func__, len);
+		skdebug(__func__, "attestation cert len=%zu", len);
 		if ((response->attestation_cert = calloc(1, len)) == NULL) {
 			skdebug(__func__, "calloc attestation cert failed");
 			goto out;
@@ -784,7 +784,7 @@ sk_enroll(uint32_t alg, const uint8_t *challenge, size_t challenge_len,
 	}
 	if ((ptr = fido_cred_authdata_ptr(cred)) != NULL) {
 		len = fido_cred_authdata_len(cred);
-		debug3("%s: authdata len=%zu", __func__, len);
+		skdebug(__func__, "authdata len=%zu", len);
 		if ((response->authdata = calloc(1, len)) == NULL) {
 			skdebug(__func__, "calloc authdata failed");
 			goto out;

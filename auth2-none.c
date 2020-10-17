@@ -56,7 +56,7 @@ userauth_none(struct ssh *ssh)
 
 	none_enabled = 0;
 	if ((r = sshpkt_get_end(ssh)) != 0)
-		fatal("%s: %s", __func__, ssh_err(r));
+		fatal_f("%s", ssh_err(r));
 	if (options.permit_empty_passwd && options.password_authentication)
 		return (PRIVSEP(auth_password(ssh, "")));
 	return (0);

@@ -38,7 +38,7 @@ sshfatal(const char *file, const char *func, int line, int showfunc,
 	va_list args;
 
 	va_start(args, fmt);
-	ssh_log(file, func, line, showfunc, level, fmt, args);
+	sshlog(file, func, line, showfunc, level, fmt, args);
 	va_end(args);
 	cleanup_exit(255);
 }

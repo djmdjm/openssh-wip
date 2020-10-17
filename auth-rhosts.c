@@ -219,7 +219,7 @@ auth_rhosts2(struct passwd *pw, const char *client_user, const char *hostname,
 	if (!rhosts_files[rhosts_file_index] &&
 	    stat(_PATH_RHOSTS_EQUIV, &st) == -1 &&
 	    stat(_PATH_SSH_HOSTS_EQUIV, &st) == -1) {
-		debug3("%s: no hosts access files exist", __func__);
+		debug3_f("no hosts access files exist");
 		return 0;
 	}
 
@@ -228,7 +228,7 @@ auth_rhosts2(struct passwd *pw, const char *client_user, const char *hostname,
 	 * shosts.equiv.
 	 */
 	if (pw->pw_uid == 0)
-		debug3("%s: root user, ignoring system hosts files", __func__);
+		debug3_f("root user, ignoring system hosts files");
 	else {
 		if (check_rhosts_file(_PATH_RHOSTS_EQUIV, hostname, ipaddr,
 		    client_user, pw->pw_name)) {

@@ -2072,7 +2072,7 @@ complete(EditLine *el, int ch)
 
 	lf = el_line(el);
 	if (el_get(el, EL_CLIENTDATA, (void**)&complete_ctx) != 0)
-		fatal("%s: el_get failed", __func__);
+		fatal_f("el_get failed");
 
 	/* Figure out which argument the cursor points to */
 	cursor = lf->cursor - lf->buffer;

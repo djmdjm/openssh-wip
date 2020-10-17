@@ -139,7 +139,7 @@ delete_stdin(int agent_fd, int qflag)
 		if (*cp == '#' || *cp == '\0')
 			continue;
 		if ((key = sshkey_new(KEY_UNSPEC)) == NULL)
-			fatal("%s: sshkey_new", __func__);
+			fatal_f("sshkey_new");
 		if ((r = sshkey_read(key, &cp)) != 0) {
 			error("(stdin):%d: invalid key: %s", lnum, ssh_err(r));
 			continue;
@@ -400,12 +400,12 @@ add_file(int agent_fd, const char *filename, int key_only, int qflag,
 
 	/* Graft with private bits */
 	if ((r = sshkey_to_certified(private)) != 0) {
-		error("%s: sshkey_to_certified: %s", __func__, ssh_err(r));
+		error_f("sshkey_to_certified: %s", ssh_err(r));
 		sshkey_free(cert);
 		goto out;
 	}
 	if ((r = sshkey_cert_copy(cert, private)) != 0) {
-		error("%s: sshkey_cert_copy: %s", __func__, ssh_err(r));
+		error_f("sshkey_cert_copy: %s", ssh_err(r));
 		sshkey_free(cert);
 		goto out;
 	}
@@ -591,7 +591,7 @@ load_resident_keys(int agent_fd, const char *skprovider, int qflag)
 	for (i = 0; i < nkeys; i++) {
 		if ((fp = sshkey_fingerprint(keys[i],
 		    fingerprint_hash, SSH_FP_DEFAULT)) == NULL)
-			fatal("%s: sshkey_fingerprint failed", __func__);
+			fatal_f("sshkey_fingerprint failed");
 		if ((r = ssh_add_identity_constrained(agent_fd, keys[i], "",
 		    lifetime, confirm, maxsign, skprovider)) != 0) {
 			error("Unable to add key %s %s",

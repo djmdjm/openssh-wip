@@ -821,7 +821,7 @@ brace_expand(const char *pattern, char ***patternsp, size_t *npatternsp)
 			goto fail;
 		}
 		if (invalid)
-			fatal("%s: invalid brace pattern \"%s\"", __func__, cp);
+			fatal_f("invalid brace pattern \"%s\"", cp);
 		if (expanded) {
 			/*
 			 * Current entry expanded to new entries on the
@@ -1252,7 +1252,7 @@ sink(int argc, char **argv, const char *src)
 		 * the requested destination file glob.
 		 */
 		if (brace_expand(src, &patterns, &npatterns) != 0)
-			fatal("%s: could not expand pattern", __func__);
+			fatal_f("could not expand pattern");
 	}
 	for (first = 1;; first = 0) {
 		cp = buf;

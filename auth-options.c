@@ -76,7 +76,7 @@ cert_option_list(struct sshauthopt *opts, struct sshbuf *oblob,
 	int r, ret = -1, found;
 
 	if ((c = sshbuf_fromb(oblob)) == NULL) {
-		error("%s: sshbuf_fromb failed", __func__);
+		error_f("sshbuf_fromb failed");
 		goto out;
 	}
 

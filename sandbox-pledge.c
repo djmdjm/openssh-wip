@@ -42,7 +42,7 @@ ssh_sandbox_init(void)
 {
 	struct ssh_sandbox *box;
 
-	debug3("%s: preparing pledge sandbox", __func__);
+	debug3_f("preparing pledge sandbox");
 	box = xcalloc(1, sizeof(*box));
 	box->child_pid = 0;
 
@@ -53,14 +53,14 @@ void
 ssh_sandbox_child(struct ssh_sandbox *box)
 {
 	if (pledge("stdio", NULL) == -1)
-		fatal("%s: pledge()", __func__);
+		fatal_f("pledge()");
 }
 
 void
 ssh_sandbox_parent_finish(struct ssh_sandbox *box)
 {
 	free(box);
-	debug3("%s: finished", __func__);
+	debug3_f("finished");
 }
 
 void

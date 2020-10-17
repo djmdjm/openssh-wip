@@ -50,7 +50,7 @@ userauth_kbdint(struct ssh *ssh)
 	if ((r = sshpkt_get_cstring(ssh, &lang, NULL)) != 0 ||
 	    (r = sshpkt_get_cstring(ssh, &devs, NULL)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
-		fatal("%s: %s", __func__, ssh_err(r));
+		fatal_f("%s", ssh_err(r));
 
 	debug("keyboard-interactive devs %s", devs);
 

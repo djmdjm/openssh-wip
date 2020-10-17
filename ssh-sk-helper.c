@@ -64,7 +64,7 @@ reply_error(int r, char *fmt, ...)
 	free(msg);
 
 	if (r >= 0)
-		fatal("%s: invalid error code %d", __func__, r);
+		fatal_f("invalid error code %d", r);
 
 	if ((resp = sshbuf_new()) == NULL)
 		fatal("%s: sshbuf_new failed", __progname);
@@ -107,13 +107,17 @@ process_sign(struct sshbuf *req)
 	if (sshbuf_len(req) != 0)
 		fatal("%s: trailing data in request", __progname);
 
-	if ((r = sshkey_private_deserialize(kbuf, &key)) != 0)
-		fatal("Unable to parse private key: %s", ssh_err(r));
-	if (!sshkey_is_sk(key))
-		fatal("Unsupported key type %s", sshkey_ssh_name(key));
+	if ((r = sshkey_private_deserialize(kbuf, &key)) != 0) {
+		fatal("%s: Unable to parse private key: %s",
+		    __progname, ssh_err(r));
+	}
+	if (!sshkey_is_sk(key)) {
+		fatal("%s: Unsupported key type %s",
+		    __progname, sshkey_ssh_name(key));
+	}
 
-	debug("%s: ready to sign with key %s, provider %s: "
-	    "msg len %zu, compat 0x%lx", __progname, sshkey_type(key),
+	debug_f("ready to sign with key %s, provider %s: "
+	    "msg len %zu, compat 0x%lx", sshkey_type(key),
 	    provider, msglen, (u_long)compat);
 
 	null_empty(&pin);
@@ -241,8 +245,8 @@ process_load_resident(struct sshbuf *req)
 		fatal("%s: buffer error: %s", __progname, ssh_err(r));
 
 	for (i = 0; i < nkeys; i++) {
-		debug("%s: key %zu %s %s", __func__, i,
-		    sshkey_type(keys[i]), keys[i]->sk_application);
+		debug_f("key %zu %s %s", i, sshkey_type(keys[i]),
+		    keys[i]->sk_application);
 		sshbuf_reset(kbuf);
 		if ((r = sshkey_private_serialize(keys[i], kbuf)) != 0)
 			fatal("%s: serialize private key: %s",
@@ -308,7 +312,7 @@ main(int argc, char **argv)
 	if (ssh_msg_recv(in, req) < 0)
 		fatal("ssh_msg_recv failed");
 	close(in);
-	debug("%s: received message len %zu", __progname, sshbuf_len(req));
+	debug_f("received message len %zu", sshbuf_len(req));
 
 	if ((r = sshbuf_get_u8(req, &version)) != 0)
 		fatal("%s: buffer error: %s", __progname, ssh_err(r));
@@ -339,7 +343,7 @@ main(int argc, char **argv)
 		fatal("%s: unsupported request type %u", __progname, rtype);
 	}
 	sshbuf_free(req);
-	debug("%s: reply len %zu", __progname, sshbuf_len(resp));
+	debug_f("reply len %zu", sshbuf_len(resp));
 
 	if (ssh_msg_send(out, SSH_SK_HELPER_VERSION, resp) == -1)
 		fatal("ssh_msg_send failed");
