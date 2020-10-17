@@ -33,12 +33,12 @@
 
 void
 sshfatal(const char *file, const char *func, int line, int showfunc,
-    LogLevel level, const char *fmt, ...)
+    LogLevel level, const char *suffix, const char *fmt, ...)
 {
 	va_list args;
 
 	va_start(args, fmt);
-	sshlog(file, func, line, showfunc, level, fmt, args);
+	sshlog(file, func, line, showfunc, level, suffix, fmt, args);
 	va_end(args);
 	cleanup_exit(255);
 }

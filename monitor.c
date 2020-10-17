@@ -394,7 +394,7 @@ monitor_read_log(struct monitor *pmonitor)
 	/* Log it */
 	if (log_level_name(level) == NULL)
 		fatal_f("invalid log level %u (corrupted message?)", level);
-	sshlog(file, func, line, 0, level, "%s [preauth]", msg);
+	sshlog(file, func, line, 0, level, NULL, "%s [preauth]", msg);
 
 	sshbuf_free(logmsg);
 	free(file);
