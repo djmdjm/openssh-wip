@@ -135,7 +135,7 @@ store_lastlog_message(const char *user, uid_t uid)
 			r = sshbuf_putf(loginmsg, "Last login: %s from %s\r\n",
 			    time_string, hostname);
 		if (r != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "sshbuf_putf");
 	}
 }
 

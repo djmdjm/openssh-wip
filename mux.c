@@ -266,7 +266,7 @@ mux_master_process_hello(struct ssh *ssh, u_int rid,
 		return -1;
 	}
 	if ((r = sshbuf_get_u32(m, &ver)) != 0) {
-		error_f("malformed message: %s", ssh_err(r));
+		error_fr(r, "parse");
 		return -1;
 	}
 	if (ver != SSHMUX_VER) {
@@ -283,7 +283,7 @@ mux_master_process_hello(struct ssh *ssh, u_int rid,
 
 		if ((r = sshbuf_get_cstring(m, &name, NULL)) != 0 ||
 		    (r = sshbuf_get_string_direct(m, NULL, &value_len)) != 0) {
-			error_f("malformed extension: %s", ssh_err(r));
+			error_fr(r, "parse extension");
 			return -1;
 		}
 		debug2_f("Unrecognised extension \"%s\" length %zu",
@@ -302,7 +302,7 @@ reply_ok(struct sshbuf *reply, u_int rid)
 
 	if ((r = sshbuf_put_u32(reply, MUX_S_OK)) != 0 ||
 	    (r = sshbuf_put_u32(reply, rid)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 }
 
 /* Enqueue an error response to the reply buffer */
@@ -314,7 +314,7 @@ reply_error(struct sshbuf *reply, u_int type, u_int rid, const char *msg)
 	if ((r = sshbuf_put_u32(reply, type)) != 0 ||
 	    (r = sshbuf_put_u32(reply, rid)) != 0 ||
 	    (r = sshbuf_put_cstring(reply, msg)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 }
 
 static int
@@ -380,7 +380,7 @@ mux_master_process_new_session(struct ssh *ssh, u_int rid,
 	if ((cctx->cmd = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put(cctx->cmd, cmd, strlen(cmd))) != 0)
-		fatal_f("sshbuf_put: %s", ssh_err(r));
+		fatal_fr(r, "sshbuf_put");
 	free(cmd);
 	cmd = NULL;
 
@@ -494,7 +494,7 @@ mux_master_process_alive_check(struct ssh *ssh, u_int rid,
 	if ((r = sshbuf_put_u32(reply, MUX_S_ALIVE)) != 0 ||
 	    (r = sshbuf_put_u32(reply, rid)) != 0 ||
 	    (r = sshbuf_put_u32(reply, (u_int)getpid())) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 
 	return 0;
 }
@@ -619,7 +619,7 @@ mux_confirm_remote_forward(struct ssh *ssh, int type, u_int32_t seq, void *ctxt)
 	if (type == SSH2_MSG_REQUEST_SUCCESS) {
 		if (rfwd->listen_port == 0) {
 			if ((r = sshpkt_get_u32(ssh, &port)) != 0)
-				fatal_f("packet error: %s", ssh_err(r));
+				fatal_fr(r, "parse port");
 			if (port > 65535) {
 				fatal("Invalid allocated port %u for "
 				    "mux remote forward to %s:%d", port,
@@ -634,7 +634,7 @@ mux_confirm_remote_forward(struct ssh *ssh, int type, u_int32_t seq, void *ctxt)
 			    (r = sshbuf_put_u32(out, fctx->rid)) != 0 ||
 			    (r = sshbuf_put_u32(out,
 			    rfwd->allocated_port)) != 0)
-				fatal_f("reply: %s", ssh_err(r));
+				fatal_fr(r, "reply");
 			channel_update_permission(ssh, rfwd->handle,
 			   rfwd->allocated_port);
 		} else {
@@ -668,7 +668,7 @@ mux_confirm_remote_forward(struct ssh *ssh, int type, u_int32_t seq, void *ctxt)
 	free(failmsg);
  out:
 	if ((r = sshbuf_put_stringb(c->output, out)) != 0)
-		fatal_f("sshbuf_put_stringb: %s", ssh_err(r));
+		fatal_fr(r, "enqueue");
 	sshbuf_free(out);
 	if (c->mux_pause <= 0)
 		fatal_f("mux_pause %d", c->mux_pause);
@@ -783,7 +783,7 @@ mux_master_process_open_fwd(struct ssh *ssh, u_int rid,
 			    (r = sshbuf_put_u32(reply, rid)) != 0 ||
 			    (r = sshbuf_put_u32(reply,
 			    options.remote_forwards[i].allocated_port)) != 0)
-				fatal_f("reply: %s", ssh_err(r));
+				fatal_fr(r, "reply FWD_REMOTE");
 			goto out;
 		}
 		break;
@@ -1071,12 +1071,12 @@ mux_stdio_confirm(struct ssh *ssh, int id, int success, void *arg)
 	if ((r = sshbuf_put_u32(reply, MUX_S_SESSION_OPENED)) != 0 ||
 	    (r = sshbuf_put_u32(reply, cctx->rid)) != 0 ||
 	    (r = sshbuf_put_u32(reply, c->self)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 
  done:
 	/* Send reply */
 	if ((r = sshbuf_put_stringb(cc->output, reply)) != 0)
-		fatal_f("sshbuf_put_stringb: %s", ssh_err(r));
+		fatal_fr(r, "enqueue");
 	sshbuf_free(reply);
 
 	if (cc->mux_pause <= 0)
@@ -1127,7 +1127,7 @@ mux_master_process_proxy(struct ssh *ssh, u_int rid,
 	c->mux_rcb = channel_proxy_downstream;
 	if ((r = sshbuf_put_u32(reply, MUX_S_PROXY)) != 0 ||
 	    (r = sshbuf_put_u32(reply, rid)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 
 	return 0;
 }
@@ -1154,10 +1154,10 @@ mux_master_read_cb(struct ssh *ssh, Channel *c)
 		/* Send hello */
 		if ((r = sshbuf_put_u32(out, MUX_MSG_HELLO)) != 0 ||
 		    (r = sshbuf_put_u32(out, SSHMUX_VER)) != 0)
-			fatal_f("reply: %s", ssh_err(r));
+			fatal_fr(r, "reply");
 		/* no extensions */
 		if ((r = sshbuf_put_stringb(c->output, out)) != 0)
-			fatal_f("sshbuf_put_stringb: %s", ssh_err(r));
+			fatal_fr(r, "enqueue");
 		debug3_f("channel %d: hello sent", c->self);
 		ret = 0;
 		goto out;
@@ -1200,10 +1200,9 @@ mux_master_read_cb(struct ssh *ssh, Channel *c)
 		ret = 0;
 	}
 	/* Enqueue reply packet */
-	if (sshbuf_len(out) != 0) {
-		if ((r = sshbuf_put_stringb(c->output, out)) != 0)
-			fatal_f("sshbuf_put_stringb: %s", ssh_err(r));
-	}
+	if (sshbuf_len(out) != 0 &&
+	    (r = sshbuf_put_stringb(c->output, out)) != 0)
+		fatal_fr(r, "enqueue");
  out:
 	sshbuf_free(in);
 	sshbuf_free(out);
@@ -1229,7 +1228,7 @@ mux_exit_message(struct ssh *ssh, Channel *c, int exitval)
 	    (r = sshbuf_put_u32(m, c->self)) != 0 ||
 	    (r = sshbuf_put_u32(m, exitval)) != 0 ||
 	    (r = sshbuf_put_stringb(mux_chan->output, m)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 	sshbuf_free(m);
 }
 
@@ -1251,7 +1250,7 @@ mux_tty_alloc_failed(struct ssh *ssh, Channel *c)
 	if ((r = sshbuf_put_u32(m, MUX_S_TTY_ALLOC_FAIL)) != 0 ||
 	    (r = sshbuf_put_u32(m, c->self)) != 0 ||
 	    (r = sshbuf_put_stringb(mux_chan->output, m)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 	sshbuf_free(m);
 }
 
@@ -1389,7 +1388,7 @@ mux_session_confirm(struct ssh *ssh, int id, int success, void *arg)
 		debug("Requesting authentication agent forwarding.");
 		channel_request_start(ssh, id, "auth-agent-req@openssh.com", 0);
 		if ((r = sshpkt_send(ssh)) != 0)
-			fatal_f("packet error: %s", ssh_err(r));
+			fatal_fr(r, "send");
 	}
 
 	client_session2_setup(ssh, id, cctx->want_tty, cctx->want_subsys,
@@ -1400,12 +1399,12 @@ mux_session_confirm(struct ssh *ssh, int id, int success, void *arg)
 	if ((r = sshbuf_put_u32(reply, MUX_S_SESSION_OPENED)) != 0 ||
 	    (r = sshbuf_put_u32(reply, cctx->rid)) != 0 ||
 	    (r = sshbuf_put_u32(reply, c->self)) != 0)
-		fatal_f("reply: %s", ssh_err(r));
+		fatal_fr(r, "reply");
 
  done:
 	/* Send reply */
 	if ((r = sshbuf_put_stringb(cc->output, reply)) != 0)
-		fatal_f("sshbuf_put_stringb: %s", ssh_err(r));
+		fatal_fr(r, "enqueue");
 	sshbuf_free(reply);
 
 	if (cc->mux_pause <= 0)
@@ -1458,7 +1457,7 @@ mux_client_read(int fd, struct sshbuf *b, size_t need)
 	pfd.fd = fd;
 	pfd.events = POLLIN;
 	if ((r = sshbuf_reserve(b, need, &p)) != 0)
-		fatal_f("reserve: %s", ssh_err(r));
+		fatal_fr(r, "reserve");
 	for (have = 0; have < need; ) {
 		if (muxclient_terminate) {
 			errno = EINTR;
@@ -1499,7 +1498,7 @@ mux_client_write_packet(int fd, struct sshbuf *m)
 	if ((queue = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put_stringb(queue, m)) != 0)
-		fatal_f("sshbuf_put_stringb: %s", ssh_err(r));
+		fatal_fr(r, "enqueue");
 
 	need = sshbuf_len(queue);
 	ptr = sshbuf_ptr(queue);
@@ -1564,7 +1563,7 @@ mux_client_read_packet(int fd, struct sshbuf *m)
 	}
 	if ((r = sshbuf_get_string_direct(queue, &ptr, &have)) != 0 ||
 	    (r = sshbuf_put(m, ptr, have)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "dequeue");
 	sshbuf_free(queue);
 	return 0;
 }
@@ -1580,7 +1579,7 @@ mux_client_hello_exchange(int fd)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put_u32(m, MUX_MSG_HELLO)) != 0 ||
 	    (r = sshbuf_put_u32(m, SSHMUX_VER)) != 0)
-		fatal_f("hello: %s", ssh_err(r));
+		fatal_fr(r, "assemble hello");
 	/* no extensions */
 
 	if (mux_client_write_packet(fd, m) != 0) {
@@ -1597,13 +1596,13 @@ mux_client_hello_exchange(int fd)
 	}
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0)
-		fatal_f("decode type: %s", ssh_err(r));
+		fatal_fr(r, "parse type");
 	if (type != MUX_MSG_HELLO) {
 		error_f("expected HELLO (%u) got %u", MUX_MSG_HELLO, type);
 		goto out;
 	}
 	if ((r = sshbuf_get_u32(m, &ver)) != 0)
-		fatal_f("decode version: %s", ssh_err(r));
+		fatal_fr(r, "parse version");
 	if (ver != SSHMUX_VER) {
 		error("Unsupported multiplexing protocol version %d "
 		    "(expected %d)", ver, SSHMUX_VER);
@@ -1616,7 +1615,7 @@ mux_client_hello_exchange(int fd)
 
 		if ((r = sshbuf_get_cstring(m, &name, NULL)) != 0 ||
 		    (r = sshbuf_skip_string(m)) != 0) { /* value */
-			error_f("malformed extension: %s", ssh_err(r));
+			error_fr(r, "parse extension");
 			goto out;
 		}
 		debug2("Unrecognised master extension \"%s\"", name);
@@ -1643,7 +1642,7 @@ mux_client_request_alive(int fd)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put_u32(m, MUX_C_ALIVE_CHECK)) != 0 ||
 	    (r = sshbuf_put_u32(m, muxclient_request_id)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "assemble");
 
 	if (mux_client_write_packet(fd, m) != 0)
 		fatal_f("write packet: %s", strerror(errno));
@@ -1657,20 +1656,20 @@ mux_client_request_alive(int fd)
 	}
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0)
-		fatal_f("decode type: %s", ssh_err(r));
+		fatal_fr(r, "parse type");
 	if (type != MUX_S_ALIVE) {
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		fatal_f("master returned error: %s", e);
 	}
 
 	if ((r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode remote ID: %s", ssh_err(r));
+		fatal_fr(r, "parse remote ID");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
 	if ((r = sshbuf_get_u32(m, &pid)) != 0)
-		fatal_f("decode PID: %s", ssh_err(r));
+		fatal_fr(r, "parse PID");
 	sshbuf_free(m);
 
 	debug3_f("done pid = %u", pid);
@@ -1694,7 +1693,7 @@ mux_client_request_terminate(int fd)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put_u32(m, MUX_C_TERMINATE)) != 0 ||
 	    (r = sshbuf_put_u32(m, muxclient_request_id)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "request");
 
 	if (mux_client_write_packet(fd, m) != 0)
 		fatal_f("write packet: %s", strerror(errno));
@@ -1713,7 +1712,7 @@ mux_client_request_terminate(int fd)
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0 ||
 	    (r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
@@ -1722,11 +1721,11 @@ mux_client_request_terminate(int fd)
 		break;
 	case MUX_S_PERMISSION_DENIED:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		fatal("Master refused termination request: %s", e);
 	case MUX_S_FAILURE:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		fatal_f("termination request failed: %s", e);
 	default:
 		fatal_f("unexpected response from master 0x%08x", type);
@@ -1775,7 +1774,7 @@ mux_client_forward(int fd, int cancel_flag, u_int ftype, struct Forward *fwd)
 	    (r = sshbuf_put_u32(m, fwd->listen_port)) != 0 ||
 	    (r = sshbuf_put_cstring(m, chost)) != 0 ||
 	    (r = sshbuf_put_u32(m, fwd->connect_port)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "request");
 
 	if (mux_client_write_packet(fd, m) != 0)
 		fatal_f("write packet: %s", strerror(errno));
@@ -1790,7 +1789,7 @@ mux_client_forward(int fd, int cancel_flag, u_int ftype, struct Forward *fwd)
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0 ||
 	    (r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
@@ -1802,7 +1801,7 @@ mux_client_forward(int fd, int cancel_flag, u_int ftype, struct Forward *fwd)
 		if (cancel_flag)
 			fatal_f("got MUX_S_REMOTE_PORT for cancel");
 		if ((r = sshbuf_get_u32(m, &fwd->allocated_port)) != 0)
-			fatal_f("decode port: %s", ssh_err(r));
+			fatal_fr(r, "parse port");
 		verbose("Allocated port %u for remote forward to %s:%d",
 		    fwd->allocated_port,
 		    fwd->connect_host ? fwd->connect_host : "",
@@ -1812,13 +1811,13 @@ mux_client_forward(int fd, int cancel_flag, u_int ftype, struct Forward *fwd)
 		break;
 	case MUX_S_PERMISSION_DENIED:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		sshbuf_free(m);
 		error("Master refused forwarding request: %s", e);
 		return -1;
 	case MUX_S_FAILURE:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		sshbuf_free(m);
 		error_f("forwarding request failed: %s", e);
 		return -1;
@@ -1896,7 +1895,7 @@ mux_client_request_session(int fd)
 	    (r = sshbuf_put_u32(m, echar)) != 0 ||
 	    (r = sshbuf_put_cstring(m, term)) != 0 ||
 	    (r = sshbuf_put_stringb(m, command)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "request");
 
 	/* Pass environment */
 	if (options.num_send_env > 0 && environ != NULL) {
@@ -1904,12 +1903,12 @@ mux_client_request_session(int fd)
 			if (!env_permitted(environ[i]))
 				continue;
 			if ((r = sshbuf_put_cstring(m, environ[i])) != 0)
-				fatal_f("request: %s", ssh_err(r));
+				fatal_fr(r, "request sendenv");
 		}
 	}
 	for (i = 0; i < options.num_setenv; i++) {
 		if ((r = sshbuf_put_cstring(m, options.setenv[i])) != 0)
-			fatal_f("request: %s", ssh_err(r));
+			fatal_fr(r, "request setenv");
 	}
 
 	if (mux_client_write_packet(fd, m) != 0)
@@ -1933,7 +1932,7 @@ mux_client_request_session(int fd)
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0 ||
 	    (r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
@@ -1941,18 +1940,18 @@ mux_client_request_session(int fd)
 	switch (type) {
 	case MUX_S_SESSION_OPENED:
 		if ((r = sshbuf_get_u32(m, &sid)) != 0)
-			fatal_f("decode ID: %s", ssh_err(r));
+			fatal_fr(r, "parse session ID");
 		debug_f("master session id: %u", sid);
 		break;
 	case MUX_S_PERMISSION_DENIED:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		error("Master refused session request: %s", e);
 		sshbuf_free(m);
 		return -1;
 	case MUX_S_FAILURE:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		error_f("session request failed: %s", e);
 		sshbuf_free(m);
 		return -1;
@@ -1987,11 +1986,11 @@ mux_client_request_session(int fd)
 		if (mux_client_read_packet(fd, m) != 0)
 			break;
 		if ((r = sshbuf_get_u32(m, &type)) != 0)
-			fatal_f("decode type: %s", ssh_err(r));
+			fatal_fr(r, "parse type");
 		switch (type) {
 		case MUX_S_TTY_ALLOC_FAIL:
 			if ((r = sshbuf_get_u32(m, &esid)) != 0)
-				fatal_f("decode ID: %s", ssh_err(r));
+				fatal_fr(r, "parse session ID");
 			if (esid != sid)
 				fatal_f("tty alloc fail on unknown session: "
 				    "my id %u theirs %u", sid, esid);
@@ -2001,19 +2000,19 @@ mux_client_request_session(int fd)
 			continue;
 		case MUX_S_EXIT_MESSAGE:
 			if ((r = sshbuf_get_u32(m, &esid)) != 0)
-				fatal_f("decode ID: %s", ssh_err(r));
+				fatal_fr(r, "parse session ID");
 			if (esid != sid)
 				fatal_f("exit on unknown session: "
 				    "my id %u theirs %u", sid, esid);
 			if (exitval_seen)
 				fatal_f("exitval sent twice");
 			if ((r = sshbuf_get_u32(m, &exitval)) != 0)
-				fatal_f("decode exit value: %s", ssh_err(r));
+				fatal_fr(r, "parse exitval");
 			exitval_seen = 1;
 			continue;
 		default:
 			if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-				fatal_f("decode error: %s", ssh_err(r));
+				fatal_fr(r, "parse error message");
 			fatal_f("master returned error: %s", e);
 		}
 	}
@@ -2049,7 +2048,7 @@ mux_client_proxy(int fd)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put_u32(m, MUX_C_PROXY)) != 0 ||
 	    (r = sshbuf_put_u32(m, muxclient_request_id)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "request");
 	if (mux_client_write_packet(fd, m) != 0)
 		fatal_f("write packet: %s", strerror(errno));
 
@@ -2062,13 +2061,13 @@ mux_client_proxy(int fd)
 	}
 	if ((r = sshbuf_get_u32(m, &type)) != 0 ||
 	    (r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
 	if (type != MUX_S_PROXY) {
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		fatal_f("master returned error: %s", e);
 	}
 	sshbuf_free(m);
@@ -2105,7 +2104,7 @@ mux_client_request_stdio_fwd(int fd)
 	    (r = sshbuf_put_string(m, NULL, 0)) != 0 || /* reserved */
 	    (r = sshbuf_put_cstring(m, options.stdio_forward_host)) != 0 ||
 	    (r = sshbuf_put_u32(m, options.stdio_forward_port)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "request");
 
 	if (mux_client_write_packet(fd, m) != 0)
 		fatal_f("write packet: %s", strerror(errno));
@@ -2131,24 +2130,24 @@ mux_client_request_stdio_fwd(int fd)
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0 ||
 	    (r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
 	switch (type) {
 	case MUX_S_SESSION_OPENED:
 		if ((r = sshbuf_get_u32(m, &sid)) != 0)
-			fatal_f("decode ID: %s", ssh_err(r));
+			fatal_fr(r, "parse session ID");
 		debug_f("master session id: %u", sid);
 		break;
 	case MUX_S_PERMISSION_DENIED:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		sshbuf_free(m);
 		fatal("Master refused stdio forwarding request: %s", e);
 	case MUX_S_FAILURE:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		sshbuf_free(m);
 		fatal("Stdio forwarding request failed: %s", e);
 	default:
@@ -2190,7 +2189,7 @@ mux_client_request_stop_listening(int fd)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_put_u32(m, MUX_C_STOP_LISTENING)) != 0 ||
 	    (r = sshbuf_put_u32(m, muxclient_request_id)) != 0)
-		fatal_f("request: %s", ssh_err(r));
+		fatal_fr(r, "request");
 
 	if (mux_client_write_packet(fd, m) != 0)
 		fatal_f("write packet: %s", strerror(errno));
@@ -2203,7 +2202,7 @@ mux_client_request_stop_listening(int fd)
 
 	if ((r = sshbuf_get_u32(m, &type)) != 0 ||
 	    (r = sshbuf_get_u32(m, &rid)) != 0)
-		fatal_f("decode: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	if (rid != muxclient_request_id)
 		fatal_f("out of sequence reply: my id %u theirs %u",
 		    muxclient_request_id, rid);
@@ -2213,11 +2212,11 @@ mux_client_request_stop_listening(int fd)
 		break;
 	case MUX_S_PERMISSION_DENIED:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		fatal("Master refused stop listening request: %s", e);
 	case MUX_S_FAILURE:
 		if ((r = sshbuf_get_cstring(m, &e, NULL)) != 0)
-			fatal_f("decode error: %s", ssh_err(r));
+			fatal_fr(r, "parse error message");
 		fatal_f("stop listening request failed: %s", e);
 	default:
 		fatal_f("unexpected response from master 0x%08x", type);

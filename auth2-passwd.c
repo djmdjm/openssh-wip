@@ -58,7 +58,7 @@ userauth_passwd(struct ssh *ssh)
 	    (r = sshpkt_get_cstring(ssh, &password, &len)) != 0 ||
 	    (change && (r = sshpkt_get_cstring(ssh, NULL, NULL)) != 0) ||
 	    (r = sshpkt_get_end(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "parse packet");
 
 	if (change)
 		logit("password change not supported");

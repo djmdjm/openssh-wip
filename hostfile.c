@@ -277,8 +277,7 @@ load_hostkeys(struct hostkeys *hostkeys, const char *host, const char *path)
 	if ((r = hostkeys_foreach(path, record_hostkey, &ctx, host, NULL,
 	    HKF_WANT_MATCH|HKF_WANT_PARSE_KEY)) != 0) {
 		if (r != SSH_ERR_SYSTEM_ERROR && errno != ENOENT)
-			debug_f("hostkeys_foreach failed for %s: %s",
-			    path, ssh_err(r));
+			debug_fr(r, "hostkeys_foreach failed for %s", path);
 	}
 	if (ctx.num_loaded != 0)
 		debug3_f("loaded %lu keys from %s", ctx.num_loaded, host);
@@ -446,7 +445,7 @@ write_host_entry(FILE *f, const char *host, const char *ip,
 	if ((r = sshkey_write(key, f)) == 0)
 		success = 1;
 	else
-		error_f("sshkey_write failed: %s", ssh_err(r));
+		error_fr(r, "sshkey_write");
 	fputc('\n', f);
 	/* If hashing is enabled, the IP address needs to go on its own line */
 	if (success && store_hash && ip != NULL)
@@ -616,7 +615,7 @@ hostfile_replace_entries(const char *filename, const char *host, const char *ip,
 	if ((r = hostkeys_foreach(filename, host_delete, &ctx, host, ip,
 	    HKF_WANT_PARSE_KEY)) != 0) {
 		oerrno = errno;
-		error_f("hostkeys_foreach failed: %s", ssh_err(r));
+		error_fr(r, "hostkeys_foreach");
 		goto fail;
 	}
 

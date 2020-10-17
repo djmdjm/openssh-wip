@@ -45,7 +45,7 @@ static int
 start_helper(int *fdp, pid_t *pidp, void (**osigchldp)(int))
 {
 	void (*osigchld)(int);
-	int oerrno, pair[2], r = SSH_ERR_INTERNAL_ERROR;
+	int oerrno, pair[2];
 	pid_t pid;
 	char *helper, *verbosity = NULL;
 
@@ -84,7 +84,7 @@ start_helper(int *fdp, pid_t *pidp, void (**osigchldp)(int))
 	if (pid == 0) {
 		if ((dup2(pair[1], STDIN_FILENO) == -1) ||
 		    (dup2(pair[1], STDOUT_FILENO) == -1)) {
-			error_f("dup2: %s", ssh_err(r));
+			error_f("dup2: %s", strerror(errno));
 			_exit(1);
 		}
 		close(pair[0]);
@@ -158,19 +158,19 @@ client_converse(struct sshbuf *msg, struct sshbuf **respp, u_int type)
 	   (r = sshbuf_put_u8(req, log_is_on_stderr() != 0)) != 0 ||
 	   (r = sshbuf_put_u32(req, ll < 0 ? 0 : ll)) != 0 ||
 	   (r = sshbuf_putb(req, msg)) != 0) {
-		error_f("build: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 	if ((r = ssh_msg_send(fd, SSH_SK_HELPER_VERSION, req)) != 0) {
-		error_f("send: %s", ssh_err(r));
+		error_fr(r, "send");
 		goto out;
 	}
 	if ((r = ssh_msg_recv(fd, resp)) != 0) {
-		error_f("receive: %s", ssh_err(r));
+		error_fr(r, "receive");
 		goto out;
 	}
 	if ((r = sshbuf_get_u8(resp, &version)) != 0) {
-		error_f("parse version: %s", ssh_err(r));
+		error_fr(r, "parse version");
 		goto out;
 	}
 	if (version != SSH_SK_HELPER_VERSION) {
@@ -180,12 +180,12 @@ client_converse(struct sshbuf *msg, struct sshbuf **respp, u_int type)
 		goto out;
 	}
 	if ((r = sshbuf_get_u32(resp, &rtype)) != 0) {
-		error_f("parse message type: %s", ssh_err(r));
+		error_fr(r, "parse message type");
 		goto out;
 	}
 	if (rtype == SSH_SK_HELPER_ERROR) {
 		if ((r = sshbuf_get_u32(resp, &rerr)) != 0) {
-			error_f("parse error: %s", ssh_err(r));
+			error_fr(r, "parse");
 			goto out;
 		}
 		debug_f("helper returned error -%u", rerr);
@@ -243,7 +243,7 @@ sshsk_sign(const char *provider, struct sshkey *key,
 	}
 
 	if ((r = sshkey_private_serialize(key, kbuf)) != 0) {
-		error_f("serialize private key: %s", ssh_err(r));
+		error_fr(r, "encode key");
 		goto out;
 	}
 	if ((r = sshbuf_put_stringb(req, kbuf)) != 0 ||
@@ -252,7 +252,7 @@ sshsk_sign(const char *provider, struct sshkey *key,
 	    (r = sshbuf_put_cstring(req, NULL)) != 0 || /* alg */
 	    (r = sshbuf_put_u32(req, compat)) != 0 ||
 	    (r = sshbuf_put_cstring(req, pin)) != 0) {
-		error_f("compose: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 
@@ -266,7 +266,7 @@ sshsk_sign(const char *provider, struct sshkey *key,
 		goto out;
 
 	if ((r = sshbuf_get_string(resp, sigp, lenp)) != 0) {
-		error_f("parse signature: %s", ssh_err(r));
+		error_fr(r, "parse signature");
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
@@ -323,7 +323,7 @@ sshsk_enroll(int type, const char *provider_path, const char *device,
 	    (r = sshbuf_put_u8(req, flags)) != 0 ||
 	    (r = sshbuf_put_cstring(req, pin)) != 0 ||
 	    (r = sshbuf_put_stringb(req, challenge_buf)) != 0) {
-		error_f("compose: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 
@@ -332,7 +332,7 @@ sshsk_enroll(int type, const char *provider_path, const char *device,
 
 	if ((r = sshbuf_get_stringb(resp, kbuf)) != 0 ||
 	    (r = sshbuf_get_stringb(resp, abuf)) != 0) {
-		error_f("parse signature: %s", ssh_err(r));
+		error_fr(r, "parse");
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
@@ -342,11 +342,11 @@ sshsk_enroll(int type, const char *provider_path, const char *device,
 		goto out;
 	}
 	if ((r = sshkey_private_deserialize(kbuf, &key)) != 0) {
-		error("Unable to parse private key: %s", ssh_err(r));
+		error_fr(r, "encode");
 		goto out;
 	}
 	if (attest != NULL && (r = sshbuf_putb(attest, abuf)) != 0) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "encode attestation information");
 		goto out;
 	}
 
@@ -387,7 +387,7 @@ sshsk_load_resident(const char *provider_path, const char *device,
 	if ((r = sshbuf_put_cstring(req, provider_path)) != 0 ||
 	    (r = sshbuf_put_cstring(req, device)) != 0 ||
 	    (r = sshbuf_put_cstring(req, pin)) != 0) {
-		error_f("compose: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 
@@ -398,12 +398,12 @@ sshsk_load_resident(const char *provider_path, const char *device,
 		/* key, comment */
 		if ((r = sshbuf_get_stringb(resp, kbuf)) != 0 ||
 		    (r = sshbuf_get_cstring(resp, NULL, NULL)) != 0) {
-			error_f("parse signature: %s", ssh_err(r));
+			error_fr(r, "parse signature");
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
 		}
 		if ((r = sshkey_private_deserialize(kbuf, &key)) != 0) {
-			error("Unable to parse private key: %s", ssh_err(r));
+			error_fr(r, "decode key");
 			goto out;
 		}
 		if ((tmp = recallocarray(keys, nkeys, nkeys + 1,

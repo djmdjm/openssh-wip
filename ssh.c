@@ -553,14 +553,14 @@ check_load(int r, const char *path, const char *message)
 		break;
 	case SSH_ERR_INTERNAL_ERROR:
 	case SSH_ERR_ALLOC_FAIL:
-		fatal("load %s \"%s\": %s", message, path, ssh_err(r));
+		fatal_r(r, "load %s \"%s\"", message, path);
 	case SSH_ERR_SYSTEM_ERROR:
 		/* Ignore missing files */
 		if (errno == ENOENT)
 			break;
 		/* FALLTHROUGH */
 	default:
-		error("load %s \"%s\": %s", message, path, ssh_err(r));
+		error_r(r, "load %s \"%s\"", message, path);
 		break;
 	}
 }
@@ -1119,7 +1119,7 @@ main(int ac, char **av)
 		for (i = 0; i < ac; i++) {
 			if ((r = sshbuf_putf(command, "%s%s",
 			    i ? " " : "", av[i])) != 0)
-				fatal_f("buffer error: %s", ssh_err(r));
+				fatal_fr(r, "buffer error");
 		}
 	}
 
@@ -1380,7 +1380,7 @@ main(int ac, char **av)
 		free(cp);
 		if ((r = sshbuf_put(command, options.remote_command,
 		    strlen(options.remote_command))) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "buffer error");
 	}
 
 	if (options.control_path != NULL) {
@@ -1754,7 +1754,7 @@ ssh_confirm_remote_forward(struct ssh *ssh, int type, u_int32_t seq, void *ctxt)
 	if (rfwd->listen_path == NULL && rfwd->listen_port == 0) {
 		if (type == SSH2_MSG_REQUEST_SUCCESS) {
 			if ((r = sshpkt_get_u32(ssh, &port)) != 0)
-				fatal_f("%s", ssh_err(r));
+				fatal_fr(r, "parse packet");
 			if (port > 65535) {
 				error("Invalid allocated port %u for remote "
 				    "forward to %s:%d", port,
@@ -1929,8 +1929,7 @@ check_agent_present(void)
 		if ((r = ssh_get_authentication_socket(NULL)) != 0) {
 			options.forward_agent = 0;
 			if (r != SSH_ERR_AGENT_NOT_PRESENT)
-				debug("ssh_get_authentication_socket: %s",
-				    ssh_err(r));
+				debug_r(r, "ssh_get_authentication_socket");
 		}
 	}
 }
@@ -1967,7 +1966,7 @@ ssh_session2_setup(struct ssh *ssh, int id, int success, void *arg)
 		debug("Requesting authentication agent forwarding.");
 		channel_request_start(ssh, id, "auth-agent-req@openssh.com", 0);
 		if ((r = sshpkt_send(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "send packet");
 	}
 
 	/* Tell the packet module whether this is an interactive session. */
@@ -2101,7 +2100,7 @@ ssh_session2(struct ssh *ssh, struct passwd *pw)
 		    "no-more-sessions@openssh.com")) != 0 ||
 		    (r = sshpkt_put_u8(ssh, 0)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "send packet");
 	}
 
 	/* Execute a local command */

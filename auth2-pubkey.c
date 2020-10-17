@@ -101,7 +101,7 @@ userauth_pubkey(struct ssh *ssh)
 	if ((r = sshpkt_get_u8(ssh, &have_sig)) != 0 ||
 	    (r = sshpkt_get_cstring(ssh, &pkalg, NULL)) != 0 ||
 	    (r = sshpkt_get_string(ssh, &pkblob, &blen)) != 0)
-		fatal_f("parse request failed: %s", ssh_err(r));
+		fatal_fr(r, "parse packet");
 
 	if (log_level_get() >= SYSLOG_LEVEL_DEBUG2) {
 		char *keystring;
@@ -125,7 +125,7 @@ userauth_pubkey(struct ssh *ssh)
 		goto done;
 	}
 	if ((r = sshkey_from_blob(pkblob, blen, &key)) != 0) {
-		error_f("could not parse key: %s", ssh_err(r));
+		error_fr(r, "parse key");
 		goto done;
 	}
 	if (key == NULL) {
@@ -154,9 +154,9 @@ userauth_pubkey(struct ssh *ssh)
 	}
 	if ((r = sshkey_check_cert_sigtype(key,
 	    options.ca_sign_algorithms)) != 0) {
-		logit_f("certificate signature algorithm %s: %s",
+		logit_fr(r, "certificate signature algorithm %s",
 		    (key->cert == NULL || key->cert->signature_type == NULL) ?
-		    "(null)" : key->cert->signature_type, ssh_err(r));
+		    "(null)" : key->cert->signature_type);
 		goto done;
 	}
 	key_s = format_key(key);
@@ -168,16 +168,16 @@ userauth_pubkey(struct ssh *ssh)
 		    ca_s == NULL ? "" : " CA ", ca_s == NULL ? "" : ca_s);
 		if ((r = sshpkt_get_string(ssh, &sig, &slen)) != 0 ||
 		    (r = sshpkt_get_end(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "parse signature packet");
 		if ((b = sshbuf_new()) == NULL)
 			fatal_f("sshbuf_new failed");
 		if (ssh->compat & SSH_OLD_SESSIONID) {
 			if ((r = sshbuf_put(b, session_id2, session_id2_len)) != 0)
-				fatal_f("put session id: %s", ssh_err(r));
+				fatal_fr(r, "put old session id");
 		} else {
 			if ((r = sshbuf_put_string(b, session_id2,
 			    session_id2_len)) != 0)
-				fatal_f("put session id: %s", ssh_err(r));
+				fatal_fr(r, "put session id");
 		}
 		if (!authctxt->valid || authctxt->user == NULL) {
 			debug2_f("disabled because of invalid user");
@@ -194,7 +194,7 @@ userauth_pubkey(struct ssh *ssh)
 		    (r = sshbuf_put_u8(b, have_sig)) != 0 ||
 		    (r = sshbuf_put_cstring(b, pkalg)) != 0 ||
 		    (r = sshbuf_put_string(b, pkblob, blen)) != 0)
-			fatal_f("build packet failed: %s", ssh_err(r));
+			fatal_fr(r, "reconstruct packet");
 #ifdef DEBUG_PK
 		sshbuf_dump(b, stderr);
 #endif
@@ -248,7 +248,7 @@ userauth_pubkey(struct ssh *ssh)
 		    ca_s == NULL ? "" : " CA ", ca_s == NULL ? "" : ca_s);
 
 		if ((r = sshpkt_get_end(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "parse packet");
 
 		if (!authctxt->valid || authctxt->user == NULL) {
 			debug2_f("disabled because of invalid user");
@@ -269,7 +269,7 @@ userauth_pubkey(struct ssh *ssh)
 			    (r = sshpkt_put_string(ssh, pkblob, blen)) != 0 ||
 			    (r = sshpkt_send(ssh)) != 0 ||
 			    (r = ssh_packet_write_wait(ssh)) != 0)
-				fatal_f("%s", ssh_err(r));
+				fatal_fr(r, "send packet");
 			authctxt->postponed = 1;
 		}
 	}
@@ -494,11 +494,11 @@ match_principals_command(struct ssh *ssh, struct passwd *user_pw,
 		goto out;
 	}
 	if ((r = sshkey_to_base64(cert->signature_key, &catext)) != 0) {
-		error_f("sshkey_to_base64 failed: %s", ssh_err(r));
+		error_fr(r, "sshkey_to_base64 failed");
 		goto out;
 	}
 	if ((r = sshkey_to_base64(key, &keytext)) != 0) {
-		error_f("sshkey_to_base64 failed: %s", ssh_err(r));
+		error_fr(r, "sshkey_to_base64 failed");
 		goto out;
 	}
 	snprintf(serial_s, sizeof(serial_s), "%llu",
@@ -761,9 +761,9 @@ user_cert_trusted_ca(struct ssh *ssh, struct passwd *pw, struct sshkey *key,
 
 	if ((r = sshkey_in_file(key->cert->signature_key,
 	    options.trusted_user_ca_keys, 1, 0)) != 0) {
-		debug2_f("CA %s %s is not listed in %s: %s",
+		debug2_fr(r, "CA %s %s is not listed in %s",
 		    sshkey_type(key->cert->signature_key), ca_fp,
-		    options.trusted_user_ca_keys, ssh_err(r));
+		    options.trusted_user_ca_keys);
 		goto out;
 	}
 	/*
@@ -917,7 +917,7 @@ user_key_command_allowed2(struct ssh *ssh, struct passwd *user_pw,
 		goto out;
 	}
 	if ((r = sshkey_to_base64(key, &keytext)) != 0) {
-		error_f("sshkey_to_base64 failed: %s", ssh_err(r));
+		error_fr(r, "sshkey_to_base64 failed");
 		goto out;
 	}
 

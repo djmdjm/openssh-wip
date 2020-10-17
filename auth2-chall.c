@@ -77,7 +77,7 @@ kbdint_alloc(const char *devs)
 		for (i = 0; devices[i]; i++) {
 			if ((r = sshbuf_putf(b, "%s%s",
 			    sshbuf_len(b) ? "," : "", devices[i]->name)) != 0)
-				fatal_f("buffer error: %s", ssh_err(r));
+				fatal_fr(r, "buffer error");
 		}
 		if ((kbdintctxt->devices = sshbuf_dup_string(b)) == NULL)
 			fatal_f("sshbuf_dup_string failed");
@@ -228,15 +228,15 @@ send_userauth_info_request(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, instr)) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, "")) != 0 ||	/* language not used */
 	    (r = sshpkt_put_u32(ssh, kbdintctxt->nreq)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "start packet");
 	for (i = 0; i < kbdintctxt->nreq; i++) {
 		if ((r = sshpkt_put_cstring(ssh, prompts[i])) != 0 ||
 		    (r = sshpkt_put_u8(ssh, echo_on[i])) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "assemble packet");
 	}
 	if ((r = sshpkt_send(ssh)) != 0 ||
 	    (r = ssh_packet_write_wait(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 
 	for (i = 0; i < kbdintctxt->nreq; i++)
 		free(prompts[i]);
@@ -259,29 +259,29 @@ input_userauth_info_response(int type, u_int32_t seq, struct ssh *ssh)
 	char **response = NULL;
 
 	if (authctxt == NULL)
-		fatal("input_userauth_info_response: no authctxt");
+		fatal_f("no authctxt");
 	kbdintctxt = authctxt->kbdintctxt;
 	if (kbdintctxt == NULL || kbdintctxt->ctxt == NULL)
-		fatal("input_userauth_info_response: no kbdintctxt");
+		fatal_f("no kbdintctxt");
 	if (kbdintctxt->device == NULL)
-		fatal("input_userauth_info_response: no device");
+		fatal_f("no device");
 
 	authctxt->postponed = 0;	/* reset */
 	if ((r = sshpkt_get_u32(ssh, &nresp)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "parse packet");
 	if (nresp != kbdintctxt->nreq)
-		fatal("input_userauth_info_response: wrong number of replies");
+		fatal_f("wrong number of replies");
 	if (nresp > 100)
-		fatal("input_userauth_info_response: too many replies");
+		fatal_f("too many replies");
 	if (nresp > 0) {
 		response = xcalloc(nresp, sizeof(char *));
-		for (i = 0; i < nresp; i++)
-			if ((r = sshpkt_get_cstring(ssh, &response[i],
-			    NULL)) != 0)
-				fatal_f("%s", ssh_err(r));
+		for (i = 0; i < nresp; i++) {
+			if ((r = sshpkt_get_cstring(ssh, &response[i], NULL)) != 0)
+				fatal_fr(r, "parse response");
+		}
 	}
 	if ((r = sshpkt_get_end(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "parse packet");
 
 	res = kbdintctxt->device->respond(kbdintctxt->ctxt, nresp, response);
 

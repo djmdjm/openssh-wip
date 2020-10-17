@@ -149,7 +149,7 @@ userauth_banner(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, banner)) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, "")) != 0 ||	/* language, unused */
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 	debug("userauth_banner: sent");
 done:
 	free(banner);
@@ -373,7 +373,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		if ((r = sshpkt_start(ssh, SSH2_MSG_USERAUTH_SUCCESS)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0 ||
 		    (r = ssh_packet_write_wait(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "send success packet");
 		/* now we can break out */
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
@@ -392,7 +392,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		    (r = sshpkt_put_u8(ssh, partial)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0 ||
 		    (r = ssh_packet_write_wait(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "send failure packet");
 		free(methods);
 	}
 }
@@ -442,7 +442,7 @@ authmethods_get(Authctxt *authctxt)
 			continue;
 		if ((r = sshbuf_putf(b, "%s%s", sshbuf_len(b) ? "," : "",
 		    authmethods[i]->name)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "buffer error");
 	}
 	if ((list = sshbuf_dup_string(b)) == NULL)
 		fatal_f("sshbuf_dup_string failed");
@@ -684,7 +684,7 @@ auth2_record_key(Authctxt *authctxt, int authenticated,
 	int r;
 
 	if ((r = sshkey_from_private(key, &dup)) != 0)
-		fatal_f("copy key: %s", ssh_err(r));
+		fatal_fr(r, "copy key");
 	sshkey_free(authctxt->auth_method_key);
 	authctxt->auth_method_key = dup;
 
@@ -693,7 +693,7 @@ auth2_record_key(Authctxt *authctxt, int authenticated,
 
 	/* If authenticated, make sure we don't accept this key again */
 	if ((r = sshkey_from_private(key, &dup)) != 0)
-		fatal_f("copy key: %s", ssh_err(r));
+		fatal_fr(r, "copy key");
 	if (authctxt->nprev_keys >= INT_MAX ||
 	    (tmp = recallocarray(authctxt->prev_keys, authctxt->nprev_keys,
 	    authctxt->nprev_keys + 1, sizeof(*authctxt->prev_keys))) == NULL)
@@ -744,14 +744,14 @@ auth2_update_session_info(Authctxt *authctxt, const char *method,
 	if ((r = sshbuf_putf(authctxt->session_info, "%s%s%s",
 	    method, submethod == NULL ? "" : "/",
 	    submethod == NULL ? "" : submethod)) != 0)
-		fatal_f("append method: %s", ssh_err(r));
+		fatal_fr(r, "append method");
 
 	/* Append key if present */
 	if (authctxt->auth_method_key != NULL) {
 		if ((r = sshbuf_put_u8(authctxt->session_info, ' ')) != 0 ||
 		    (r = sshkey_format_text(authctxt->auth_method_key,
 		    authctxt->session_info)) != 0)
-			fatal_f("append key: %s", ssh_err(r));
+			fatal_fr(r, "append key");
 	}
 
 	if (authctxt->auth_method_info != NULL) {
@@ -761,10 +761,10 @@ auth2_update_session_info(Authctxt *authctxt, const char *method,
 		if ((r = sshbuf_put_u8(authctxt->session_info, ' ')) != 0 ||
 		    (r = sshbuf_putf(authctxt->session_info, "%s",
 		    authctxt->auth_method_info)) != 0) {
-			fatal_f("append method info: %s", ssh_err(r));
+			fatal_fr(r, "append method info");
 		}
 	}
 	if ((r = sshbuf_put_u8(authctxt->session_info, '\n')) != 0)
-		fatal_f("append: %s", ssh_err(r));
+		fatal_fr(r, "append");
 }
 

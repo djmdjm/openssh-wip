@@ -73,7 +73,7 @@ userauth_hostbased(struct ssh *ssh)
 	    (r = sshpkt_get_cstring(ssh, &chost, NULL)) != 0 ||
 	    (r = sshpkt_get_cstring(ssh, &cuser, NULL)) != 0 ||
 	    (r = sshpkt_get_string(ssh, &sig, &slen)) != 0)
-		fatal_f("packet parsing: %s", ssh_err(r));
+		fatal_fr(r, "parse packet");
 
 	debug_f("cuser %s chost %s pkalg %s slen %zu",
 	    cuser, chost, pkalg, slen);
@@ -89,7 +89,7 @@ userauth_hostbased(struct ssh *ssh)
 		goto done;
 	}
 	if ((r = sshkey_from_blob(pkblob, blen, &key)) != 0) {
-		error_f("key_from_blob: %s", ssh_err(r));
+		error_fr(r, "key_from_blob");
 		goto done;
 	}
 	if (key == NULL) {
@@ -114,9 +114,9 @@ userauth_hostbased(struct ssh *ssh)
 	}
 	if ((r = sshkey_check_cert_sigtype(key,
 	    options.ca_sign_algorithms)) != 0) {
-		logit_f("certificate signature algorithm %s: %s",
+		logit_fr(r, "certificate signature algorithm %s",
 		    (key->cert == NULL || key->cert->signature_type == NULL) ?
-		    "(null)" : key->cert->signature_type, ssh_err(r));
+		    "(null)" : key->cert->signature_type);
 		goto done;
 	}
 
@@ -137,7 +137,7 @@ userauth_hostbased(struct ssh *ssh)
 	    (r = sshbuf_put_string(b, pkblob, blen)) != 0 ||
 	    (r = sshbuf_put_cstring(b, chost)) != 0 ||
 	    (r = sshbuf_put_cstring(b, cuser)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "reconstruct packet");
 #ifdef DEBUG_PK
 	sshbuf_dump(b, stderr);
 #endif

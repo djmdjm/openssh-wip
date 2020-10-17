@@ -1377,7 +1377,7 @@ krl_dump(struct ssh_krl *krl, FILE *f)
 	RB_FOREACH(rb, revoked_blob_tree, &krl->revoked_keys) {
 		if ((r = sshkey_from_blob(rb->blob, rb->len, &key)) != 0) {
 			ret = SSH_ERR_INVALID_FORMAT;
-			error("Parse key in KRL: %s", ssh_err(r));
+			error_r(r, "parse KRL key");
 			continue;
 		}
 		if ((fp = sshkey_fingerprint(key, SSH_FP_HASH_DEFAULT,

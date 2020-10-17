@@ -375,7 +375,7 @@ channel_new(struct ssh *ssh, char *ctype, int type, int rfd, int wfd, int efd,
 	    (c->extended = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new failed");
 	if ((r = sshbuf_set_max_size(c->input, CHAN_INPUT_MAX)) != 0)
-		fatal_f("sshbuf_set_max_size: %s", ssh_err(r));
+		fatal_fr(r, "sshbuf_set_max_size");
 	c->ostate = CHAN_OUTPUT_OPEN;
 	c->istate = CHAN_INPUT_OPEN;
 	channel_register_fds(ssh, c, rfd, wfd, efd, extusage, nonblock, 0);
@@ -560,8 +560,7 @@ mux_remove_remote_forwardings(struct ssh *ssh, Channel *c)
 		    channel_rfwd_bind_host(perm->listen_host))) != 0 ||
 		    (r = sshpkt_put_u32(ssh, perm->listen_port)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0) {
-			fatal_f("channel %i: %s",
-			    c->self, ssh_err(r));
+			fatal_fr(r, "channel %i", c->self);
 		}
 		fwd_perm_clear(perm); /* unregister */
 	}
@@ -863,7 +862,7 @@ channel_open_message(struct ssh *ssh)
 		fatal_f("sshbuf_new");
 	if ((r = sshbuf_putf(buf,
 	    "The following connections are open:\r\n")) != 0)
-		fatal_f("sshbuf_putf: %s", ssh_err(r));
+		fatal_fr(r, "sshbuf_putf");
 	for (i = 0; i < ssh->chanctxt->channels_alloc; i++) {
 		c = ssh->chanctxt->channels[i];
 		if (c == NULL)
@@ -894,7 +893,7 @@ channel_open_message(struct ssh *ssh)
 			if ((r = sshbuf_putf(buf, "  #%d %.300s (%s)\r\n",
 			    c->self, c->remote_name, cp)) != 0) {
 				free(cp);
-				fatal_f("sshbuf_putf: %s", ssh_err(r));
+				fatal_fr(r, "sshbuf_putf");
 			}
 			free(cp);
 			continue;
@@ -919,7 +918,7 @@ open_preamble(struct ssh *ssh, const char *where, Channel *c, const char *type)
 	    (r = sshpkt_put_u32(ssh, c->self)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, c->local_window)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, c->local_maxpacket)) != 0) {
-		fatal("%s: channel %i: open: %s", where, c->self, ssh_err(r));
+		fatal_r(r, "%s: channel %i: open", where, c->self);
 	}
 }
 
@@ -936,7 +935,7 @@ channel_send_open(struct ssh *ssh, int id)
 	debug2("channel %d: send open", id);
 	open_preamble(ssh, __func__, c, c->ctype);
 	if ((r = sshpkt_send(ssh)) != 0)
-		fatal_f("channel %i: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i", c->self);
 }
 
 void
@@ -957,7 +956,7 @@ channel_request_start(struct ssh *ssh, int id, char *service, int wantconfirm)
 	    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, service)) != 0 ||
 	    (r = sshpkt_put_u8(ssh, wantconfirm)) != 0) {
-		fatal_f("channel %i: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i", c->self);
 	}
 }
 
@@ -1055,7 +1054,7 @@ channel_set_fds(struct ssh *ssh, int id, int rfd, int wfd, int efd,
 	    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, c->local_window)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("channel %i: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i", c->self);
 }
 
 static void
@@ -1284,23 +1283,21 @@ channel_decode_socks4(Channel *c, struct sshbuf *input, struct sshbuf *output)
 	    (r = sshbuf_get(input, &s4_req.command, 1)) != 0 ||
 	    (r = sshbuf_get(input, &s4_req.dest_port, 2)) != 0 ||
 	    (r = sshbuf_get(input, &s4_req.dest_addr, 4)) != 0) {
-		debug("channels %d: decode socks4: %s", c->self, ssh_err(r));
+		debug_r(r, "channels %d: decode socks4", c->self);
 		return -1;
 	}
 	have = sshbuf_len(input);
 	p = sshbuf_ptr(input);
 	if (memchr(p, '\0', have) == NULL) {
-		error("channel %d: decode socks4: user not nul terminated",
-		    c->self);
+		error("channel %d: decode socks4: unterminated user", c->self);
 		return -1;
 	}
 	len = strlen(p);
 	debug2("channel %d: decode socks4: user %s/%d", c->self, p, len);
 	len++; /* trailing '\0' */
 	strlcpy(username, p, sizeof(username));
-	if ((r = sshbuf_consume(input, len)) != 0) {
-		fatal_f("channel %d: consume: %s", c->self, ssh_err(r));
-	}
+	if ((r = sshbuf_consume(input, len)) != 0)
+		fatal_fr(r, "channel %d: consume", c->self);
 	free(c->path);
 	c->path = NULL;
 	if (need == 1) {			/* SOCKS4: one string */
@@ -1324,10 +1321,8 @@ channel_decode_socks4(Channel *c, struct sshbuf *input, struct sshbuf *output)
 			return -1;
 		}
 		c->path = xstrdup(p);
-		if ((r = sshbuf_consume(input, len)) != 0) {
-			fatal_f("channel %d: consume: %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshbuf_consume(input, len)) != 0)
+			fatal_fr(r, "channel %d: consume", c->self);
 	}
 	c->host_port = ntohs(s4_req.dest_port);
 
@@ -1343,10 +1338,8 @@ channel_decode_socks4(Channel *c, struct sshbuf *input, struct sshbuf *output)
 	s4_rsp.command = 90;			/* cd: req granted */
 	s4_rsp.dest_port = 0;			/* ignored */
 	s4_rsp.dest_addr.s_addr = INADDR_ANY;	/* ignored */
-	if ((r = sshbuf_put(output, &s4_rsp, sizeof(s4_rsp))) != 0) {
-		fatal_f("channel %d: append reply: %s",
-		    c->self, ssh_err(r));
-	}
+	if ((r = sshbuf_put(output, &s4_rsp, sizeof(s4_rsp))) != 0)
+		fatal_fr(r, "channel %d: append reply", c->self);
 	return 1;
 }
 
@@ -1399,16 +1392,12 @@ channel_decode_socks5(Channel *c, struct sshbuf *input, struct sshbuf *output)
 			    c->self);
 			return -1;
 		}
-		if ((r = sshbuf_consume(input, nmethods + 2)) != 0) {
-			fatal_f("channel %d: consume: %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshbuf_consume(input, nmethods + 2)) != 0)
+			fatal_fr(r, "channel %d: consume", c->self);
 		/* version, method */
 		if ((r = sshbuf_put_u8(output, 0x05)) != 0 ||
-		    (r = sshbuf_put_u8(output, SSH_SOCKS5_NOAUTH)) != 0) {
-			fatal_f("channel %d: append reply: %s",
-			    c->self, ssh_err(r));
-		}
+		    (r = sshbuf_put_u8(output, SSH_SOCKS5_NOAUTH)) != 0)
+			fatal_fr(r, "channel %d: append reply", c->self);
 		c->flags |= SSH_SOCKS5_AUTHDONE;
 		debug2("channel %d: socks5 auth done", c->self);
 		return 0;				/* need more */
@@ -1445,19 +1434,16 @@ channel_decode_socks5(Channel *c, struct sshbuf *input, struct sshbuf *output)
 		need++;
 	if (have < need)
 		return 0;
-	if ((r = sshbuf_consume(input, sizeof(s5_req))) != 0) {
-		fatal_f("channel %d: consume: %s", c->self, ssh_err(r));
-	}
+	if ((r = sshbuf_consume(input, sizeof(s5_req))) != 0)
+		fatal_fr(r, "channel %d: consume", c->self);
 	if (s5_req.atyp == SSH_SOCKS5_DOMAIN) {
 		/* host string length */
-		if ((r = sshbuf_consume(input, 1)) != 0) {
-			fatal_f("channel %d: consume: %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshbuf_consume(input, 1)) != 0)
+			fatal_fr(r, "channel %d: consume", c->self);
 	}
 	if ((r = sshbuf_get(input, &dest_addr, addrlen)) != 0 ||
 	    (r = sshbuf_get(input, &dest_port, 2)) != 0) {
-		debug("channel %d: parse addr/port: %s", c->self, ssh_err(r));
+		debug_r(r, "channel %d: parse addr/port", c->self);
 		return -1;
 	}
 	dest_addr[addrlen] = '\0';
@@ -1489,8 +1475,7 @@ channel_decode_socks5(Channel *c, struct sshbuf *input, struct sshbuf *output)
 	if ((r = sshbuf_put(output, &s5_rsp, sizeof(s5_rsp))) != 0 ||
 	    (r = sshbuf_put_u32(output, ntohl(INADDR_ANY))) != 0 ||
 	    (r = sshbuf_put(output, &dest_port, sizeof(dest_port))) != 0)
-		fatal_f("channel %d: append reply: %s",
-		    c->self, ssh_err(r));
+		fatal_fr(r, "channel %d: append reply", c->self);
 	return 1;
 }
 
@@ -1589,10 +1574,8 @@ channel_before_prepare_select_rdynamic(struct ssh *ssh, Channel *c)
 	/* sshbuf_dump(c->output, stderr); */
 	/* EOF received */
 	if (c->flags & CHAN_EOF_RCVD) {
-		if ((r = sshbuf_consume(c->output, have)) != 0) {
-			fatal_f("channel %d: consume: %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshbuf_consume(c->output, have)) != 0)
+			fatal_fr(r, "channel %d: consume", c->self);
 		rdynamic_close(ssh, c);
 		return;
 	}
@@ -1624,13 +1607,10 @@ channel_before_prepare_select_rdynamic(struct ssh *ssh, Channel *c)
 			    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 			    (r = sshpkt_put_stringb(ssh, c->input)) != 0 ||
 			    (r = sshpkt_send(ssh)) != 0) {
-				fatal_f("channel %i: rdynamic: %s",
-				    c->self, ssh_err(r));
+				fatal_fr(r, "channel %i: rdynamic", c->self);
 			}
-			if ((r = sshbuf_consume(c->input, len)) != 0) {
-				fatal_f("channel %d: consume: %s",
-				    c->self, ssh_err(r));
-			}
+			if ((r = sshbuf_consume(c->input, len)) != 0)
+				fatal_fr(r, "channel %d: consume", c->self);
 			c->remote_window -= len;
 		}
 	} else if (rdynamic_connect_finish(ssh, c) < 0) {
@@ -1683,11 +1663,10 @@ channel_post_x11_listener(struct ssh *ssh, Channel *c,
 	open_preamble(ssh, __func__, nc, "x11");
 	if ((r = sshpkt_put_cstring(ssh, remote_ipaddr)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, remote_port)) != 0) {
-		fatal_f("channel %i: reply %s",
-		    c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: reply", c->self);
 	}
 	if ((r = sshpkt_send(ssh)) != 0)
-		fatal_f("channel %i: send %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: send", c->self);
 	free(remote_ipaddr);
 }
 
@@ -1718,46 +1697,34 @@ port_open_helper(struct ssh *ssh, Channel *c, char *rtype)
 	if (strcmp(rtype, "direct-tcpip") == 0) {
 		/* target host, port */
 		if ((r = sshpkt_put_cstring(ssh, c->path)) != 0 ||
-		    (r = sshpkt_put_u32(ssh, c->host_port)) != 0) {
-			fatal_f("channel %i: reply %s",
-			    c->self, ssh_err(r));
-		}
+		    (r = sshpkt_put_u32(ssh, c->host_port)) != 0)
+			fatal_fr(r, "channel %i: reply", c->self);
 	} else if (strcmp(rtype, "direct-streamlocal@openssh.com") == 0) {
 		/* target path */
-		if ((r = sshpkt_put_cstring(ssh, c->path)) != 0) {
-			fatal_f("channel %i: reply %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshpkt_put_cstring(ssh, c->path)) != 0)
+			fatal_fr(r, "channel %i: reply", c->self);
 	} else if (strcmp(rtype, "forwarded-streamlocal@openssh.com") == 0) {
 		/* listen path */
-		if ((r = sshpkt_put_cstring(ssh, c->path)) != 0) {
-			fatal_f("channel %i: reply %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshpkt_put_cstring(ssh, c->path)) != 0)
+			fatal_fr(r, "channel %i: reply", c->self);
 	} else {
 		/* listen address, port */
 		if ((r = sshpkt_put_cstring(ssh, c->path)) != 0 ||
-		    (r = sshpkt_put_u32(ssh, local_port)) != 0) {
-			fatal_f("channel %i: reply %s",
-			    c->self, ssh_err(r));
-		}
+		    (r = sshpkt_put_u32(ssh, local_port)) != 0)
+			fatal_fr(r, "channel %i: reply", c->self);
 	}
 	if (strcmp(rtype, "forwarded-streamlocal@openssh.com") == 0) {
 		/* reserved for future owner/mode info */
-		if ((r = sshpkt_put_cstring(ssh, "")) != 0) {
-			fatal_f("channel %i: reply %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshpkt_put_cstring(ssh, "")) != 0)
+			fatal_fr(r, "channel %i: reply", c->self);
 	} else {
 		/* originator host and port */
 		if ((r = sshpkt_put_cstring(ssh, remote_ipaddr)) != 0 ||
-		    (r = sshpkt_put_u32(ssh, (u_int)remote_port)) != 0) {
-			fatal_f("channel %i: reply %s",
-			    c->self, ssh_err(r));
-		}
+		    (r = sshpkt_put_u32(ssh, (u_int)remote_port)) != 0)
+			fatal_fr(r, "channel %i: reply", c->self);
 	}
 	if ((r = sshpkt_send(ssh)) != 0)
-		fatal_f("channel %i: send %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: send", c->self);
 	free(remote_ipaddr);
 	free(local_ipaddr);
 }
@@ -1857,7 +1824,7 @@ channel_post_auth_listener(struct ssh *ssh, Channel *c,
 	    0, "accepted auth socket", 1);
 	open_preamble(ssh, __func__, nc, "auth-agent@openssh.com");
 	if ((r = sshpkt_send(ssh)) != 0)
-		fatal_f("channel %i: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i", c->self);
 }
 
 static void
@@ -1890,13 +1857,9 @@ channel_post_connecting(struct ssh *ssh, Channel *c,
 			    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 			    (r = sshpkt_put_u32(ssh, c->self)) != 0 ||
 			    (r = sshpkt_put_u32(ssh, c->local_window)) != 0 ||
-			    (r = sshpkt_put_u32(ssh, c->local_maxpacket))
-			    != 0)
-				fatal_f("channel %i: confirm: %s",
-				    c->self, ssh_err(r));
-			if ((r = sshpkt_send(ssh)) != 0)
-				fatal_f("channel %i: %s", c->self,
-				    ssh_err(r));
+			    (r = sshpkt_put_u32(ssh, c->local_maxpacket)) != 0 ||
+			    (r = sshpkt_send(ssh)) != 0)
+				fatal_fr(r, "channel %i open confirm", c->self);
 		}
 	} else {
 		debug("channel %d: connection failed: %s",
@@ -1921,13 +1884,9 @@ channel_post_connecting(struct ssh *ssh, Channel *c,
 			    (r = sshpkt_put_u32(ssh,
 			    SSH2_OPEN_CONNECT_FAILED)) != 0 ||
 			    (r = sshpkt_put_cstring(ssh, strerror(err))) != 0 ||
-			    (r = sshpkt_put_cstring(ssh, "")) != 0) {
-				fatal_f("channel %i: failure: %s",
-				    c->self, ssh_err(r));
-			}
-			if ((r = sshpkt_send(ssh)) != 0)
-				fatal_f("channel %i: %s", c->self,
-				    ssh_err(r));
+			    (r = sshpkt_put_cstring(ssh, "")) != 0 ||
+			    (r = sshpkt_send(ssh)) != 0)
+				fatal_fr(r, "channel %i: failure", c->self);
 			chan_mark_dead(ssh, c);
 		}
 	}
@@ -1966,12 +1925,9 @@ channel_handle_rfd(struct ssh *ssh, Channel *c,
 		}
 	} else if (c->datagram) {
 		if ((r = sshbuf_put_string(c->input, buf, len)) != 0)
-			fatal_f("channel %d: put datagram: %s",
-			    c->self, ssh_err(r));
-	} else if ((r = sshbuf_put(c->input, buf, len)) != 0) {
-		fatal_f("channel %d: put data: %s",
-		    c->self, ssh_err(r));
-	}
+			fatal_fr(r, "channel %i: put datagram", c->self);
+	} else if ((r = sshbuf_put(c->input, buf, len)) != 0)
+		fatal_fr(r, "channel %i: put data", c->self);
 	return 1;
 }
 
@@ -2001,8 +1957,7 @@ channel_handle_wfd(struct ssh *ssh, Channel *c,
 		}
 	} else if (c->datagram) {
 		if ((r = sshbuf_get_string(c->output, &data, &dlen)) != 0)
-			fatal_f("channel %d: get datagram: %s",
-			    c->self, ssh_err(r));
+			fatal_fr(r, "channel %i: get datagram", c->self);
 		buf = data;
 	} else {
 		buf = data = sshbuf_mutable_ptr(c->output);
@@ -2045,12 +2000,11 @@ channel_handle_wfd(struct ssh *ssh, Channel *c,
 			 */
 			if ((r = sshpkt_msg_ignore(ssh, 4+len)) != 0 ||
 			    (r = sshpkt_send(ssh)) != 0)
-				fatal_f("channel %d: ignore: %s",
-				    c->self, ssh_err(r));
+				fatal_fr(r, "channel %i: ignore", c->self);
 		}
 	}
 	if ((r = sshbuf_consume(c->output, len)) != 0)
-		fatal_f("channel %d: consume: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: consume", c->self);
  out:
 	c->local_consumed += olen - sshbuf_len(c->output);
 
@@ -2076,10 +2030,8 @@ channel_handle_efd_write(struct ssh *ssh, Channel *c,
 		debug2("channel %d: closing write-efd %d", c->self, c->efd);
 		channel_close_fd(ssh, &c->efd);
 	} else {
-		if ((r = sshbuf_consume(c->extended, len)) != 0) {
-			fatal_f("channel %d: consume: %s",
-			    c->self, ssh_err(r));
-		}
+		if ((r = sshbuf_consume(c->extended, len)) != 0)
+			fatal_fr(r, "channel %i: consume", c->self);
 		c->local_consumed += len;
 	}
 	return 1;
@@ -2101,18 +2053,12 @@ channel_handle_efd_read(struct ssh *ssh, Channel *c,
 	if (len == -1 && (errno == EINTR || errno == EAGAIN))
 		return 1;
 	if (len <= 0) {
-		debug2("channel %d: closing read-efd %d",
-		    c->self, c->efd);
+		debug2("channel %d: closing read-efd %d", c->self, c->efd);
 		channel_close_fd(ssh, &c->efd);
-	} else {
-		if (c->extended_usage == CHAN_EXTENDED_IGNORE) {
-			debug3("channel %d: discard efd",
-			    c->self);
-		} else if ((r = sshbuf_put(c->extended, buf, len)) != 0) {
-			fatal_f("channel %d: append: %s",
-			    c->self, ssh_err(r));
-		}
-	}
+	} else if (c->extended_usage == CHAN_EXTENDED_IGNORE)
+		debug3("channel %d: discard efd", c->self);
+	else if ((r = sshbuf_put(c->extended, buf, len)) != 0)
+		fatal_fr(r, "channel %i: append", c->self);
 	return 1;
 }
 
@@ -2152,11 +2098,10 @@ channel_check_window(struct ssh *ssh, Channel *c)
 		    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 		    (r = sshpkt_put_u32(ssh, c->local_consumed)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0) {
-			fatal_f("channel %i: %s", c->self, ssh_err(r));
+			fatal_fr(r, "channel %i", c->self);
 		}
-		debug2("channel %d: window %d sent adjust %d",
-		    c->self, c->local_window,
-		    c->local_consumed);
+		debug2("channel %d: window %d sent adjust %d", c->self,
+		    c->local_window, c->local_consumed);
 		c->local_window += c->local_consumed;
 		c->local_consumed = 0;
 	}
@@ -2191,10 +2136,8 @@ read_mux(struct ssh *ssh, Channel *c, u_int need)
 			    c->self, c->rfd, len);
 			chan_read_failed(ssh, c);
 			return 0;
-		} else if ((r = sshbuf_put(c->input, buf, len)) != 0) {
-			fatal_f("channel %d: append: %s",
-			    c->self, ssh_err(r));
-		}
+		} else if ((r = sshbuf_put(c->input, buf, len)) != 0)
+			fatal_fr(r, "channel %i: append", c->self);
 	}
 	return sshbuf_len(c->input);
 }
@@ -2255,7 +2198,7 @@ channel_post_mux_client_write(struct ssh *ssh, Channel *c,
 		return;
 	}
 	if ((r = sshbuf_consume(c->output, len)) != 0)
-		fatal_f("channel %d: consume: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: consume", c->self);
 }
 
 static void
@@ -2532,8 +2475,7 @@ channel_output_poll_input_open(struct ssh *ssh, Channel *c)
 	if (c->datagram) {
 		/* Check datagram will fit; drop if not */
 		if ((r = sshbuf_get_string_direct(c->input, &pkt, &plen)) != 0)
-			fatal_f("channel %d: get datagram: %s",
-			    c->self, ssh_err(r));
+			fatal_fr(r, "channel %i: get datagram", c->self);
 		/*
 		 * XXX this does tail-drop on the datagram queue which is
 		 * usually suboptimal compared to head-drop. Better to have
@@ -2548,7 +2490,7 @@ channel_output_poll_input_open(struct ssh *ssh, Channel *c)
 		    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 		    (r = sshpkt_put_string(ssh, pkt, plen)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0)
-			fatal_f("channel %i: datagram: %s", c->self, ssh_err(r));
+			fatal_fr(r, "channel %i: send datagram", c->self);
 		c->remote_window -= plen;
 		return;
 	}
@@ -2563,11 +2505,10 @@ channel_output_poll_input_open(struct ssh *ssh, Channel *c)
 	if ((r = sshpkt_start(ssh, SSH2_MSG_CHANNEL_DATA)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 	    (r = sshpkt_put_string(ssh, sshbuf_ptr(c->input), len)) != 0 ||
-	    (r = sshpkt_send(ssh)) != 0) {
-		fatal_f("channel %i: data: %s", c->self, ssh_err(r));
-	}
+	    (r = sshpkt_send(ssh)) != 0)
+		fatal_fr(r, "channel %i: send data", c->self);
 	if ((r = sshbuf_consume(c->input, len)) != 0)
-		fatal_f("channel %i: consume: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: consume", c->self);
 	c->remote_window -= len;
 }
 
@@ -2597,11 +2538,10 @@ channel_output_poll_extended_read(struct ssh *ssh, Channel *c)
 	    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, SSH2_EXTENDED_DATA_STDERR)) != 0 ||
 	    (r = sshpkt_put_string(ssh, sshbuf_ptr(c->extended), len)) != 0 ||
-	    (r = sshpkt_send(ssh)) != 0) {
-		fatal_f("channel %i: data: %s", c->self, ssh_err(r));
-	}
+	    (r = sshpkt_send(ssh)) != 0)
+		fatal_fr(r, "channel %i: data", c->self);
 	if ((r = sshbuf_consume(c->extended, len)) != 0)
-		fatal_f("channel %i: consume: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: consume", c->self);
 	c->remote_window -= len;
 	debug2("channel %d: sent ext data %zu", c->self, len);
 }
@@ -2698,7 +2638,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 	/* sshbuf_dump(downstream->input, stderr); */
 	if ((r = sshbuf_get_string_direct(downstream->input, &cp, &have))
 	    != 0) {
-		error_f("malformed message: %s", ssh_err(r));
+		error_fr(r, "parse");
 		return -1;
 	}
 	if (have < 2) {
@@ -2722,7 +2662,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 		}
 		if ((r = sshbuf_get_cstring(original, &ctype, NULL)) != 0 ||
 		    (r = sshbuf_get_u32(original, &id)) != 0) {
-			error_f("parse error %s", ssh_err(r));
+			error_fr(r, "parse");
 			goto out;
 		}
 		c = channel_new(ssh, "mux proxy", SSH_CHANNEL_MUX_PROXY,
@@ -2732,7 +2672,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 		if ((r = sshbuf_put_cstring(modified, ctype)) != 0 ||
 		    (r = sshbuf_put_u32(modified, c->self)) != 0 ||
 		    (r = sshbuf_putb(modified, original)) != 0) {
-			error_f("compose error %s", ssh_err(r));
+			error_fr(r, "compose");
 			channel_free(ssh, c);
 			goto out;
 		}
@@ -2749,7 +2689,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 		}
 		if ((r = sshbuf_get_u32(original, &remote_id)) != 0 ||
 		    (r = sshbuf_get_u32(original, &id)) != 0) {
-			error_f("parse error %s", ssh_err(r));
+			error_fr(r, "parse");
 			goto out;
 		}
 		c = channel_new(ssh, "mux proxy", SSH_CHANNEL_MUX_PROXY,
@@ -2761,7 +2701,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 		if ((r = sshbuf_put_u32(modified, remote_id)) != 0 ||
 		    (r = sshbuf_put_u32(modified, c->self)) != 0 ||
 		    (r = sshbuf_putb(modified, original)) != 0) {
-			error_f("compose error %s", ssh_err(r));
+			error_fr(r, "compose");
 			channel_free(ssh, c);
 			goto out;
 		}
@@ -2772,7 +2712,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 			goto out;
 		}
 		if ((r = sshbuf_get_cstring(original, &ctype, NULL)) != 0) {
-			error_f("parse error %s", ssh_err(r));
+			error_fr(r, "parse");
 			goto out;
 		}
 		if (strcmp(ctype, "tcpip-forward") != 0) {
@@ -2782,7 +2722,7 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 		if ((r = sshbuf_get_u8(original, NULL)) != 0 ||
 		    (r = sshbuf_get_cstring(original, &listen_host, NULL)) != 0 ||
 		    (r = sshbuf_get_u32(original, &listen_port)) != 0) {
-			error_f("parse error %s", ssh_err(r));
+			error_fr(r, "parse");
 			goto out;
 		}
 		if (listen_port > 65535) {
@@ -2811,14 +2751,14 @@ channel_proxy_downstream(struct ssh *ssh, Channel *downstream)
 		if ((r = sshpkt_start(ssh, type)) != 0 ||
 		    (r = sshpkt_putb(ssh, modified)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0) {
-			error_f("send %s", ssh_err(r));
+			error_fr(r, "send");
 			goto out;
 		}
 	} else {
 		if ((r = sshpkt_start(ssh, type)) != 0 ||
 		    (r = sshpkt_put(ssh, cp, have)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0) {
-			error_f("send %s", ssh_err(r));
+			error_fr(r, "send");
 			goto out;
 		}
 	}
@@ -2888,13 +2828,12 @@ channel_proxy_upstream(Channel *c, int type, u_int32_t seq, struct ssh *ssh)
 	    (r = sshbuf_put_u32(b, c->mux_downstream_id)) != 0 ||
 	    (r = sshbuf_put(b, cp, len)) != 0 ||
 	    (r = sshbuf_put_stringb(downstream->output, b)) != 0) {
-		error_f("compose for muxclient %s", ssh_err(r));
+		error_fr(r, "compose muxclient");
 		goto out;
 	}
 	/* sshbuf_dump(b, stderr); */
 	if (ssh_packet_log_type(type))
-		debug3_f("channel %u: up->down: type %u", c->self,
-		    type);
+		debug3_f("channel %u: up->down: type %u", c->self, type);
  out:
 	/* update state */
 	switch (type) {
@@ -2926,11 +2865,11 @@ channel_parse_id(struct ssh *ssh, const char *where, const char *what)
 	int r;
 
 	if ((r = sshpkt_get_u32(ssh, &id)) != 0) {
-		error("%s: parse id: %s", where, ssh_err(r));
+		error_r(r, "%s: parse id", where);
 		ssh_packet_disconnect(ssh, "Invalid %s message", what);
 	}
 	if (id > INT_MAX) {
-		error("%s: bad channel id %u: %s", where, id, ssh_err(r));
+		error_r(r, "%s: bad channel id %u", where, id);
 		ssh_packet_disconnect(ssh, "Invalid %s channel id", what);
 	}
 	return (int)id;
@@ -2971,7 +2910,7 @@ channel_input_data(int type, u_int32_t seq, struct ssh *ssh)
 	/* Get the data. */
 	if ((r = sshpkt_get_string_direct(ssh, &data, &data_len)) != 0 ||
             (r = sshpkt_get_end(ssh)) != 0)
-		fatal_f("channel %d: get data: %s", c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: get data", c->self);
 
 	win_len = data_len;
 	if (c->datagram)
@@ -3002,11 +2941,9 @@ channel_input_data(int type, u_int32_t seq, struct ssh *ssh)
 
 	if (c->datagram) {
 		if ((r = sshbuf_put_string(c->output, data, data_len)) != 0)
-			fatal_f("channel %d: append datagram: %s",
-			    c->self, ssh_err(r));
+			fatal_fr(r, "channel %i: append datagram", c->self);
 	} else if ((r = sshbuf_put(c->output, data, data_len)) != 0)
-		fatal_f("channel %d: append data: %s",
-		    c->self, ssh_err(r));
+		fatal_fr(r, "channel %i: append data", c->self);
 
 	return 0;
 }
@@ -3036,7 +2973,7 @@ channel_input_extended_data(int type, u_int32_t seq, struct ssh *ssh)
 	}
 
 	if ((r = sshpkt_get_u32(ssh, &tcode)) != 0) {
-		error_f("parse tcode: %s", ssh_err(r));
+		error_fr(r, "parse tcode");
 		ssh_packet_disconnect(ssh, "Invalid extended_data message");
 	}
 	if (c->efd == -1 ||
@@ -3047,7 +2984,7 @@ channel_input_extended_data(int type, u_int32_t seq, struct ssh *ssh)
 	}
 	if ((r = sshpkt_get_string_direct(ssh, &data, &data_len)) != 0 ||
             (r = sshpkt_get_end(ssh)) != 0) {
-		error_f("parse data: %s", ssh_err(r));
+		error_fr(r, "parse data");
 		ssh_packet_disconnect(ssh, "Invalid extended_data message");
 	}
 
@@ -3059,7 +2996,7 @@ channel_input_extended_data(int type, u_int32_t seq, struct ssh *ssh)
 	debug2("channel %d: rcvd ext data %zu", c->self, data_len);
 	/* XXX sshpkt_getb? */
 	if ((r = sshbuf_put(c->extended, data, data_len)) != 0)
-		error_f("append: %s", ssh_err(r));
+		error_fr(r, "append");
 	c->local_window -= data_len;
 	return 0;
 }
@@ -3071,7 +3008,7 @@ channel_input_ieof(int type, u_int32_t seq, struct ssh *ssh)
 	int r;
 
         if ((r = sshpkt_get_end(ssh)) != 0) {
-		error_f("parse data: %s", ssh_err(r));
+		error_fr(r, "parse data");
 		ssh_packet_disconnect(ssh, "Invalid ieof message");
 	}
 
@@ -3098,7 +3035,7 @@ channel_input_oclose(int type, u_int32_t seq, struct ssh *ssh)
 	if (channel_proxy_upstream(c, type, seq, ssh))
 		return 0;
         if ((r = sshpkt_get_end(ssh)) != 0) {
-		error_f("parse data: %s", ssh_err(r));
+		error_fr(r, "parse data");
 		ssh_packet_disconnect(ssh, "Invalid oclose message");
 	}
 	chan_rcvd_oclose(ssh, c);
@@ -3125,7 +3062,7 @@ channel_input_open_confirmation(int type, u_int32_t seq, struct ssh *ssh)
 	    (r = sshpkt_get_u32(ssh, &remote_window)) != 0 ||
 	    (r = sshpkt_get_u32(ssh, &remote_maxpacket)) != 0 ||
             (r = sshpkt_get_end(ssh)) != 0) {
-		error_f("window/maxpacket: %s", ssh_err(r));
+		error_fr(r, "window/maxpacket");
 		ssh_packet_disconnect(ssh, "Invalid open confirmation message");
 	}
 
@@ -3173,14 +3110,14 @@ channel_input_open_failure(int type, u_int32_t seq, struct ssh *ssh)
 		ssh_packet_disconnect(ssh, "Received open failure for "
 		    "non-opening channel %d.", c->self);
 	if ((r = sshpkt_get_u32(ssh, &reason)) != 0) {
-		error_f("reason: %s", ssh_err(r));
+		error_fr(r, "parse reason");
 		ssh_packet_disconnect(ssh, "Invalid open failure message");
 	}
 	/* skip language */
 	if ((r = sshpkt_get_cstring(ssh, &msg, NULL)) != 0 ||
 	    (r = sshpkt_get_string_direct(ssh, NULL, NULL)) != 0 ||
             (r = sshpkt_get_end(ssh)) != 0) {
-		error_f("message/lang: %s", ssh_err(r));
+		error_fr(r, "parse msg/lang");
 		ssh_packet_disconnect(ssh, "Invalid open failure message");
 	}
 	logit("channel %d: open failed: %s%s%s", c->self,
@@ -3214,7 +3151,7 @@ channel_input_window_adjust(int type, u_int32_t seq, struct ssh *ssh)
 		return 0;
 	if ((r = sshpkt_get_u32(ssh, &adjust)) != 0 ||
             (r = sshpkt_get_end(ssh)) != 0) {
-		error_f("adjust: %s", ssh_err(r));
+		error_fr(r, "parse adjust");
 		ssh_packet_disconnect(ssh, "Invalid window adjust message");
 	}
 	debug2("channel %d: rcvd adjust %u", c->self, adjust);
@@ -3838,7 +3775,7 @@ channel_request_remote_forwarding(struct ssh *ssh, struct Forward *fwd)
 		    (r = sshpkt_put_cstring(ssh, fwd->listen_path)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0 ||
 		    (r = ssh_packet_write_wait(ssh)) != 0)
-			fatal_f("request streamlocal: %s", ssh_err(r));
+			fatal_fr(r, "request streamlocal");
 	} else {
 		if ((r = sshpkt_start(ssh, SSH2_MSG_GLOBAL_REQUEST)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, "tcpip-forward")) != 0 ||
@@ -3848,7 +3785,7 @@ channel_request_remote_forwarding(struct ssh *ssh, struct Forward *fwd)
 		    (r = sshpkt_put_u32(ssh, fwd->listen_port)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0 ||
 		    (r = ssh_packet_write_wait(ssh)) != 0)
-			fatal_f("request tcpip-forward: %s", ssh_err(r));
+			fatal_fr(r, "request tcpip-forward");
 	}
 	/* Assume that server accepts the request */
 	success = 1;
@@ -3965,7 +3902,7 @@ channel_request_rforward_cancel_tcpip(struct ssh *ssh,
 	    (r = sshpkt_put_cstring(ssh, channel_rfwd_bind_host(host))) != 0 ||
 	    (r = sshpkt_put_u32(ssh, port)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("send cancel: %s", ssh_err(r));
+		fatal_fr(r, "send cancel");
 
 	fwd_perm_clear(perm); /* unregister */
 
@@ -4001,7 +3938,7 @@ channel_request_rforward_cancel_streamlocal(struct ssh *ssh, const char *path)
 	    (r = sshpkt_put_u8(ssh, 0)) != 0 || /* want reply */
 	    (r = sshpkt_put_cstring(ssh, path)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("send cancel: %s", ssh_err(r));
+		fatal_fr(r, "send cancel");
 
 	fwd_perm_clear(perm); /* unregister */
 
@@ -4467,8 +4404,7 @@ channel_send_window_changes(struct ssh *ssh)
 		    (r = sshpkt_put_u32(ssh, (u_int)ws.ws_xpixel)) != 0 ||
 		    (r = sshpkt_put_u32(ssh, (u_int)ws.ws_ypixel)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0)
-			fatal_f("channel %u: send window-change: %s",
-			    i, ssh_err(r));
+			fatal_fr(r, "channel %u; send window-change", i);
 	}
 }
 
@@ -4492,9 +4428,8 @@ rdynamic_connect_prepare(struct ssh *ssh, char *ctype, char *rname)
 	    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, c->self)) != 0 ||
 	    (r = sshpkt_put_u32(ssh, c->local_window)) != 0 ||
-	    (r = sshpkt_put_u32(ssh, c->local_maxpacket)) != 0) {
-		fatal_f("channel %i: confirm: %s", c->self, ssh_err(r));
-	}
+	    (r = sshpkt_put_u32(ssh, c->local_maxpacket)) != 0)
+		fatal_fr(r, "channel %i; confirm", c->self);
 	return c;
 }
 
@@ -4774,9 +4709,10 @@ x11_request_forwarding_with_spoofing(struct ssh *ssh, int client_session_id,
 		/* Extract real authentication data. */
 		sc->x11_saved_data = xmalloc(data_len);
 		for (i = 0; i < data_len; i++) {
-			if (sscanf(data + 2 * i, "%2x", &value) != 1)
+			if (sscanf(data + 2 * i, "%2x", &value) != 1) {
 				fatal("x11_request_forwarding: bad "
 				    "authentication data: %.100s", data);
+			}
 			sc->x11_saved_data[i] = value;
 		}
 		sc->x11_saved_data_len = data_len;
@@ -4798,6 +4734,6 @@ x11_request_forwarding_with_spoofing(struct ssh *ssh, int client_session_id,
 	    (r = sshpkt_put_u32(ssh, screen_number)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0 ||
 	    (r = ssh_packet_write_wait(ssh)) != 0)
-		fatal_f("send x11-req: %s", ssh_err(r));
+		fatal_fr(r, "send x11-req");
 	free(new_data);
 }

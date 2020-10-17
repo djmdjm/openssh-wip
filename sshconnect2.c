@@ -256,7 +256,7 @@ ssh_kex2(struct ssh *ssh, char *host, struct sockaddr *hostaddr, u_short port)
 
 	/* start key exchange */
 	if ((r = kex_setup(ssh, myproposal)) != 0)
-		fatal("kex_setup: %s", ssh_err(r));
+		fatal_r(r, "kex_setup");
 #ifdef WITH_OPENSSL
 	ssh->kex->kex[KEX_DH_GRP1_SHA1] = kex_gen_client;
 	ssh->kex->kex[KEX_DH_GRP14_SHA1] = kex_gen_client;
@@ -277,7 +277,7 @@ ssh_kex2(struct ssh *ssh, char *host, struct sockaddr *hostaddr, u_short port)
 	myproposal[PROPOSAL_KEX_ALGS] =
 	    compat_kex_proposal(options.kex_algorithms);
 	if ((r = kex_prop2buf(ssh->kex->my, myproposal)) != 0)
-		fatal("kex_prop2buf: %s", ssh_err(r));
+		fatal_r(r, "kex_prop2buf");
 
 	session_id2 = ssh->kex->session_id;
 	session_id2_len = ssh->kex->session_id_len;
@@ -288,7 +288,7 @@ ssh_kex2(struct ssh *ssh, char *host, struct sockaddr *hostaddr, u_short port)
 	    (r = sshpkt_put_cstring(ssh, "markus")) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0 ||
 	    (r = ssh_packet_write_wait(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 #endif
 }
 
@@ -462,7 +462,7 @@ ssh_userauth2(struct ssh *ssh, const char *local_user,
 	if ((r = sshpkt_start(ssh, SSH2_MSG_SERVICE_REQUEST)) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, "ssh-userauth")) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 
 	ssh->authctxt = &authctxt;
 	ssh_dispatch_init(ssh, &input_userauth_error);
@@ -703,7 +703,7 @@ input_userauth_pk_ok(int type, u_int32_t seq, struct ssh *ssh)
 		goto done;
 	}
 	if ((r = sshkey_from_blob(pkblob, blen, &key)) != 0) {
-		debug("no key from blob. pkalg %s: %s", pkalg, ssh_err(r));
+		debug_r(r, "no key from blob. pkalg %s", pkalg);
 		goto done;
 	}
 	if (key->type != pktype) {
@@ -793,7 +793,7 @@ userauth_gssapi(struct ssh *ssh)
 	    (r = sshpkt_put_u8(ssh, mech->length)) != 0 ||
 	    (r = sshpkt_put(ssh, mech->elements, mech->length)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 
 	ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_GSSAPI_RESPONSE, &input_gssapi_response);
 	ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_GSSAPI_TOKEN, &input_gssapi_token);
@@ -841,7 +841,7 @@ process_gssapi_token(struct ssh *ssh, gss_buffer_t recv_tok)
 		    (r = sshpkt_put_string(ssh, send_tok.value,
 		    send_tok.length)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0)
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "send %u packet", type);
 
 		gss_release_buffer(&ms, &send_tok);
 	}
@@ -852,7 +852,7 @@ process_gssapi_token(struct ssh *ssh, gss_buffer_t recv_tok)
 			if ((r = sshpkt_start(ssh,
 			    SSH2_MSG_USERAUTH_GSSAPI_EXCHANGE_COMPLETE)) != 0 ||
 			    (r = sshpkt_send(ssh)) != 0)
-				fatal_f("%s", ssh_err(r));
+				fatal_fr(r, "send completion");
 		} else {
 			struct sshbuf *b;
 
@@ -873,7 +873,7 @@ process_gssapi_token(struct ssh *ssh, gss_buffer_t recv_tok)
 				    (r = sshpkt_put_string(ssh, mic.value,
 				    mic.length)) != 0 ||
 				    (r = sshpkt_send(ssh)) != 0)
-					fatal_f("%s", ssh_err(r));
+					fatal_fr(r, "send MIC");
 			}
 
 			sshbuf_free(b);
@@ -1031,7 +1031,7 @@ userauth_none(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, authctxt->service)) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, authctxt->method->name)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 	return 1;
 }
 
@@ -1060,7 +1060,7 @@ userauth_passwd(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, password)) != 0 ||
 	    (r = sshpkt_add_padding(ssh, 64)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 
 	free(prompt);
 	if (password != NULL)
@@ -1255,7 +1255,7 @@ identity_sign(struct identity *id, u_char **sigp, size_t *lenp,
 	}
 	if ((r = sshkey_sign(sign_key, sigp, lenp, data, datalen,
 	    alg, options.sk_provider, pin, compat)) != 0) {
-		debug_f("sshkey_sign: %s", ssh_err(r));
+		debug_fr(r, "sshkey_sign");
 		goto out;
 	}
 	/*
@@ -1263,7 +1263,7 @@ identity_sign(struct identity *id, u_char **sigp, size_t *lenp,
 	 * so check what we get back.
 	 */
 	if ((r = sshkey_check_sigtype(*sigp, *lenp, alg)) != 0) {
-		debug_f("sshkey_check_sigtype: %s", ssh_err(r));
+		debug_fr(r, "sshkey_check_sigtype");
 		goto out;
 	}
 	/* success */
@@ -1382,14 +1382,12 @@ sign_and_send_pubkey(struct ssh *ssh, Identity *id)
 			fatal_f("sshbuf_new failed");
 		if (datafellows & SSH_OLD_SESSIONID) {
 			if ((r = sshbuf_put(b, session_id2,
-			    session_id2_len)) != 0) {
-				fatal_f("sshbuf_put: %s", ssh_err(r));
-			}
+			    session_id2_len)) != 0)
+				fatal_fr(r, "sshbuf_put");
 		} else {
 			if ((r = sshbuf_put_string(b, session_id2,
-			    session_id2_len)) != 0) {
-				fatal_f("sshbuf_put_string: %s", ssh_err(r));
-			}
+			    session_id2_len)) != 0)
+				fatal_fr(r, "sshbuf_put_string");
 		}
 		skip = sshbuf_len(b);
 		if ((r = sshbuf_put_u8(b, SSH2_MSG_USERAUTH_REQUEST)) != 0 ||
@@ -1399,7 +1397,7 @@ sign_and_send_pubkey(struct ssh *ssh, Identity *id)
 		    (r = sshbuf_put_u8(b, 1)) != 0 ||
 		    (r = sshbuf_put_cstring(b, alg)) != 0 ||
 		    (r = sshkey_puts(id->key, b)) != 0) {
-			fatal_f("assemble signed data: %s", ssh_err(r));
+			fatal_fr(r, "assemble signed data");
 		}
 
 		/* generate signature */
@@ -1419,9 +1417,9 @@ sign_and_send_pubkey(struct ssh *ssh, Identity *id)
 			    loc, sshkey_type(id->key), fp);
 			continue;
 		}
-		error_f("signing failed for %s \"%s\"%s: %s",
+		error_fr(r, "signing failed for %s \"%s\"%s",
 		    sshkey_type(sign_id->key), sign_id->filename,
-		    id->agent_fd != -1 ? " from agent" : "", ssh_err(r));
+		    id->agent_fd != -1 ? " from agent" : "");
 		goto out;
 	}
 	if (slen == 0 || signature == NULL) /* shouldn't happen */
@@ -1429,20 +1427,20 @@ sign_and_send_pubkey(struct ssh *ssh, Identity *id)
 
 	/* append signature */
 	if ((r = sshbuf_put_string(b, signature, slen)) != 0)
-		fatal_f("append signature: %s", ssh_err(r));
+		fatal_fr(r, "append signature");
 
 #ifdef DEBUG_PK
 	sshbuf_dump(b, stderr);
 #endif
 	/* skip session id and packet type */
 	if ((r = sshbuf_consume(b, skip + 1)) != 0)
-		fatal_f("consume: %s", ssh_err(r));
+		fatal_fr(r, "consume");
 
 	/* put remaining data from buffer into packet */
 	if ((r = sshpkt_start(ssh, SSH2_MSG_USERAUTH_REQUEST)) != 0 ||
 	    (r = sshpkt_putb(ssh, b)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("enqueue request: %s", ssh_err(r));
+		fatal_fr(r, "enqueue request");
 
 	/* success */
 	sent = 1;
@@ -1486,7 +1484,7 @@ send_pubkey_test(struct ssh *ssh, Identity *id)
 	    (r = sshpkt_put_cstring(ssh, alg)) != 0 ||
 	    (r = sshpkt_put_string(ssh, blob, bloblen)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 	sent = 1;
 
  out:
@@ -1536,14 +1534,13 @@ load_identity_file(Identity *id)
 			break;
 		case SSH_ERR_SYSTEM_ERROR:
 			if (errno == ENOENT) {
-				debug2("Load key \"%s\": %s",
-				    id->filename, ssh_err(r));
+				debug2_r(r, "Load key \"%s\"", id->filename);
 				quit = 1;
 				break;
 			}
 			/* FALLTHROUGH */
 		default:
-			error("Load key \"%s\": %s", id->filename, ssh_err(r));
+			error_r(r, "Load key \"%s\"", id->filename);
 			quit = 1;
 			break;
 		}
@@ -1671,10 +1668,10 @@ pubkey_prepare(Authctxt *authctxt)
 	/* list of keys supported by the agent */
 	if ((r = ssh_get_authentication_socket(&agent_fd)) != 0) {
 		if (r != SSH_ERR_AGENT_NOT_PRESENT)
-			debug_f("ssh_get_authentication_socket: %s", ssh_err(r));
+			debug_fr(r, "ssh_get_authentication_socket");
 	} else if ((r = ssh_fetch_identitylist(agent_fd, &idlist)) != 0) {
 		if (r != SSH_ERR_AGENT_NO_IDENTITIES)
-			debug_f("ssh_fetch_identitylist: %s", ssh_err(r));
+			debug_fr(r, "ssh_fetch_identitylist");
 		close(agent_fd);
 	} else {
 		for (j = 0; j < idlist->nkeys; j++) {
@@ -1868,7 +1865,7 @@ userauth_kbdint(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, options.kbd_interactive_devices ?
 	    options.kbd_interactive_devices : "")) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send packet");
 
 	ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_INFO_REQUEST, &input_userauth_info_req);
 	return 1;
@@ -2009,7 +2006,7 @@ ssh_keysign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
 	/* send # of sock, data to be signed */
 	if ((r = sshbuf_put_u32(b, sock)) != 0 ||
 	    (r = sshbuf_put_string(b, data, datalen)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "buffer error");
 	if (ssh_msg_send(to[1], version, b) == -1)
 		fatal_f("couldn't send request");
 	sshbuf_reset(b);
@@ -2037,7 +2034,7 @@ ssh_keysign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
 		goto fail;
 	}
 	if ((r = sshbuf_get_u8(b, &rversion)) != 0) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "buffer error");
 		goto fail;
 	}
 	if (rversion != version) {
@@ -2045,7 +2042,7 @@ ssh_keysign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
 		goto fail;
 	}
 	if ((r = sshbuf_get_string(b, sigp, lenp)) != 0) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "buffer error");
  fail:
 		ssh_signal(SIGCHLD, osigchld);
 		sshbuf_free(b);
@@ -2138,7 +2135,7 @@ userauth_hostbased(struct ssh *ssh)
 		goto out;
 	}
 	if ((r = sshkey_to_blob(private, &keyblob, &keylen)) != 0) {
-		error_f("sshkey_to_blob: %s", ssh_err(r));
+		error_fr(r, "sshkey_to_blob");
 		goto out;
 	}
 	if ((r = sshbuf_put_string(b, session_id2, session_id2_len)) != 0 ||
@@ -2150,7 +2147,7 @@ userauth_hostbased(struct ssh *ssh)
 	    (r = sshbuf_put_string(b, keyblob, keylen)) != 0 ||
 	    (r = sshbuf_put_cstring(b, chost)) != 0 ||
 	    (r = sshbuf_put_cstring(b, authctxt->local_user)) != 0) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "buffer error");
 		goto out;
 	}
 
@@ -2173,7 +2170,7 @@ userauth_hostbased(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, authctxt->local_user)) != 0 ||
 	    (r = sshpkt_put_string(ssh, sig, siglen)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0) {
-		error_f("packet error: %s", ssh_err(r));
+		error_fr(r, "packet error");
 		goto out;
 	}
 	success = 1;
@@ -2287,7 +2284,7 @@ authmethods_get(void)
 		if (authmethod_is_enabled(method)) {
 			if ((r = sshbuf_putf(b, "%s%s",
 			    sshbuf_len(b) ? "," : "", method->name)) != 0)
-				fatal_f("buffer error: %s", ssh_err(r));
+				fatal_fr(r, "buffer error");
 		}
 	}
 	if ((list = sshbuf_dup_string(b)) == NULL)

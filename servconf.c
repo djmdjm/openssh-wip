@@ -205,7 +205,7 @@ assemble_algorithms(ServerOptions *o)
 #define ASSEMBLE(what, defaults, all) \
 	do { \
 		if ((r = kex_assemble_names(&o->what, defaults, all)) != 0) \
-			fatal_f("%s: %s", #what, ssh_err(r)); \
+			fatal_fr(r, "%s", #what); \
 	} while (0)
 	ASSEMBLE(ciphers, def_cipher, all_cipher);
 	ASSEMBLE(macs, def_mac, all_mac);
@@ -2360,7 +2360,7 @@ load_server_config(const char *filename, struct sshbuf *conf)
 	/* grow buffer, so realloc is avoided for large config files */
 	if (fstat(fileno(f), &st) == 0 && st.st_size > 0 &&
             (r = sshbuf_allocate(conf, st.st_size)) != 0)
-		fatal_f("allocate failed: %s", ssh_err(r));
+		fatal_fr(r, "allocate");
 	while (getline(&line, &linesize, f) != -1) {
 		lineno++;
 		/*
@@ -2372,11 +2372,11 @@ load_server_config(const char *filename, struct sshbuf *conf)
 			memcpy(cp, "\n", 2);
 		cp = line + strspn(line, " \t\r");
 		if ((r = sshbuf_put(conf, cp, strlen(cp))) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "sshbuf_put");
 	}
 	free(line);
 	if ((r = sshbuf_put_u8(conf, 0)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "sshbuf_put_u8");
 	fclose(f);
 	debug2_f("done config len = %zu", sshbuf_len(conf));
 }

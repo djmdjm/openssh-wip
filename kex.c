@@ -347,13 +347,13 @@ kex_buf2prop(struct sshbuf *raw, int *first_kex_follows, char ***propp)
 		goto out;
 	}
 	if ((r = sshbuf_consume(b, KEX_COOKIE_LEN)) != 0) { /* skip cookie */
-		error_f("consume cookie: %s", ssh_err(r));
+		error_fr(r, "consume cookie");
 		goto out;
 	}
 	/* extract kex init proposal strings */
 	for (i = 0; i < PROPOSAL_MAX; i++) {
 		if ((r = sshbuf_get_cstring(b, &(proposal[i]), NULL)) != 0) {
-			error_f("parse proposal %u: %s", i, ssh_err(r));
+			error_fr(r, "parse proposal %u", i);
 			goto out;
 		}
 		debug2("%s: %s", proposal_names[i], proposal[i]);
@@ -361,7 +361,7 @@ kex_buf2prop(struct sshbuf *raw, int *first_kex_follows, char ***propp)
 	/* first kex follows / reserved */
 	if ((r = sshbuf_get_u8(b, &v)) != 0 ||	/* first_kex_follows */
 	    (r = sshbuf_get_u32(b, &i)) != 0) {	/* reserved */
-		error_f("parse: %s", ssh_err(r));
+		error_fr(r, "parse");
 		goto out;
 	}
 	if (first_kex_follows != NULL)
@@ -425,7 +425,7 @@ kex_send_ext_info(struct ssh *ssh)
 	    (r = sshpkt_put_cstring(ssh, "server-sig-algs")) != 0 ||
 	    (r = sshpkt_put_cstring(ssh, algs)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0) {
-		error_f("compose: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 	/* success */
@@ -544,7 +544,7 @@ kex_send_kexinit(struct ssh *ssh)
 	if ((r = sshpkt_start(ssh, SSH2_MSG_KEXINIT)) != 0 ||
 	    (r = sshpkt_putb(ssh, kex->my)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0) {
-		error_f("compose reply: %s", ssh_err(r));
+		error_fr(r, "compose reply");
 		return r;
 	}
 	debug("SSH2_MSG_KEXINIT sent");
@@ -575,13 +575,13 @@ kex_input_kexinit(int type, u_int32_t seq, struct ssh *ssh)
 	/* discard packet */
 	for (i = 0; i < KEX_COOKIE_LEN; i++) {
 		if ((r = sshpkt_get_u8(ssh, NULL)) != 0) {
-			error_f("discard cookie: %s", ssh_err(r));
+			error_fr(r, "discard cookie");
 			return r;
 		}
 	}
 	for (i = 0; i < PROPOSAL_MAX; i++) {
 		if ((r = sshpkt_get_string(ssh, NULL, NULL)) != 0) {
-			error_f("discard proposal: %s", ssh_err(r));
+			error_fr(r, "discard proposal");
 			return r;
 		}
 	}
@@ -1170,7 +1170,7 @@ kex_exchange_identification(struct ssh *ssh, int timeout_ms,
 	    version_addendum == NULL ? "" : " ",
 	    version_addendum == NULL ? "" : version_addendum)) != 0) {
 		oerrno = errno;
-		error_f("sshbuf_putf: %s", ssh_err(r));
+		error_fr(r, "sshbuf_putf");
 		goto out;
 	}
 
@@ -1184,7 +1184,7 @@ kex_exchange_identification(struct ssh *ssh, int timeout_ms,
 	}
 	if ((r = sshbuf_consume_end(our_version, 2)) != 0) { /* trim \r\n */
 		oerrno = errno;
-		error_f("sshbuf_consume_end: %s", ssh_err(r));
+		error_fr(r, "sshbuf_consume_end");
 		goto out;
 	}
 	our_version_string = sshbuf_dup_string(our_version);
@@ -1251,7 +1251,7 @@ kex_exchange_identification(struct ssh *ssh, int timeout_ms,
 			}
 			if ((r = sshbuf_put_u8(peer_version, c)) != 0) {
 				oerrno = errno;
-				error_f("sshbuf_put: %s", ssh_err(r));
+				error_fr(r, "sshbuf_put");
 				goto out;
 			}
 			if (sshbuf_len(peer_version) > SSH_MAX_BANNER_LEN) {

@@ -125,7 +125,7 @@ ssh_gssapi_last_error(Gssctxt *ctxt, OM_uint32 *major_status,
 
 		if ((r = sshbuf_put(b, msg.value, msg.length)) != 0 ||
 		    (r = sshbuf_put_u8(b, '\n')) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "assemble GSS_CODE");
 
 		gss_release_buffer(&lmin, &msg);
 	} while (ctx != 0);
@@ -137,13 +137,13 @@ ssh_gssapi_last_error(Gssctxt *ctxt, OM_uint32 *major_status,
 
 		if ((r = sshbuf_put(b, msg.value, msg.length)) != 0 ||
 		    (r = sshbuf_put_u8(b, '\n')) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "assemble MECH_CODE");
 
 		gss_release_buffer(&lmin, &msg);
 	} while (ctx != 0);
 
 	if ((r = sshbuf_put_u8(b, '\n')) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "assemble newline");
 	ret = xstrdup((const char *)sshbuf_ptr(b));
 	sshbuf_free(b);
 	return (ret);
@@ -264,7 +264,7 @@ ssh_gssapi_buildmic(struct sshbuf *b, const char *user, const char *service,
 	    (r = sshbuf_put_cstring(b, user)) != 0 ||
 	    (r = sshbuf_put_cstring(b, service)) != 0 ||
 	    (r = sshbuf_put_cstring(b, context)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "assemble buildmic");
 }
 
 int

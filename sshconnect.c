@@ -579,9 +579,9 @@ check_host_cert(const char *host, const struct sshkey *key)
 	}
 	if ((r = sshkey_check_cert_sigtype(key,
 	    options.ca_sign_algorithms)) != 0) {
-		logit_f("certificate signature algorithm %s: %s",
+		logit_fr(r, "certificate signature algorithm %s",
 		    (key->cert == NULL || key->cert->signature_type == NULL) ?
-		    "(null)" : key->cert->signature_type, ssh_err(r));
+		    "(null)" : key->cert->signature_type);
 		return 0;
 	}
 	/* Do not attempt hostkey update if a certificate was successful */
@@ -1110,9 +1110,9 @@ fail:
 		 */
 		debug("No matching CA found. Retry with plain key");
 		if ((r = sshkey_from_private(host_key, &raw_key)) != 0)
-			fatal_f("sshkey_from_private: %s", ssh_err(r));
+			fatal_fr(r, "decode key");
 		if ((r = sshkey_drop_cert(raw_key)) != 0)
-			fatal("Couldn't drop certificate: %s", ssh_err(r));
+			fatal_r(r, "Couldn't drop certificate");
 		host_key = raw_key;
 		goto retry;
 	}
@@ -1137,7 +1137,7 @@ verify_host_key(char *host, struct sockaddr *hostaddr, struct sshkey *host_key)
 
 	if ((fp = sshkey_fingerprint(host_key,
 	    options.fingerprint_hash, SSH_FP_DEFAULT)) == NULL) {
-		error_f("fingerprint host key: %s", ssh_err(r));
+		error_fr(r, "fingerprint host key");
 		r = -1;
 		goto out;
 	}
@@ -1145,7 +1145,7 @@ verify_host_key(char *host, struct sockaddr *hostaddr, struct sshkey *host_key)
 	if (sshkey_is_cert(host_key)) {
 		if ((cafp = sshkey_fingerprint(host_key->cert->signature_key,
 		    options.fingerprint_hash, SSH_FP_DEFAULT)) == NULL) {
-			error_f("fingerprint CA key: %s", ssh_err(r));
+			error_fr(r, "fingerprint CA key");
 			r = -1;
 			goto out;
 		}
@@ -1186,9 +1186,9 @@ verify_host_key(char *host, struct sockaddr *hostaddr, struct sshkey *host_key)
 			r = -1;
 			goto out;
 		default:
-			error("Error checking host key %s %s in "
-			    "revoked keys file %s: %s", sshkey_type(host_key),
-			    fp, options.revoked_host_keys, ssh_err(r));
+			error_r(r, "Error checking host key %s %s in "
+			    "revoked keys file %s", sshkey_type(host_key),
+			    fp, options.revoked_host_keys);
 			r = -1;
 			goto out;
 		}

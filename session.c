@@ -239,7 +239,7 @@ display_loginmsg(void)
 	if (sshbuf_len(loginmsg) == 0)
 		return;
 	if ((r = sshbuf_put_u8(loginmsg, 0)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "sshbuf_put_u8");
 	printf("%s", (char *)sshbuf_ptr(loginmsg));
 	sshbuf_reset(loginmsg);
 }
@@ -1816,7 +1816,7 @@ session_signal_req(struct ssh *ssh, Session *s)
 
 	if ((r = sshpkt_get_cstring(ssh, &signame, NULL)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0) {
-		error_f("parse packet: %s", ssh_err(r));
+		error_fr(r, "parse");
 		goto out;
 	}
 	if ((sig = name2sig(signame)) == -1) {

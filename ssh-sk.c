@@ -204,11 +204,11 @@ sshsk_ecdsa_assemble(struct sk_enroll_response *resp, struct sshkey **keyp)
 	}
 	if ((r = sshbuf_put_string(b,
 	    resp->public_key, resp->public_key_len)) != 0) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "sshbuf_put_string");
 		goto out;
 	}
 	if ((r = sshbuf_get_ec(b, q, EC_KEY_get0_group(key->ecdsa))) != 0) {
-		error_f("parse key: %s", ssh_err(r));
+		error_fr(r, "parse");
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
@@ -312,7 +312,7 @@ sshsk_key_from_response(int alg, const char *application, uint8_t flags,
 	}
 	if ((r = sshbuf_put(key->sk_key_handle, resp->key_handle,
 	    resp->key_handle_len)) != 0) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "put key handle");
 		goto out;
 	}
 	/* success */
@@ -428,7 +428,7 @@ fill_attestation_blob(const struct sk_enroll_response *resp,
 	    resp->authdata, resp->authdata_len)) != 0 ||
 	    (r = sshbuf_put_u32(attest, 0)) != 0 || /* resvd flags */
 	    (r = sshbuf_put_string(attest, NULL, 0)) != 0 /* resvd */) {
-		error_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "compose");
 		return r;
 	}
 	/* success */
@@ -558,13 +558,13 @@ sshsk_ecdsa_sig(struct sk_sign_response *resp, struct sshbuf *sig)
 	    resp->sig_r, resp->sig_r_len)) != 0 ||
 	    (r = sshbuf_put_bignum2_bytes(inner_sig,
 	    resp->sig_s, resp->sig_s_len)) != 0) {
-		debug_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "compose inner");
 		goto out;
 	}
 	if ((r = sshbuf_put_stringb(sig, inner_sig)) != 0 ||
 	    (r = sshbuf_put_u8(sig, resp->flags)) != 0 ||
 	    (r = sshbuf_put_u32(sig, resp->counter)) != 0) {
-		debug_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 #ifdef DEBUG_SK
@@ -597,7 +597,7 @@ sshsk_ed25519_sig(struct sk_sign_response *resp, struct sshbuf *sig)
 	    resp->sig_r, resp->sig_r_len)) != 0 ||
 	    (r = sshbuf_put_u8(sig, resp->flags)) != 0 ||
 	    (r = sshbuf_put_u32(sig, resp->counter)) != 0) {
-		debug_f("buffer error: %s", ssh_err(r));
+		error_fr(r, "compose");
 		goto out;
 	}
 #ifdef DEBUG_SK
@@ -666,7 +666,7 @@ sshsk_sign(const char *provider_path, struct sshkey *key,
 		goto out;
 	}
 	if ((r = sshbuf_put_cstring(sig, sshkey_ssh_name_plain(key))) != 0) {
-		debug_f("buffer error (outer): %s", ssh_err(r));
+		error_fr(r, "compose outer");
 		goto out;
 	}
 	switch (type) {

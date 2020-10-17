@@ -126,7 +126,7 @@ dns_read_key(u_int8_t *algorithm, u_int8_t *digest_type,
 	if (*algorithm && *digest_type) {
 		if ((r = sshkey_fingerprint_raw(key, fp_alg, digest,
 		    digest_len)) != 0)
-			fatal_f("sshkey_fingerprint_raw: %s", ssh_err(r));
+			fatal_fr(r, "sshkey_fingerprint_raw");
 		success = 1;
 	} else {
 		*digest = NULL;

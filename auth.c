@@ -522,7 +522,7 @@ auth_key_is_revoked(struct sshkey *key)
 	if ((fp = sshkey_fingerprint(key, options.fingerprint_hash,
 	    SSH_FP_DEFAULT)) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
-		error_f("fingerprint key: %s", ssh_err(r));
+		error_fr(r, "fingerprint key");
 		goto out;
 	}
 
@@ -535,9 +535,9 @@ auth_key_is_revoked(struct sshkey *key)
 		    sshkey_type(key), fp, options.revoked_keys_file);
 		goto out;
 	default:
-		error("Error checking authentication key %s %s in "
-		    "revoked keys file %s: %s", sshkey_type(key), fp,
-		    options.revoked_keys_file, ssh_err(r));
+		error_r(r, "Error checking authentication key %s %s in "
+		    "revoked keys file %s", sshkey_type(key), fp,
+		    options.revoked_keys_file);
 		goto out;
 	}
 
@@ -563,7 +563,7 @@ auth_debug_add(const char *fmt,...)
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 	if ((r = sshbuf_put_cstring(auth_debug, buf)) != 0)
-		fatal_f("sshbuf_put_cstring: %s", ssh_err(r));
+		fatal_fr(r, "sshbuf_put_cstring");
 }
 
 void
@@ -576,7 +576,7 @@ auth_debug_send(struct ssh *ssh)
 		return;
 	while (sshbuf_len(auth_debug) != 0) {
 		if ((r = sshbuf_get_cstring(auth_debug, &msg, NULL)) != 0)
-			fatal_f("sshbuf_get_cstring: %s", ssh_err(r));
+			fatal_fr(r, "sshbuf_get_cstring");
 		ssh_packet_send_debug(ssh, "%s", msg);
 		free(msg);
 	}

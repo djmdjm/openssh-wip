@@ -116,14 +116,14 @@ warn_expiry(Authctxt *authctxt, auth_session_t *as)
 		if ((r = sshbuf_putf(loginmsg,
 		    "Your password will expire in %lld day%s.\n",
 		    daysleft, daysleft == 1 ? "" : "s")) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "buffer error");
 	}
 	if (actimeleft != 0 && actimeleft < acwarntime) {
 		daysleft = actimeleft / DAY + 1;
 		if ((r = sshbuf_putf(loginmsg,
 		    "Your account will expire in %lld day%s.\n",
 		    daysleft, daysleft == 1 ? "" : "s")) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "buffer error");
 	}
 }
 

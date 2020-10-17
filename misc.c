@@ -1122,7 +1122,7 @@ vdollar_percent_expand(int *parseerror, int dollar, int percent,
 			} else {
 				debug3_f("expand ${%s} -> '%s'", var, val);
 				if ((r = sshbuf_put(buf, val, strlen(val))) !=0)
-					fatal_f("sshbuf_put: %s", ssh_err(r));
+					fatal_fr(r, "sshbuf_put ${}");
 			}
 			free(var);
 			string += len;
@@ -1137,7 +1137,7 @@ vdollar_percent_expand(int *parseerror, int dollar, int percent,
 		if (*string != '%' || !percent) {
  append:
 			if ((r = sshbuf_put_u8(buf, *string)) != 0)
-				fatal_f("sshbuf_put_u8: %s", ssh_err(r));
+				fatal_fr(r, "sshbuf_put_u8 %%");
 			continue;
 		}
 		string++;
@@ -1151,9 +1151,8 @@ vdollar_percent_expand(int *parseerror, int dollar, int percent,
 		for (i = 0; i < num_keys; i++) {
 			if (strchr(keys[i].key, *string) != NULL) {
 				if ((r = sshbuf_put(buf, keys[i].repl,
-				    strlen(keys[i].repl))) != 0) {
-					fatal_f("sshbuf_put: %s", ssh_err(r));
-				}
+				    strlen(keys[i].repl))) != 0)
+					fatal_fr(r, "sshbuf_put %%-repl");
 				break;
 			}
 		}
@@ -1894,13 +1893,13 @@ argv_assemble(int argc, char **argv)
 				break;
 			}
 			if (r != 0)
-				fatal_f("sshbuf_put_u8: %s", ssh_err(r));
+				fatal_fr(r, "sshbuf_put_u8");
 		}
 		if ((i != 0 && (r = sshbuf_put_u8(buf, ' ')) != 0) ||
 		    (ws != 0 && (r = sshbuf_put_u8(buf, '"')) != 0) ||
 		    (r = sshbuf_putb(buf, arg)) != 0 ||
 		    (ws != 0 && (r = sshbuf_put_u8(buf, '"')) != 0))
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "assemble");
 	}
 	if ((ret = malloc(sshbuf_len(buf) + 1)) == NULL)
 		fatal_f("malloc failed");

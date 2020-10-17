@@ -481,7 +481,7 @@ send_msg(struct sshbuf *m)
 	int r;
 
 	if ((r = sshbuf_put_stringb(oqueue, m)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "enqueue");
 	sshbuf_reset(m);
 }
 
@@ -518,12 +518,12 @@ send_status(u_int32_t id, u_int32_t status)
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_STATUS)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_u32(msg, status)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	if (version >= 3) {
 		if ((r = sshbuf_put_cstring(msg,
 		    status_to_message(status))) != 0 ||
 		    (r = sshbuf_put_cstring(msg, "")) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "compose message");
 	}
 	send_msg(msg);
 	sshbuf_free(msg);
@@ -539,7 +539,7 @@ send_data_or_handle(char type, u_int32_t id, const u_char *data, int dlen)
 	if ((r = sshbuf_put_u8(msg, type)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_string(msg, data, dlen)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_free(msg);
 }
@@ -574,13 +574,13 @@ send_names(u_int32_t id, int count, const Stat *stats)
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_NAME)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_u32(msg, count)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	debug("request %u: sent names count %d", id, count);
 	for (i = 0; i < count; i++) {
 		if ((r = sshbuf_put_cstring(msg, stats[i].name)) != 0 ||
 		    (r = sshbuf_put_cstring(msg, stats[i].long_name)) != 0 ||
 		    (r = encode_attrib(msg, &stats[i].attrib)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "compose filenames/attrib");
 	}
 	send_msg(msg);
 	sshbuf_free(msg);
@@ -598,7 +598,7 @@ send_attrib(u_int32_t id, const Attrib *a)
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_ATTRS)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = encode_attrib(msg, a)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_free(msg);
 }
@@ -628,7 +628,7 @@ send_statvfs(u_int32_t id, struct statvfs *st)
 	    (r = sshbuf_put_u64(msg, st->f_fsid)) != 0 ||
 	    (r = sshbuf_put_u64(msg, flag)) != 0 ||
 	    (r = sshbuf_put_u64(msg, st->f_namemax)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_free(msg);
 }
@@ -642,7 +642,7 @@ process_init(void)
 	int r;
 
 	if ((r = sshbuf_get_u32(iqueue, &version)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	verbose("received client version %u", version);
 	if ((msg = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new failed");
@@ -665,7 +665,7 @@ process_init(void)
 	    (r = sshbuf_put_cstring(msg, "1")) != 0 || /* version */
 	    (r = sshbuf_put_cstring(msg, "lsetstat@openssh.com")) != 0 ||
 	    (r = sshbuf_put_cstring(msg, "1")) != 0) /* version */
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_free(msg);
 }
@@ -681,7 +681,7 @@ process_open(u_int32_t id)
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0 ||
 	    (r = sshbuf_get_u32(iqueue, &pflags)) != 0 || /* portable flags */
 	    (r = decode_attrib(iqueue, &a)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: open flags %d", id, pflags);
 	flags = flags_from_portable(pflags);
@@ -718,7 +718,7 @@ process_close(u_int32_t id)
 	int r, handle, ret, status = SSH2_FX_FAILURE;
 
 	if ((r = get_handle(iqueue, &handle)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: close handle %u", id, handle);
 	handle_log_close(handle, NULL);
@@ -738,7 +738,7 @@ process_read(u_int32_t id)
 	if ((r = get_handle(iqueue, &handle)) != 0 ||
 	    (r = sshbuf_get_u64(iqueue, &off)) != 0 ||
 	    (r = sshbuf_get_u32(iqueue, &len)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug("request %u: read \"%s\" (handle %d) off %llu len %d",
 	    id, handle_to_name(handle), handle, (unsigned long long)off, len);
@@ -779,7 +779,7 @@ process_write(u_int32_t id)
 	if ((r = get_handle(iqueue, &handle)) != 0 ||
 	    (r = sshbuf_get_u64(iqueue, &off)) != 0 ||
 	    (r = sshbuf_get_string(iqueue, &data, &len)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug("request %u: write \"%s\" (handle %d) off %llu len %zu",
 	    id, handle_to_name(handle), handle, (unsigned long long)off, len);
@@ -820,7 +820,7 @@ process_do_stat(u_int32_t id, int do_lstat)
 	int r, status = SSH2_FX_FAILURE;
 
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: %sstat", id, do_lstat ? "l" : "");
 	verbose("%sstat name \"%s\"", do_lstat ? "l" : "", name);
@@ -857,7 +857,7 @@ process_fstat(u_int32_t id)
 	int fd, r, handle, status = SSH2_FX_FAILURE;
 
 	if ((r = get_handle(iqueue, &handle)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	debug("request %u: fstat \"%s\" (handle %u)",
 	    id, handle_to_name(handle), handle);
 	fd = handle_to_fd(handle);
@@ -908,7 +908,7 @@ process_setstat(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0 ||
 	    (r = decode_attrib(iqueue, &a)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug("request %u: setstat name \"%s\"", id, name);
 	if (a.flags & SSH2_FILEXFER_ATTR_SIZE) {
@@ -955,7 +955,7 @@ process_fsetstat(u_int32_t id)
 
 	if ((r = get_handle(iqueue, &handle)) != 0 ||
 	    (r = decode_attrib(iqueue, &a)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug("request %u: fsetstat handle %d", id, handle);
 	fd = handle_to_fd(handle);
@@ -1007,7 +1007,7 @@ process_opendir(u_int32_t id)
 	int r, handle, status = SSH2_FX_FAILURE;
 
 	if ((r = sshbuf_get_cstring(iqueue, &path, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: opendir", id);
 	logit("opendir \"%s\"", path);
@@ -1038,7 +1038,7 @@ process_readdir(u_int32_t id)
 	int r, handle;
 
 	if ((r = get_handle(iqueue, &handle)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug("request %u: readdir \"%s\" (handle %d)", id,
 	    handle_to_name(handle), handle);
@@ -1092,7 +1092,7 @@ process_remove(u_int32_t id)
 	int r, status = SSH2_FX_FAILURE;
 
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: remove", id);
 	logit("remove name \"%s\"", name);
@@ -1111,7 +1111,7 @@ process_mkdir(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0 ||
 	    (r = decode_attrib(iqueue, &a)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	mode = (a.flags & SSH2_FILEXFER_ATTR_PERMISSIONS) ?
 	    a.perm & 07777 : 0777;
@@ -1130,7 +1130,7 @@ process_rmdir(u_int32_t id)
 	int r, status;
 
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: rmdir", id);
 	logit("rmdir name \"%s\"", name);
@@ -1148,7 +1148,7 @@ process_realpath(u_int32_t id)
 	int r;
 
 	if ((r = sshbuf_get_cstring(iqueue, &path, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	if (path[0] == '\0') {
 		free(path);
@@ -1176,7 +1176,7 @@ process_rename(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &oldpath, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(iqueue, &newpath, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: rename", id);
 	logit("rename old \"%s\" new \"%s\"", oldpath, newpath);
@@ -1228,7 +1228,7 @@ process_readlink(u_int32_t id)
 	char *path;
 
 	if ((r = sshbuf_get_cstring(iqueue, &path, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: readlink", id);
 	verbose("readlink \"%s\"", path);
@@ -1253,7 +1253,7 @@ process_symlink(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &oldpath, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(iqueue, &newpath, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: symlink", id);
 	logit("symlink old \"%s\" new \"%s\"", oldpath, newpath);
@@ -1273,7 +1273,7 @@ process_extended_posix_rename(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &oldpath, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(iqueue, &newpath, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: posix-rename", id);
 	logit("posix-rename old \"%s\" new \"%s\"", oldpath, newpath);
@@ -1292,7 +1292,7 @@ process_extended_statvfs(u_int32_t id)
 	int r;
 
 	if ((r = sshbuf_get_cstring(iqueue, &path, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	debug3("request %u: statvfs", id);
 	logit("statvfs \"%s\"", path);
 
@@ -1310,7 +1310,7 @@ process_extended_fstatvfs(u_int32_t id)
 	struct statvfs st;
 
 	if ((r = get_handle(iqueue, &handle)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	debug("request %u: fstatvfs \"%s\" (handle %u)",
 	    id, handle_to_name(handle), handle);
 	if ((fd = handle_to_fd(handle)) < 0) {
@@ -1331,7 +1331,7 @@ process_extended_hardlink(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &oldpath, NULL)) != 0 ||
 	    (r = sshbuf_get_cstring(iqueue, &newpath, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug3("request %u: hardlink", id);
 	logit("hardlink old \"%s\" new \"%s\"", oldpath, newpath);
@@ -1348,7 +1348,7 @@ process_extended_fsync(u_int32_t id)
 	int handle, fd, r, status = SSH2_FX_OP_UNSUPPORTED;
 
 	if ((r = get_handle(iqueue, &handle)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	debug3("request %u: fsync (handle %u)", id, handle);
 	verbose("fsync \"%s\"", handle_to_name(handle));
 	if ((fd = handle_to_fd(handle)) < 0)
@@ -1369,7 +1369,7 @@ process_extended_lsetstat(u_int32_t id)
 
 	if ((r = sshbuf_get_cstring(iqueue, &name, NULL)) != 0 ||
 	    (r = decode_attrib(iqueue, &a)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 
 	debug("request %u: lsetstat name \"%s\"", id, name);
 	if (a.flags & SSH2_FILEXFER_ATTR_SIZE) {
@@ -1416,7 +1416,7 @@ process_extended(u_int32_t id)
 	int i, r;
 
 	if ((r = sshbuf_get_cstring(iqueue, &request, NULL)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse");
 	for (i = 0; extended_handlers[i].handler != NULL; i++) {
 		if (strcmp(request, extended_handlers[i].ext_name) == 0) {
 			if (!request_permitted(&extended_handlers[i]))
@@ -1459,10 +1459,10 @@ process(void)
 	if (buf_len < msg_len + 4)
 		return;
 	if ((r = sshbuf_consume(iqueue, 4)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "consume");
 	buf_len -= 4;
 	if ((r = sshbuf_get_u8(iqueue, &type)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse type");
 
 	switch (type) {
 	case SSH2_FXP_INIT:
@@ -1473,14 +1473,14 @@ process(void)
 		if (!init_done)
 			fatal("Received extended request before init");
 		if ((r = sshbuf_get_u32(iqueue, &id)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "parse extended ID");
 		process_extended(id);
 		break;
 	default:
 		if (!init_done)
 			fatal("Received %u request before init", type);
 		if ((r = sshbuf_get_u32(iqueue, &id)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "parse ID");
 		for (i = 0; handlers[i].handler != NULL; i++) {
 			if (type == handlers[i].type) {
 				if (!request_permitted(&handlers[i])) {
@@ -1507,7 +1507,7 @@ process(void)
 	}
 	if (msg_len > consumed &&
 	    (r = sshbuf_consume(iqueue, msg_len - consumed)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "consume");
 }
 
 /* Cleanup handler that logs active handles upon normal exit */
@@ -1677,7 +1677,7 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 		    SFTP_MAX_MSG_LENGTH)) == 0)
 			FD_SET(in, rset);
 		else if (r != SSH_ERR_NO_BUFFER_SPACE)
-			fatal_f("sshbuf_check_reserve: %s", ssh_err(r));
+			fatal_fr(r, "reserve");
 
 		olen = sshbuf_len(oqueue);
 		if (olen > 0)
@@ -1699,9 +1699,8 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 			} else if (len == -1) {
 				error("read: %s", strerror(errno));
 				sftp_server_cleanup_exit(1);
-			} else if ((r = sshbuf_put(iqueue, buf, len)) != 0) {
-				fatal_f("buffer error: %s", ssh_err(r));
-			}
+			} else if ((r = sshbuf_put(iqueue, buf, len)) != 0)
+				fatal_fr(r, "sshbuf_put");
 		}
 		/* send oqueue to stdout */
 		if (FD_ISSET(out, wset)) {
@@ -1709,9 +1708,8 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 			if (len == -1) {
 				error("write: %s", strerror(errno));
 				sftp_server_cleanup_exit(1);
-			} else if ((r = sshbuf_consume(oqueue, len)) != 0) {
-				fatal_f("buffer error: %s", ssh_err(r));
-			}
+			} else if ((r = sshbuf_consume(oqueue, len)) != 0)
+				fatal_fr(r, "consume");
 		}
 
 		/*
@@ -1723,6 +1721,6 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 		if (r == 0)
 			process();
 		else if (r != SSH_ERR_NO_BUFFER_SPACE)
-			fatal_f("sshbuf_check_reserve: %s", ssh_err(r));
+			fatal_fr(r, "reserve");
 	}
 }

@@ -57,7 +57,7 @@ send_msg(struct sshbuf *m)
 	    sshbuf_len(m)) != sshbuf_len(m))
 		error("write to helper failed");
 	if ((r = sshbuf_consume(m, mlen)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "consume");
 }
 
 static int
@@ -85,11 +85,11 @@ recv_msg(struct sshbuf *m)
 			return (0); /* XXX */
 		}
 		if ((r = sshbuf_put(m, buf, l)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "sshbuf_put");
 		len -= l;
 	}
 	if ((r = sshbuf_get_u8(m, &c)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "parse type");
 	return c;
 }
 
@@ -126,7 +126,7 @@ rsa_encrypt(int flen, const u_char *from, u_char *to, RSA *rsa, int padding)
 	RSA_up_ref(rsa);
 	key->rsa = rsa;
 	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
-		error_f("sshkey_to_blob: %s", ssh_err(r));
+		error_fr(r, "encode key");
 		goto fail;
 	}
 	if ((msg = sshbuf_new()) == NULL)
@@ -135,13 +135,13 @@ rsa_encrypt(int flen, const u_char *from, u_char *to, RSA *rsa, int padding)
 	    (r = sshbuf_put_string(msg, blob, blen)) != 0 ||
 	    (r = sshbuf_put_string(msg, from, flen)) != 0 ||
 	    (r = sshbuf_put_u32(msg, 0)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_reset(msg);
 
 	if (recv_msg(msg) == SSH2_AGENT_SIGN_RESPONSE) {
 		if ((r = sshbuf_get_string(msg, &signature, &slen)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "parse");
 		if (slen <= (size_t)RSA_size(rsa)) {
 			memcpy(to, signature, slen);
 			ret = slen;
@@ -184,7 +184,7 @@ ecdsa_do_sign(const unsigned char *dgst, int dgst_len, const BIGNUM *inv,
 	EC_KEY_up_ref(ec);
 
 	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
-		error_f("sshkey_to_blob: %s", ssh_err(r));
+		error_fr(r, "encode key");
 		goto fail;
 	}
 	if ((msg = sshbuf_new()) == NULL)
@@ -193,13 +193,13 @@ ecdsa_do_sign(const unsigned char *dgst, int dgst_len, const BIGNUM *inv,
 	    (r = sshbuf_put_string(msg, blob, blen)) != 0 ||
 	    (r = sshbuf_put_string(msg, dgst, dgst_len)) != 0 ||
 	    (r = sshbuf_put_u32(msg, 0)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_reset(msg);
 
 	if (recv_msg(msg) == SSH2_AGENT_SIGN_RESPONSE) {
 		if ((r = sshbuf_get_string(msg, &signature, &slen)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "parse");
 		cp = signature;
 		ret = d2i_ECDSA_SIG(NULL, &cp, slen);
 		free(signature);
@@ -315,14 +315,14 @@ pkcs11_add_provider(char *name, char *pin, struct sshkey ***keysp,
 	if ((r = sshbuf_put_u8(msg, SSH_AGENTC_ADD_SMARTCARD_KEY)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, name)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, pin)) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_reset(msg);
 
 	type = recv_msg(msg);
 	if (type == SSH2_AGENT_IDENTITIES_ANSWER) {
 		if ((r = sshbuf_get_u32(msg, &nkeys)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			fatal_fr(r, "parse nkeys");
 		*keysp = xcalloc(nkeys, sizeof(struct sshkey *));
 		if (labelsp)
 			*labelsp = xcalloc(nkeys, sizeof(char *));
@@ -330,9 +330,9 @@ pkcs11_add_provider(char *name, char *pin, struct sshkey ***keysp,
 			/* XXX clean up properly instead of fatal() */
 			if ((r = sshbuf_get_string(msg, &blob, &blen)) != 0 ||
 			    (r = sshbuf_get_cstring(msg, &label, NULL)) != 0)
-				fatal_f("buffer error: %s", ssh_err(r));
+				fatal_fr(r, "parse key");
 			if ((r = sshkey_from_blob(blob, blen, &k)) != 0)
-				fatal_f("bad key: %s", ssh_err(r));
+				fatal_fr(r, "decode key");
 			wrap_key(k);
 			(*keysp)[i] = k;
 			if (labelsp)
@@ -362,7 +362,7 @@ pkcs11_del_provider(char *name)
 	if ((r = sshbuf_put_u8(msg, SSH_AGENTC_REMOVE_SMARTCARD_KEY)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, name)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, "")) != 0)
-		fatal_f("buffer error: %s", ssh_err(r));
+		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_reset(msg);
 

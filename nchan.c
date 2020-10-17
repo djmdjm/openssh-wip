@@ -187,7 +187,7 @@ chan_send_eof2(struct ssh *ssh, Channel *c)
 		if ((r = sshpkt_start(ssh, SSH2_MSG_CHANNEL_EOF)) != 0 ||
 		    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0)
-			fatal_f("send CHANNEL_EOF: %s", ssh_err(r));
+			fatal_fr(r, "send CHANNEL_EOF");
 		c->flags |= CHAN_EOF_SENT;
 		break;
 	default:
@@ -215,7 +215,7 @@ chan_send_close2(struct ssh *ssh, Channel *c)
 		if ((r = sshpkt_start(ssh, SSH2_MSG_CHANNEL_CLOSE)) != 0 ||
 		    (r = sshpkt_put_u32(ssh, c->remote_id)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0)
-			fatal_f("send CHANNEL_EOF: %s", ssh_err(r));
+			fatal_fr(r, "send CHANNEL_EOF");
 		c->flags |= CHAN_CLOSE_SENT;
 	}
 }
@@ -240,7 +240,7 @@ chan_send_eow2(struct ssh *ssh, Channel *c)
 	    (r = sshpkt_put_cstring(ssh, "eow@openssh.com")) != 0 ||
 	    (r = sshpkt_put_u8(ssh, 0)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
-		fatal_f("send CHANNEL_EOF: %s", ssh_err(r));
+		fatal_fr(r, "send CHANNEL_EOF");
 }
 
 /* shared */

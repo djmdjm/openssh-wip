@@ -1451,10 +1451,9 @@ parse_keytypes:
 		    (u_char) arg[1] >= 64 && (u_char) arg[1] < 128)
 			value = (u_char) arg[1] & 31;
 		else {
+			value = 0;	/* Avoid compiler warning. */
 			fatal("%.200s line %d: Bad escape character.",
 			    filename, linenum);
-			/* NOTREACHED */
-			value = 0;	/* Avoid compiler warning. */
 		}
 		if (*activep && *intptr == -1)
 			*intptr = value;
@@ -2254,7 +2253,7 @@ fill_default_options(Options * options)
 	do { \
 		if ((r = kex_assemble_names(&options->what, \
 		    defaults, all)) != 0) \
-			fatal_f("%s: %s", #what, ssh_err(r)); \
+			fatal_fr(r, "%s", #what); \
 	} while (0)
 	ASSEMBLE(ciphers, def_cipher, all_cipher);
 	ASSEMBLE(macs, def_mac, all_mac);
@@ -2740,7 +2739,7 @@ dump_client_config(Options *o, const char *host)
 	all_key = sshkey_alg_list(0, 0, 1, ',');
 	if ((r = kex_assemble_names(&o->hostkeyalgorithms, kex_default_pk_alg(),
 	    all_key)) != 0)
-		fatal_f("expand HostKeyAlgorithms: %s", ssh_err(r));
+		fatal_fr(r, "expand HostKeyAlgorithms");
 	free(all_key);
 
 	/* Most interesting options first: user, host, port */

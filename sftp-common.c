@@ -131,7 +131,7 @@ decode_attrib(struct sshbuf *b, Attrib *a)
 		u_int i, count;
 
 		if ((r = sshbuf_get_u32(b, &count)) != 0)
-			fatal_f("buffer error: %s", ssh_err(r));
+			return r;
 		for (i = 0; i < count; i++) {
 			if ((r = sshbuf_get_cstring(b, &type, NULL)) != 0 ||
 			    (r = sshbuf_get_string(b, &data, &dlen)) != 0)

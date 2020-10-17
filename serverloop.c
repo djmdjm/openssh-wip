@@ -197,13 +197,13 @@ client_alive_check(struct ssh *ssh)
 		    (r = sshpkt_put_cstring(ssh, "keepalive@openssh.com"))
 		    != 0 ||
 		    (r = sshpkt_put_u8(ssh, 1)) != 0) /* boolean: want reply */
-			fatal_f("%s", ssh_err(r));
+			fatal_fr(r, "compose");
 	} else {
 		channel_request_start(ssh, channel_id,
 		    "keepalive@openssh.com", 1);
 	}
 	if ((r = sshpkt_send(ssh)) != 0)
-		fatal_f("%s", ssh_err(r));
+		fatal_fr(r, "send");
 }
 
 /*
@@ -328,20 +328,16 @@ process_input(struct ssh *ssh, fd_set *readset, int connection_in)
 			    ssh_remote_ipaddr(ssh), ssh_remote_port(ssh));
 			return -1;
 		} else if (len == -1) {
-			if (errno != EINTR && errno != EAGAIN) {
-				verbose("Read error from remote host "
-				    "%.100s port %d: %.100s",
-				    ssh_remote_ipaddr(ssh),
-				    ssh_remote_port(ssh), strerror(errno));
-				cleanup_exit(255);
-			}
-		} else {
-			/* Buffer any received data. */
-			if ((r = ssh_packet_process_incoming(ssh, buf, len))
-			    != 0)
-				fatal_f("ssh_packet_process_incoming: %s",
-				    ssh_err(r));
+			if (errno == EINTR || errno == EAGAIN)
+				return 0;
+			verbose("Read error from remote host %s port %d: %s",
+			    ssh_remote_ipaddr(ssh), ssh_remote_port(ssh),
+			    strerror(errno));
+			cleanup_exit(255);
 		}
+		/* Buffer any received data. */
+		if ((r = ssh_packet_process_incoming(ssh, buf, len)) != 0)
+			fatal_fr(r, "ssh_packet_process_incoming");
 	}
 	return 0;
 }
@@ -742,7 +738,7 @@ server_input_hostkeys_prove(struct ssh *ssh, struct sshbuf **respp)
 		key = NULL;
 		if ((r = sshpkt_get_string_direct(ssh, &blob, &blen)) != 0 ||
 		    (r = sshkey_from_blob(blob, blen, &key)) != 0) {
-			error_f("couldn't parse key: %s", ssh_err(r));
+			error_fr(r, "parse key");
 			goto out;
 		}
 		/*
@@ -780,7 +776,7 @@ server_input_hostkeys_prove(struct ssh *ssh, struct sshbuf **respp)
 		    sshbuf_ptr(sigbuf), sshbuf_len(sigbuf),
 		    use_kexsigtype ? ssh->kex->hostkey_alg : NULL)) != 0 ||
 		    (r = sshbuf_put_string(resp, sig, slen)) != 0) {
-			error_f("couldn't prepare signature: %s", ssh_err(r));
+			error_fr(r, "assemble signature");
 			goto out;
 		}
 	}
@@ -844,7 +840,7 @@ server_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 			fatal_f("sshbuf_new");
 		if (allocated_listen_port != 0 &&
 		    (r = sshbuf_put_u32(resp, allocated_listen_port)) != 0)
-			fatal_f("sshbuf_put_u32: %s", ssh_err(r));
+			fatal_fr(r, "sshbuf_put_u32");
 	} else if (strcmp(rtype, "cancel-tcpip-forward") == 0) {
 		if ((r = sshpkt_get_cstring(ssh, &fwd.listen_host, NULL)) != 0 ||
 		    (r = sshpkt_get_u32(ssh, &port)) != 0)
