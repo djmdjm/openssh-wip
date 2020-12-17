@@ -132,6 +132,10 @@ order_hostkeyalgs(char *host, struct sockaddr *hostaddr, u_short port,
 		load_hostkeys(hostkeys, hostname,
 		    options.system_hostfiles[i], 0);
 	}
+	if (options.known_hosts_command != NULL) {
+		load_hostkeys_command(hostkeys, options.known_hosts_command,
+		    "ORDER", cinfo, NULL, host);
+	}
 	/*
 	 * If a plain public key exists that matches the type of the best
 	 * preference HostkeyAlgorithms, then use the whole list as is.
@@ -193,7 +197,8 @@ order_hostkeyalgs(char *host, struct sockaddr *hostaddr, u_short port,
 	    (*first == '\0' || *last == '\0') ? "" : ",", last);
 	if (*first != '\0')
 		debug3_f("prefer hostkeyalgs: %s", first);
-
+	else
+		debug3_f("no algorithms matched; accept original");
  out:
 	free(best);
 	free(first);
