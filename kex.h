@@ -123,6 +123,7 @@ struct newkeys {
 };
 
 struct ssh;
+struct sshbuf;
 
 struct kex {
 	struct newkeys	*newkeys[MODE_MAX];
@@ -141,6 +142,8 @@ struct kex {
 	struct sshbuf *client_version;
 	struct sshbuf *server_version;
 	struct sshbuf *session_id;
+	struct sshbuf *initial_sig;
+	struct sshkey *initial_hostkey;
 	sig_atomic_t done;
 	u_int	flags;
 	int	hash_alg;
