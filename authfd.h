@@ -16,11 +16,22 @@
 #ifndef AUTHFD_H
 #define AUTHFD_H
 
+struct sshbuf;
+struct sshkey;
+
 /* List of identities returned by ssh_fetch_identitylist() */
 struct ssh_identitylist {
 	size_t nkeys;
 	struct sshkey **keys;
 	char **comments;
+};
+
+/* Key destination restrictions */
+struct dest_constraint {
+	char *user;	/* wildcards allowed */
+	char *hostname; /* used to matching cert principals and for display */
+	int is_ca;
+	struct sshkey *key;
 };
 
 int	ssh_get_authentication_socket(int *fdp);
@@ -31,12 +42,14 @@ int	ssh_lock_agent(int sock, int lock, const char *password);
 int	ssh_fetch_identitylist(int sock, struct ssh_identitylist **idlp);
 void	ssh_free_identitylist(struct ssh_identitylist *idl);
 int	ssh_add_identity_constrained(int sock, struct sshkey *key,
-	    const char *comment, u_int life, u_int confirm, u_int maxsign,
-	    const char *provider);
+    const char *comment, u_int life, u_int confirm, u_int maxsign,
+    const char *provider, struct dest_constraint *dest_constraints,
+    size_t ndest_constraints);
 int	ssh_agent_has_key(int sock, const struct sshkey *key);
 int	ssh_remove_identity(int sock, const struct sshkey *key);
 int	ssh_update_card(int sock, int add, const char *reader_id,
-	    const char *pin, u_int life, u_int confirm);
+	    const char *pin, u_int life, u_int confirm,
+	    struct dest_constraint *dest_constraints, size_t ndest_constraints);
 int	ssh_remove_all_identities(int sock, int version);
 
 int	ssh_agent_sign(int sock, const struct sshkey *key,
