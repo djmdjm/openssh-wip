@@ -456,9 +456,13 @@ ssh_agent_sign(int sock, const struct sshkey *key,
 
 static int
 encode_constraints(struct sshbuf *m, u_int life, u_int confirm, u_int maxsign,
-    const char *provider)
+    const char *provider, struct dest_constraint *dest_constraints,
+    size_t ndest_constraints)
 {
 	int r;
+	const struct dest_constraint *dc;
+	struct sshbuf *b = NULL;
+	size_t i;
 
 	if (life != 0) {
 		if ((r = sshbuf_put_u8(m, SSH_AGENT_CONSTRAIN_LIFETIME)) != 0 ||
@@ -482,8 +486,33 @@ encode_constraints(struct sshbuf *m, u_int life, u_int confirm, u_int maxsign,
 		    (r = sshbuf_put_cstring(m, provider)) != 0)
 			goto out;
 	}
+	if (dest_constraints != NULL && ndest_constraints > 0) {
+		if ((b = sshbuf_new()) == NULL) {
+			r = SSH_ERR_ALLOC_FAIL;
+			goto out;
+		}
+		for (i = 0; i < ndest_constraints; i++) {
+			dc = dest_constraints + i;
+			if ((r = sshbuf_put_cstring(b, dc->user)) != 0 ||
+			    (r = sshbuf_put_cstring(b, dc->hostname)) != 0 ||
+			    (r = sshbuf_put_u8(b, dc->is_ca)) != 0)
+				goto out;
+			if (dc->key == NULL) {
+				if ((r = sshbuf_put_string(b, NULL, 0)) != 0)
+					goto out;
+			} else if ((r = sshkey_puts(dc->key, b)) != 0)
+				goto out;
+		}
+		if ((r = sshbuf_put_u8(m,
+		    SSH_AGENT_CONSTRAIN_EXTENSION)) != 0 ||
+		    (r = sshbuf_put_cstring(m,
+		    "restrict-destination@openssh.com")) != 0 ||
+		    (r = sshbuf_put_stringb(m, b)) != 0)
+			goto out;
+	}
 	r = 0;
  out:
+	sshbuf_free(b);
 	return r;
 }
 
@@ -494,10 +523,12 @@ encode_constraints(struct sshbuf *m, u_int life, u_int confirm, u_int maxsign,
 int
 ssh_add_identity_constrained(int sock, struct sshkey *key,
     const char *comment, u_int life, u_int confirm, u_int maxsign,
-    const char *provider)
+    const char *provider, struct dest_constraint *dest_constraints,
+    size_t ndest_constraints)
 {
 	struct sshbuf *msg;
-	int r, constrained = (life || confirm || maxsign || provider);
+	int r, constrained = (life || confirm || maxsign ||
+	    provider || dest_constraints);
 	u_char type;
 
 	if ((msg = sshbuf_new()) == NULL)
@@ -535,7 +566,7 @@ ssh_add_identity_constrained(int sock, struct sshkey *key,
 	}
 	if (constrained &&
 	    (r = encode_constraints(msg, life, confirm, maxsign,
-	    provider)) != 0)
+	    provider, dest_constraints, ndest_constraints)) != 0)
 		goto out;
 	if ((r = ssh_request_reply_decode(sock, msg)) != 0)
 		goto out;
@@ -589,7 +620,8 @@ ssh_remove_identity(int sock, const struct sshkey *key)
  */
 int
 ssh_update_card(int sock, int add, const char *reader_id, const char *pin,
-    u_int life, u_int confirm)
+    u_int life, u_int confirm,
+    struct dest_constraint *dest_constraints, size_t ndest_constraints)
 {
 	struct sshbuf *msg;
 	int r, constrained = (life || confirm);
@@ -609,7 +641,8 @@ ssh_update_card(int sock, int add, const char *reader_id, const char *pin,
 	    (r = sshbuf_put_cstring(msg, pin)) != 0)
 		goto out;
 	if (constrained &&
-	    (r = encode_constraints(msg, life, confirm, 0, NULL)) != 0)
+	    (r = encode_constraints(msg, life, confirm, 0, NULL,
+	    dest_constraints, ndest_constraints)) != 0)
 		goto out;
 	if ((r = ssh_request_reply_decode(sock, msg)) != 0)
 		goto out;
