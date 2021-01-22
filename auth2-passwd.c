@@ -47,7 +47,7 @@
 extern ServerOptions options;
 
 static int
-userauth_passwd(struct ssh *ssh)
+userauth_passwd(struct ssh *ssh, const char *method)
 {
 	char *password;
 	int authenticated = 0, r;
@@ -70,6 +70,7 @@ userauth_passwd(struct ssh *ssh)
 
 Authmethod method_passwd = {
 	"password",
+	NULL,
 	userauth_passwd,
 	&options.password_authentication
 };

@@ -55,7 +55,7 @@ static int input_gssapi_errtok(int, u_int32_t, struct ssh *);
  * how to check local user kuserok and the like)
  */
 static int
-userauth_gssapi(struct ssh *ssh)
+userauth_gssapi(struct ssh *ssh, const char *method)
 {
 	Authctxt *authctxt = ssh->authctxt;
 	gss_OID_desc goid = {0, NULL};
@@ -324,6 +324,7 @@ input_gssapi_mic(int type, u_int32_t plen, struct ssh *ssh)
 
 Authmethod method_gssapi = {
 	"gssapi-with-mic",
+	NULL,
 	userauth_gssapi,
 	&options.gss_authentication
 };
