@@ -682,6 +682,7 @@ kex_free(struct kex *kex)
 	sshbuf_free(kex->server_version);
 	sshbuf_free(kex->client_pub);
 	sshbuf_free(kex->session_id);
+	sshkey_free(kex->initial_hostkey);
 	free(kex->failed_choice);
 	free(kex->hostkey_alg);
 	free(kex->name);
