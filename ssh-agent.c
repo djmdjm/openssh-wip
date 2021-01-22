@@ -547,22 +547,24 @@ agent_decode_alg(struct sshkey *key, u_int flags)
  * request, checking its contents for consistency and matching the embedded
  * key against the one that is being used for signing.
  * Note: does not modify msg buffer.
- * Optionally extract the username and session ID from the request.
+ * Optionally extract the username, session ID and/or hostkey from the request.
  */
 static int
 parse_userauth_request(struct sshbuf *msg, const struct sshkey *expected_key,
-    char **userp, struct sshbuf **sess_idp)
+    char **userp, struct sshbuf **sess_idp, struct sshkey **hostkeyp)
 {
 	struct sshbuf *b = NULL, *sess_id = NULL;
 	char *user = NULL, *service = NULL, *method = NULL, *pkalg = NULL;
 	int r;
 	u_char t, sig_follows;
-	struct sshkey *mkey = NULL;
+	struct sshkey *mkey = NULL, *hostkey = NULL;
 
 	if (userp != NULL)
 		*userp = NULL;
 	if (sess_idp != NULL)
 		*sess_idp = NULL;
+	if (hostkeyp != NULL)
+		*hostkeyp = NULL;
 	if ((b = sshbuf_fromb(msg)) == NULL)
 		fatal_f("sshbuf_fromb");
 
@@ -589,7 +591,10 @@ parse_userauth_request(struct sshbuf *msg, const struct sshkey *expected_key,
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
-	if (strcmp(method, "publickey") != 0) {
+	if (strcmp(method, "publickey-hostbound-v00@openssh.com") == 0) {
+		if ((r = sshkey_froms(b, &hostkey)) != 0)
+			goto out;
+	} else if (strcmp(method, "publickey") != 0) {
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
@@ -608,6 +613,10 @@ parse_userauth_request(struct sshbuf *msg, const struct sshkey *expected_key,
 		*sess_idp = sess_id;
 		sess_id = NULL;
 	}
+	if (hostkeyp != NULL) {
+		*hostkeyp = hostkey;
+		hostkey = NULL;
+	}
  out:
 	sshbuf_free(b);
 	sshbuf_free(sess_id);
@@ -616,6 +625,7 @@ parse_userauth_request(struct sshbuf *msg, const struct sshkey *expected_key,
 	free(method);
 	free(pkalg);
 	sshkey_free(mkey);
+	sshkey_free(hostkey);
 	return r;
 }
 
@@ -660,7 +670,7 @@ parse_sshsig_request(struct sshbuf *msg)
 static int
 check_websafe_message_contents(struct sshkey *key, struct sshbuf *data)
 {
-	if (parse_userauth_request(data, key, NULL, NULL) == 0) {
+	if (parse_userauth_request(data, key, NULL, NULL, NULL) == 0) {
 		debug_f("signed data matches public key userauth request");
 		return 1;
 	}
@@ -727,7 +737,7 @@ process_sign_request2(SocketEntry *e)
 			    "to sign on unbound connection");
 			goto send;
 		}
-		if (parse_userauth_request(data, key, &user, &sid) != 0) {
+		if (parse_userauth_request(data, key, &user, &sid, NULL) != 0) {
 			logit_f("refusing use of destination-constrained key "
 			   "to sign an unidentified signature");
 			goto send;
