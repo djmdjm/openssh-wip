@@ -199,8 +199,16 @@ input_kex_dh_gex_reply(int type, u_int32_t seq, struct ssh *ssh)
 	    hashlen, kex->hostkey_alg, ssh->compat, NULL)) != 0)
 		goto out;
 
-	if ((r = kex_derive_keys(ssh, hash, hashlen, shared_secret)) == 0)
-		r = kex_send_newkeys(ssh);
+	if ((r = kex_derive_keys(ssh, hash, hashlen, shared_secret)) != 0 ||
+	    (r = kex_send_newkeys(ssh)) != 0)
+		goto out;
+	/* success */
+
+	/* retain copy of hostkey used at initial KEX */
+	if (kex->initial_hostkey == NULL) {
+		kex->initial_hostkey = server_host_key;
+		server_host_key = NULL; /* transferred */
+	}
  out:
 	explicit_bzero(hash, sizeof(hash));
 	DH_free(kex->dh);

@@ -146,6 +146,7 @@ struct kex {
 	int	hash_alg;
 	int	ec_nid;
 	char	*failed_choice;
+	struct sshkey *initial_hostkey;
 	int	(*verify_host_key)(struct sshkey *, struct ssh *);
 	struct sshkey *(*load_host_public_key)(int, int, struct ssh *);
 	struct sshkey *(*load_host_private_key)(int, int, struct ssh *);
