@@ -54,6 +54,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <netdb.h>
+#include <poll.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -92,7 +93,7 @@
 /* Maximum number of fake X11 displays to try. */
 #define MAX_DISPLAYS  1000
 
-/* Per-channel callback for pre/post select() actions */
+/* Per-channel callback for pre/post IO actions */
 typedef void chan_fn(struct ssh *, Channel *c);
 
 /*
@@ -154,17 +155,11 @@ struct ssh_channels {
 	u_int channels_alloc;
 
 	/*
-	 * Maximum file descriptor value used in any of the channels.  This is
-	 * updated in channel_new.
-	 */
-	int channel_max_fd;
-
-	/*
-	 * 'channel_pre*' are called just before select() to add any bits
-	 * relevant to channels in the select bitmasks.
+	 * 'channel_pre*' are called just before IO to add any bits
+	 * relevant to channels in the c->io_want bitmasks.
 	 *
 	 * 'channel_post*': perform any appropriate operations for
-	 * channels which have events pending.
+	 * channels which have c->io_ready events pending.
 	 */
 	chan_fn **channel_pre;
 	chan_fn **channel_post;
@@ -298,13 +293,6 @@ static void
 channel_register_fds(struct ssh *ssh, Channel *c, int rfd, int wfd, int efd,
     int extusage, int nonblock, int is_tty)
 {
-	struct ssh_channels *sc = ssh->chanctxt;
-
-	/* Update the maximum file descriptor value. */
-	sc->channel_max_fd = MAXIMUM(sc->channel_max_fd, rfd);
-	sc->channel_max_fd = MAXIMUM(sc->channel_max_fd, wfd);
-	sc->channel_max_fd = MAXIMUM(sc->channel_max_fd, efd);
-
 	if (rfd != -1)
 		fcntl(rfd, F_SETFD, FD_CLOEXEC);
 	if (wfd != -1 && wfd != rfd)
@@ -412,28 +400,9 @@ channel_new(struct ssh *ssh, char *ctype, int type, int rfd, int wfd, int efd,
 	return c;
 }
 
-static void
-channel_find_maxfd(struct ssh_channels *sc)
-{
-	u_int i;
-	int max = 0;
-	Channel *c;
-
-	for (i = 0; i < sc->channels_alloc; i++) {
-		c = sc->channels[i];
-		if (c != NULL) {
-			max = MAXIMUM(max, c->rfd);
-			max = MAXIMUM(max, c->wfd);
-			max = MAXIMUM(max, c->efd);
-		}
-	}
-	sc->channel_max_fd = max;
-}
-
 int
 channel_close_fd(struct ssh *ssh, Channel *c, int *fdp)
 {
-	struct ssh_channels *sc = ssh->chanctxt;
 	int ret, fd = *fdp;
 
 	if (fd == -1)
@@ -444,10 +413,25 @@ channel_close_fd(struct ssh *ssh, Channel *c, int *fdp)
 	   (*fdp == c->efd && (c->restore_block & CHANNEL_RESTORE_EFD) != 0))
 		(void)fcntl(*fdp, F_SETFL, 0);	/* restore blocking */
 
+	if (*fdp == c->rfd) {
+		c->io_want &= ~SSH_CHAN_IO_RFD;
+		c->io_ready &= ~SSH_CHAN_IO_RFD;
+	}
+	if (*fdp == c->wfd) {
+		c->io_want &= ~SSH_CHAN_IO_WFD;
+		c->io_ready &= ~SSH_CHAN_IO_WFD;
+	}
+	if (*fdp == c->efd) {
+		c->io_want &= ~SSH_CHAN_IO_EFD;
+		c->io_ready &= ~SSH_CHAN_IO_EFD;
+	}
+	if (*fdp == c->sock) {
+		c->io_want &= ~SSH_CHAN_IO_SOCK;
+		c->io_ready &= ~SSH_CHAN_IO_SOCK;
+	}
+
 	ret = close(fd);
 	*fdp = -1;
-	if (fd == sc->channel_max_fd)
-		channel_find_maxfd(sc);
 	return ret;
 }
 
@@ -667,7 +651,6 @@ channel_free_all(struct ssh *ssh)
 	free(sc->channels);
 	sc->channels = NULL;
 	sc->channels_alloc = 0;
-	sc->channel_max_fd = 0;
 
 	free(sc->x11_saved_display);
 	sc->x11_saved_display = NULL;
@@ -1586,7 +1569,7 @@ rdynamic_close(struct ssh *ssh, Channel *c)
 
 /* reverse dynamic port forwarding */
 static void
-channel_before_prepare_select_rdynamic(struct ssh *ssh, Channel *c)
+channel_before_prepare_io_rdynamic(struct ssh *ssh, Channel *c)
 {
 	const u_char *p;
 	u_int have, len;
@@ -1887,7 +1870,6 @@ channel_post_connecting(struct ssh *ssh, Channel *c)
 		if ((sock = connect_next(&c->connect_ctx)) > 0) {
 			close(c->sock);
 			c->sock = c->rfd = c->wfd = sock;
-			channel_find_maxfd(ssh->chanctxt);
 			return;
 		}
 		/* Exhausted all addresses */
@@ -2387,12 +2369,13 @@ channel_handler(struct ssh *ssh, int table, time_t *unpause_secs)
 }
 
 /*
- * Create sockets before allocating the select bitmasks.
+ * Create sockets before preparing IO.
  * This is necessary for things that need to happen after reading
- * the network-input but before channel_prepare_select().
+ * the network-input but need to be completed before IO event setup, e.g.
+ * because they may create new channels.
  */
 static void
-channel_before_prepare_select(struct ssh *ssh)
+channel_before_prepare_io(struct ssh *ssh)
 {
 	struct ssh_channels *sc = ssh->chanctxt;
 	Channel *c;
@@ -2403,112 +2386,202 @@ channel_before_prepare_select(struct ssh *ssh)
 		if (c == NULL)
 			continue;
 		if (c->type == SSH_CHANNEL_RDYNAMIC_OPEN)
-			channel_before_prepare_select_rdynamic(ssh, c);
+			channel_before_prepare_io_rdynamic(ssh, c);
 	}
 }
 
-/*
- * Allocate/update select bitmasks and add any bits relevant to channels in
- * select bitmasks.
- */
+/* * Allocate/prepare poll structure */
 void
-channel_prepare_select(struct ssh *ssh, fd_set **readsetp, fd_set **writesetp,
-    int *maxfdp, u_int *nallocp, time_t *minwait_secs)
+channel_prepare_poll(struct ssh *ssh, struct pollfd **pfdp, u_int *npfd_allocp,
+    u_int *npfd_activep, u_int npfd_reserved, time_t *minwait_secs)
 {
 	struct ssh_channels *sc = ssh->chanctxt;
-	u_int i, n, sz, nfdset, oalloc = sc->channels_alloc;
+	u_int i, oalloc;
 	Channel *c;
+	u_int p, npfd = npfd_reserved;
 
-	channel_before_prepare_select(ssh); /* might update channel_max_fd */
+	channel_before_prepare_io(ssh); /* might create a new channel */
 
-	n = MAXIMUM(*maxfdp, ssh->chanctxt->channel_max_fd);
-
-	nfdset = howmany(n+1, NFDBITS);
-	/* Explicitly test here, because xrealloc isn't always called */
-	if (nfdset && SIZE_MAX / nfdset < sizeof(fd_mask))
-		fatal("channel_prepare_select: max_fd (%d) is too large", n);
-	sz = nfdset * sizeof(fd_mask);
-
-	/* perhaps check sz < nalloc/2 and shrink? */
-	if (*readsetp == NULL || sz > *nallocp) {
-		*readsetp = xreallocarray(*readsetp, nfdset, sizeof(fd_mask));
-		*writesetp = xreallocarray(*writesetp, nfdset, sizeof(fd_mask));
-		*nallocp = sz;
-	}
-	*maxfdp = n;
-	memset(*readsetp, 0, sz);
-	memset(*writesetp, 0, sz);
-
+	/* Allocate 4x pollfd for each channel (rfd, wfd, efd, sock) */
+	if (sc->channels_alloc >= (INT_MAX / 4) - npfd_reserved)
+		fatal_f("too many channels"); /* shouldn't happen */
 	if (!ssh_packet_is_rekeying(ssh))
-		channel_handler(ssh, CHAN_PRE, minwait_secs);
+		npfd += sc->channels_alloc * 4;
+	if (npfd > *npfd_allocp) {
+		*pfdp = xrecallocarray(*pfdp, *npfd_allocp,
+		    npfd, sizeof(**pfdp));
+		*npfd_allocp = npfd;
+	}
+	*npfd_activep = npfd_reserved;
+	if (ssh_packet_is_rekeying(ssh))
+		return;
 
-	/* Convert c->io_want into FD_SET */
+	/* shouldn't change in CHAN_PRE but don't take the chance. */
+	oalloc = sc->channels_alloc;
+
+	channel_handler(ssh, CHAN_PRE, minwait_secs);
+
+	/* Prepare pollfd */
+	p = npfd_reserved;
 	for (i = 0; i < oalloc; i++) {
 		c = sc->channels[i];
 		if (c == NULL)
 			continue;
-		if ((c->io_want & SSH_CHAN_IO_RFD) != 0) {
-			if (c->rfd == -1)
-				fatal_f("channel %d: no rfd", c->self);
-			FD_SET(c->rfd, *readsetp);
+		if (p + 4 > npfd) {
+			/* Shouldn't happen */
+			fatal_f("channel %d: bad pfd offset %u (max %u)",
+			    c->self, p, npfd);
 		}
-		if ((c->io_want & SSH_CHAN_IO_WFD) != 0) {
-			if (c->wfd == -1)
-				fatal_f("channel %d: no wfd", c->self);
-			FD_SET(c->wfd, *writesetp);
+		c->pollfd_offset = -1;
+		/* prepare c->rfd and when c->rfd == c->wfd/c->efd/c->sock */
+		if (c->rfd != -1 && ((c->io_want & SSH_CHAN_IO_RFD) != 0 ||
+		    (c->wfd == c->rfd && (c->io_want & SSH_CHAN_IO_WFD)) ||
+		    (c->efd == c->rfd && (c->io_want & SSH_CHAN_IO_EFD)) ||
+		    (c->sock == c->rfd && (c->io_want & SSH_CHAN_IO_SOCK)))) {
+			if (c->pollfd_offset == -1)
+				c->pollfd_offset = p;
+			(*pfdp)[p].fd = c->rfd;
+			(*pfdp)[p].events = 0;
+			if ((c->io_want & SSH_CHAN_IO_RFD) != 0)
+				(*pfdp)[p].events |= POLLIN;
+			/* rfd == wfd */
+			if (c->wfd == c->rfd &&
+			    (c->io_want & SSH_CHAN_IO_WFD) != 0)
+				(*pfdp)[p].events |= POLLOUT;
+			/* rfd == efd */
+			if (c->efd == c->rfd &&
+			    (c->io_want & SSH_CHAN_IO_EFD_R) != 0)
+				(*pfdp)[p].events |= POLLIN;
+			if (c->efd == c->rfd &&
+			    (c->io_want & SSH_CHAN_IO_EFD_W) != 0)
+				(*pfdp)[p].events |= POLLOUT;
+			/* rfd == sock */
+			if (c->sock == c->rfd &&
+			    (c->io_want & SSH_CHAN_IO_SOCK_R) != 0)
+				(*pfdp)[p].events |= POLLIN;
+			if (c->sock == c->rfd &&
+			    (c->io_want & SSH_CHAN_IO_SOCK_W) != 0)
+				(*pfdp)[p].events |= POLLOUT;
+			p++;
 		}
-		if ((c->io_want & SSH_CHAN_IO_EFD_R) != 0) {
-			if (c->efd == -1)
-				fatal_f("channel %d: no efd(r)", c->self);
-			FD_SET(c->efd, *readsetp);
+		/* prepare c->wfd (if not already handled above) */
+		if (c->wfd != -1 && c->rfd != c->wfd &&
+		    (c->io_want & SSH_CHAN_IO_WFD) != 0) {
+			if (c->pollfd_offset == -1)
+				c->pollfd_offset = p;
+			(*pfdp)[p].fd = c->wfd;
+			(*pfdp)[p].events = POLLOUT;
+			p++;
 		}
-		if ((c->io_want & SSH_CHAN_IO_EFD_W) != 0) {
-			if (c->efd == -1)
-				fatal_f("channel %d: no efd(w)", c->self);
-			FD_SET(c->efd, *writesetp);
+		/* prepare c->wfd (if not already handled above) */
+		if (c->efd != -1 && c->rfd != c->efd &&
+		    (c->io_want & SSH_CHAN_IO_EFD) != 0) {
+			if (c->pollfd_offset == -1)
+				c->pollfd_offset = p;
+			(*pfdp)[p].fd = c->efd;
+			(*pfdp)[p].events = 0;
+			if ((c->io_want & SSH_CHAN_IO_EFD_R) != 0)
+				(*pfdp)[p].events |= POLLIN;
+			if ((c->io_want & SSH_CHAN_IO_EFD_W) != 0)
+				(*pfdp)[p].events |= POLLOUT;
+			p++;
 		}
-		if ((c->io_want & SSH_CHAN_IO_SOCK_R) != 0) {
-			if (c->sock == -1)
-				fatal_f("channel %d: no sock(r)", c->self);
-			FD_SET(c->sock, *readsetp);
-		}
-		if ((c->io_want & SSH_CHAN_IO_SOCK_W) != 0) {
-			if (c->sock == -1)
-				fatal_f("channel %d: no sock(w)", c->self);
-			FD_SET(c->sock, *writesetp);
+		/* prepare c->sock (if not already handled above) */
+		if (c->sock != -1 && c->rfd != c->sock &&
+		    (c->io_want & SSH_CHAN_IO_SOCK) != 0) {
+			if (c->pollfd_offset == -1)
+				c->pollfd_offset = p;
+			(*pfdp)[p].fd = c->sock;
+			(*pfdp)[p].events = 0;
+			if ((c->io_want & SSH_CHAN_IO_SOCK_R) != 0)
+				(*pfdp)[p].events |= POLLIN;
+			if ((c->io_want & SSH_CHAN_IO_SOCK_W) != 0)
+				(*pfdp)[p].events |= POLLOUT;
+			p++;
 		}
 	}
+	*npfd_activep = p;
 }
 
 /*
- * After select, perform any appropriate operations for channels which have
+ * After poll, perform any appropriate operations for channels which have
  * events pending.
  */
 void
-channel_after_select(struct ssh *ssh, fd_set *readset, fd_set *writeset)
+channel_after_poll(struct ssh *ssh, struct pollfd *pfd, u_int npfd)
 {
 	struct ssh_channels *sc = ssh->chanctxt;
+	u_int i, p;
 	Channel *c;
-	u_int i, oalloc = sc->channels_alloc;
 
-	/* Convert FD_SET into c->io_ready */
-	for (i = 0; i < oalloc; i++) {
+	/* Convert pollfd into c->io_ready */
+	for (i = 0; i < sc->channels_alloc; i++) {
 		c = sc->channels[i];
-		if (c == NULL)
+		if (c == NULL || c->pollfd_offset < 0)
 			continue;
+		if ((u_int)c->pollfd_offset >= npfd) {
+			/* shouldn't happen */
+			fatal_f("channel %d: (before) bad pfd %u (max %u)",
+			    c->self, c->pollfd_offset, npfd);
+		}
 		c->io_ready = 0;
-		if (c->rfd != -1 && FD_ISSET(c->rfd, readset))
-			c->io_ready |= SSH_CHAN_IO_RFD;
-		if (c->wfd != -1 && FD_ISSET(c->wfd, writeset))
-			c->io_ready |= SSH_CHAN_IO_WFD;
-		if (c->efd != -1 && FD_ISSET(c->efd, readset))
-			c->io_ready |= SSH_CHAN_IO_EFD_R;
-		if (c->efd != -1 && FD_ISSET(c->efd, writeset))
-			c->io_ready |= SSH_CHAN_IO_EFD_W;
-		if (c->sock != -1 && FD_ISSET(c->sock, readset))
-			c->io_ready |= SSH_CHAN_IO_SOCK_R;
-		if (c->sock != -1 && FD_ISSET(c->sock, writeset))
-			c->io_ready |= SSH_CHAN_IO_SOCK_W;
+		p = c->pollfd_offset;
+		if (c->rfd != -1 && (c->io_want & SSH_CHAN_IO_RFD) != 0) {
+			if (pfd[p].fd != c->rfd) {
+				fatal_f("channel %d: inconsistent "
+				    "channel rfd %d pollfd[%u].fd %d",
+				    c->self, c->rfd, p, pfd[p].fd);
+			}
+			if ((pfd[p].revents) &
+			    (POLLIN|POLLHUP|POLLERR|POLLNVAL))
+				c->io_ready |= SSH_CHAN_IO_RFD;
+			if (c->rfd != c->wfd)
+				p++;
+		}
+		if (c->wfd != -1 && (c->io_want & SSH_CHAN_IO_WFD) != 0) {
+			if (pfd[p].fd != c->wfd) {
+				fatal_f("channel %d: inconsistent "
+				    "channel wfd %d pollfd[%u].fd %d",
+				    c->self, c->wfd, p, pfd[p].fd);
+			}
+			if ((pfd[p].revents) &
+			    (POLLOUT|POLLHUP|POLLERR|POLLNVAL))
+				c->io_ready |= SSH_CHAN_IO_WFD;
+			p++;
+		}
+		if (c->efd != -1 && (c->io_want & SSH_CHAN_IO_EFD) != 0) {
+			if (pfd[p].fd != c->efd) {
+				fatal_f("channel %d: inconsistent "
+				    "channel efd %d pollfd[%u].fd %d",
+				    c->self, c->efd, p, pfd[p].fd);
+			}
+			if ((pfd[p].revents &
+			    (POLLIN|POLLHUP|POLLERR|POLLNVAL)))
+				c->io_ready |= SSH_CHAN_IO_EFD_R;
+			if ((pfd[p].revents &
+			    (POLLOUT|POLLHUP|POLLERR|POLLNVAL)))
+				c->io_ready |= SSH_CHAN_IO_EFD_W;
+			p++;
+		}
+		if (c->sock != -1 && (c->io_want & SSH_CHAN_IO_SOCK) != 0) {
+			if (pfd[p].fd != c->sock) {
+				fatal_f("channel %d: inconsistent "
+				    "channel sock %d pollfd[%u].fd %d",
+				    c->self, c->sock, p, pfd[p].fd);
+			}
+			if ((pfd[p].revents &
+			    (POLLIN|POLLHUP|POLLERR|POLLNVAL)))
+				c->io_ready |= SSH_CHAN_IO_SOCK_R;
+			if ((pfd[p].revents &
+			    (POLLOUT|POLLHUP|POLLERR|POLLNVAL)))
+				c->io_ready |= SSH_CHAN_IO_SOCK_W;
+			p++;
+		}
+		if ((u_int)c->pollfd_offset > npfd) {
+			/* shouldn't happen */
+			fatal_f("channel %d: (after) bad pfd %u (max %u)",
+			    c->self, c->pollfd_offset, npfd);
+		}
 	}
 	channel_handler(ssh, CHAN_POST, NULL);
 }
