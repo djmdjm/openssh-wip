@@ -98,8 +98,10 @@ enum kex_exchange {
 	KEX_MAX
 };
 
-#define KEX_INIT_SENT	0x0001
-#define KEX_INITIAL	0x0002
+/* kex->flags */
+#define KEX_INIT_SENT			0x0001
+#define KEX_INITIAL			0x0002
+#define KEX_HAS_PUBKEY_HOSTBOUND	0x0004
 
 struct sshenc {
 	char	*name;
@@ -146,6 +148,7 @@ struct kex {
 	int	hash_alg;
 	int	ec_nid;
 	char	*failed_choice;
+	struct sshkey *initial_hostkey;
 	int	(*verify_host_key)(struct sshkey *, struct ssh *);
 	struct sshkey *(*load_host_public_key)(int, int, struct ssh *);
 	struct sshkey *(*load_host_private_key)(int, int, struct ssh *);
