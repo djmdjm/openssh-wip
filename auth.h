@@ -95,7 +95,8 @@ struct Authctxt {
 
 struct Authmethod {
 	char	*name;
-	int	(*userauth)(struct ssh *);
+	char	*synonym;
+	int	(*userauth)(struct ssh *, const char *);
 	int	*enabled;
 };
 
