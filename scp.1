@@ -42,11 +42,11 @@ Since OpenSSH 8.7,
 has used the SFTP protocol for file transfers and requires a working
 .Xr sftp-server 8
 (or equivalent) to be present on the server.
-Use of the legacy scp protocol remains available via the
+Use of the legacy SCP protocol remains available via the
 .Fl O
 option.
 .Pp
-The scp protocol requires execution of the remote user's shell to perform
+The SCP protocol requires execution of the remote user's shell to perform
 .Xr glob 3
 pattern matching, whereas the SFTP protocol does not.
 This may result in some complex
@@ -154,8 +154,8 @@ This option is directly passed to
 .It Fl l Ar limit
 Limits the used bandwidth, specified in Kbit/s.
 .It Fl O
-Use the legacy scp protocol for file transfers instead of the SFTP protocol.
-Forcing the use of the scp protocol may be necessary for servers that do
+Use the legacy SCP protocol for file transfers instead of the SFTP protocol.
+Forcing the use of the SCP protocol may be necessary for servers that do
 not implement SFTP or for backwards-compatibility for particular filename
 wildcard patterns.
 .It Fl o Ar ssh_option
