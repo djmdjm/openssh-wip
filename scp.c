@@ -407,8 +407,7 @@ main(int argc, char **argv)
 	const char *errstr;
 	extern char *optarg;
 	extern int optind;
-	/* For now, keep SCP as default */
-	enum scp_mode_e mode = MODE_SCP;
+	enum scp_mode_e mode = MODE_SFTP;
 	char *sftp_direct = NULL;
 
 	/* Ensure that fds 0, 1 and 2 are open or directed to /dev/null */
@@ -423,6 +422,8 @@ main(int argc, char **argv)
 		newargv[n] = xstrdup(argv[n]);
 	argv = newargv;
 
+	log_init(argv0, log_level, SYSLOG_FACILITY_USER, 1);
+
 	memset(&args, '\0', sizeof(args));
 	memset(&remote_remote_args, '\0', sizeof(remote_remote_args));
 	args.list = remote_remote_args.list = NULL;
@@ -435,7 +436,7 @@ main(int argc, char **argv)
 
 	fflag = Tflag = tflag = 0;
 	while ((ch = getopt(argc, argv,
-	    "12346ABCTdfpqrtvD:F:J:M:P:S:c:i:l:o:")) != -1) {
+	    "12346ABCOTdfpqrtvD:F:J:P:S:c:i:l:o:")) != -1) {
 		switch (ch) {
 		/* User-visible flags. */
 		case '1':
@@ -456,6 +457,9 @@ main(int argc, char **argv)
 			break;
 		case '3':
 			throughlocal = 1;
+			mode = MODE_SCP;
+			logit("Warning: extended remote-to-remote currently "
+			    "requires legacy scp compatibility");
 			break;
 		case 'o':
 		case 'c':
@@ -467,6 +471,9 @@ main(int argc, char **argv)
 			addargs(&args, "-%c", ch);
 			addargs(&args, "%s", optarg);
 			break;
+		case 'O':
+			mode = MODE_SCP;
+			break;
 		case 'P':
 			sshport = a2port(optarg);
 			if (sshport <= 0)
@@ -475,14 +482,6 @@ main(int argc, char **argv)
 		case 'B':
 			addargs(&remote_remote_args, "-oBatchmode=yes");
 			addargs(&args, "-oBatchmode=yes");
-			break;
-		case 'M':
-			if (strcmp(optarg, "sftp") == 0)
-				mode = MODE_SFTP;
-			else if (strcmp(optarg, "scp") == 0)
-				mode = MODE_SCP;
-			else
-				usage();
 			break;
 		case 'l':
 			limit_kbps = strtonum(optarg, 1, 100 * 1024 * 1024,
@@ -543,11 +542,8 @@ main(int argc, char **argv)
 	/* Do this last because we want the user to be able to override it */
 	addargs(&args, "-oForwardAgent=no");
 
-	if (mode != MODE_SFTP && sftp_direct != NULL)
-		fatal("SFTP direct can be used only in SFTP mode");
-
-	if (mode == MODE_SFTP && iamremote)
-		fatal("The server can not be ran in SFTP mode");
+	if (iamremote)
+		mode = MODE_SCP;
 
 	if ((pwd = getpwuid(userid = getuid())) == NULL)
 		fatal("unknown user %u", (u_int) userid);
@@ -979,11 +975,7 @@ toremote(int argc, char **argv, enum scp_mode_e mode, char *sftp_direct)
 			continue;
 		}
 		if (host && throughlocal) {	/* extended remote to remote */
-			if (mode == MODE_SFTP) {
-				/* TODO */
-				fatal("Extended remote to remote through local "
-				    "is not yet supported with SFTP");
-			}
+			/* XXX uses scp; need to support SFTP remote-remote */
 			xasprintf(&bp, "%s -f %s%s", cmd,
 			    *src == '-' ? "-- " : "", src);
 			if (do_cmd(ssh_program, host, suser, sport, bp,
@@ -1035,14 +1027,6 @@ toremote(int argc, char **argv, enum scp_mode_e mode, char *sftp_direct)
 			addargs(&alist, "--");
 			addargs(&alist, "%s", host);
 			addargs(&alist, "%s", cmd);
-			/*
-			 * This will work only if the first remote scp
-			 * supports sftp mode
-			 */
-			if (mode == MODE_SFTP) {
-				addargs(&alist, "-M");
-				addargs(&alist, "sftp");
-			}
 			addargs(&alist, "%s", src);
 			addargs(&alist, "%s%s%s:%s",
 			    tuser ? tuser : "", tuser ? "@" : "",
@@ -1822,9 +1806,9 @@ void
 usage(void)
 {
 	(void) fprintf(stderr,
-	    "usage: scp [-346ABCpqrTv] [-c cipher] [-D sftp_server_path] [-F ssh_config]\n"
-	    "           [-i identity_file] [-J destination] [-l limit] [-M scp|sftp]\n"
-	    "           [-o ssh_option] [-P port] [-S program] source ... target\n");
+	    "usage: scp [-346ABCOpqrTv] [-c cipher] [-D sftp_server_path] [-F ssh_config]\n"
+	    "           [-i identity_file] [-J destination] [-l limit] [-o ssh_option]\n"
+	    "           [-P port] [-S program] source ... target\n");
 	exit(1);
 }
 

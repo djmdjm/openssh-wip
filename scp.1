@@ -25,7 +25,6 @@
 .Op Fl i Ar identity_file
 .Op Fl J Ar destination
 .Op Fl l Ar limit
-.Op Fl M Ar scp | sftp
 .Op Fl o Ar ssh_option
 .Op Fl P Ar port
 .Op Fl S Ar program
@@ -38,9 +37,21 @@ It uses
 .Xr ssh 1
 for data transfer, and uses the same authentication and provides the
 same security as a login session.
+Since OpenSSH 8.7,
+.Nm
+has used the SFTP protocol for file transfers and requires a working
+.Xr sftp-server 8
+(or equivalent) to be present on the server.
+Use of the legacy scp protocol remains available via the
+.Fl O
+option.
+.Pp
 The scp protocol requires execution of the remote user's shell to perform
 .Xr glob 3
-pattern matching.
+pattern matching, whereas the SFTP protocol does not.
+This may result in some complex
+.Xr glob 3
+patterns being processed differently, depending on the protocol in use.
 .Pp
 .Nm
 will ask for passwords or passphrases if they are needed for
@@ -111,8 +122,7 @@ Selects the cipher to use for encrypting the data transfer.
 This option is directly passed to
 .Xr ssh 1 .
 .It Fl D Ar sftp_server_path
-When using the experimental SFTP protocol support via
-.Fl M ,
+When using the SFTP protocol for transfers (the default behaviour),
 connect directly to a local SFTP server program rather than a
 remote one via
 .Xr ssh 1 .
@@ -143,14 +153,11 @@ This option is directly passed to
 .Xr ssh 1 .
 .It Fl l Ar limit
 Limits the used bandwidth, specified in Kbit/s.
-.It Fl M Ar scp | sftp
-Specifies a mode which will be used to transfer files.
-The default is to use the original
-.Cm scp
-protocol.
-Alternately, experimental support for using the
-.Cm sftp
-protocol is available.
+.It Fl O
+Use the legacy scp protocol for file transfers instead of the SFTP protocol.
+Forcing the use of the scp protocol may be necessary for servers that do
+not implement SFTP or for backwards-compatibility for particular filename
+wildcard patterns.
 .It Fl o Ar ssh_option
 Can be used to pass options to
 .Nm ssh
@@ -280,6 +287,7 @@ debugging connection, authentication, and configuration problems.
 .Xr ssh-agent 1 ,
 .Xr ssh-keygen 1 ,
 .Xr ssh_config 5 ,
+.Xr sftp-server 8 ,
 .Xr sshd 8
 .Sh HISTORY
 .Nm
