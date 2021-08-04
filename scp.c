@@ -457,9 +457,12 @@ main(int argc, char **argv)
 			break;
 		case '3':
 			throughlocal = 1;
-			mode = MODE_SCP;
-			logit("Warning: extended remote-to-remote currently "
-			    "requires legacy scp compatibility");
+			if (mode != MODE_SCP) {
+				mode = MODE_SCP;
+				logit("Warning: extended remote-to-remote "
+				    "currently requires legacy scp "
+				    "compatibility");
+			}
 			break;
 		case 'o':
 		case 'c':
