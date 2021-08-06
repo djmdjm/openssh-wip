@@ -55,6 +55,11 @@ struct sftp_limits {
 	u_int64_t open_handles;
 };
 
+/* print flag values */
+#define SFTP_QUIET		0	/* be quiet during transfers */
+#define SFTP_PRINT		1	/* list files and show progress bar */
+#define SFTP_PROGRESS_ONLY	2	/* progress bar only */
+
 /*
  * Initialise a SSH filexfer connection. Returns NULL on error or
  * a pointer to a initialized sftp_conn struct on success.

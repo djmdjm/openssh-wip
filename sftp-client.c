@@ -1615,7 +1615,7 @@ download_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 		error("\"%s\" is not a directory", src);
 		return -1;
 	}
-	if (print_flag)
+	if (print_flag && print_flag != SFTP_PROGRESS_ONLY)
 		mprintf("Retrieving %s\n", src);
 
 	if (dirattrib->flags & SSH2_FILEXFER_ATTR_PERMISSIONS) {
@@ -1938,7 +1938,7 @@ upload_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 		error("\"%s\" is not a directory", src);
 		return -1;
 	}
-	if (print_flag)
+	if (print_flag && print_flag != SFTP_PROGRESS_ONLY)
 		mprintf("Entering %s\n", src);
 
 	attrib_clear(&a);
