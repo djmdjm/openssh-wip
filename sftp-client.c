@@ -86,6 +86,15 @@ struct sftp_conn {
 	struct bwlimit bwlimit_in, bwlimit_out;
 };
 
+/* Tracks in-progress requests during file transfers */
+struct request {
+	u_int id;
+	size_t len;
+	u_int64_t offset;
+	TAILQ_ENTRY(request) tq;
+};
+TAILQ_HEAD(requests, request);
+
 static u_char *
 get_handle(struct sftp_conn *conn, u_int expected_id, size_t *len,
     const char *errfmt, ...) __attribute__((format(printf, 4, 5)));
@@ -1325,13 +1334,7 @@ do_download(struct sftp_conn *conn, const char *remote_path,
 	off_t progress_counter;
 	size_t handle_len;
 	struct stat st;
-	struct request {
-		u_int id;
-		size_t len;
-		u_int64_t offset;
-		TAILQ_ENTRY(request) tq;
-	};
-	TAILQ_HEAD(reqhead, request) requests;
+	struct requests requests;
 	struct request *req;
 	u_char type;
 
@@ -2108,13 +2111,7 @@ do_crossload(struct sftp_conn *from, struct sftp_conn *to,
 	off_t progress_counter;
 	u_char *from_handle, *to_handle;
 	size_t from_handle_len, to_handle_len;
-	struct request {
-		u_int id;
-		size_t len;
-		u_int64_t offset;
-		TAILQ_ENTRY(request) tq;
-	};
-	TAILQ_HEAD(reqhead, request) requests;
+	struct requests requests;
 	struct request *req;
 	u_char type;
 
