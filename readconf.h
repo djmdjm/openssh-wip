@@ -179,6 +179,11 @@ typedef struct {
 	char	*ignored_unknown; /* Pattern list of unknown tokens to ignore */
 }       Options;
 
+#define SSH_PUBKEY_AUTH_NO	0x00
+#define SSH_PUBKEY_AUTH_UNBOUND	0x01
+#define SSH_PUBKEY_AUTH_HBIND	0x02
+#define SSH_PUBKEY_AUTH_ALL	0x03
+
 #define SSH_CANONICALISE_NO	0
 #define SSH_CANONICALISE_YES	1
 #define SSH_CANONICALISE_ALWAYS	2
