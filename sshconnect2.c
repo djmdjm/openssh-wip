@@ -1341,7 +1341,7 @@ sign_and_send_pubkey(struct ssh *ssh, Identity *id)
 
 	/* prefer host-bound pubkey signatures if supported by server */
 	if ((ssh->kex->flags & KEX_HAS_PUBKEY_HOSTBOUND) != 0 &&
-	    (options.pubkey_authentication & SSH_PUBKEY_AUTH_HBIND) != 0)
+	    (options.pubkey_authentication & SSH_PUBKEY_AUTH_HBOUND) != 0)
 		method = "publickey-hostbound-v00@openssh.com";
 
 	if ((fp = sshkey_fingerprint(id->key, options.fingerprint_hash,

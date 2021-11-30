@@ -882,7 +882,7 @@ static const struct multistate multistate_pubkey_auth[] = {
 	{ "yes",			SSH_PUBKEY_AUTH_ALL },
 	{ "no",				SSH_PUBKEY_AUTH_NO },
 	{ "unbound",			SSH_PUBKEY_AUTH_UNBOUND },
-	{ "host-bound",			SSH_PUBKEY_AUTH_HBIND },
+	{ "host-bound",			SSH_PUBKEY_AUTH_HBOUND },
 	{ NULL, -1 }
 };
 static const struct multistate multistate_compression[] = {
