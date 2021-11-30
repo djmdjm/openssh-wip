@@ -436,8 +436,10 @@ identity_permitted(Identity *id, SocketEntry *e, char *user,
 	 * destination. This hides keys that are allowed to be used to
 	 * authenicate *to* a host but not permitted for *use* beyond it.
 	 */
-	if (e->session_ids[e->nsession_ids - 1].forwarded && user == NULL &&
-	    permitted_by_dest_constraints(fromkey, NULL, id, NULL, NULL) != 0) {
+	hks = &e->session_ids[e->nsession_ids - 1];
+	if (hks->forwarded && user == NULL &&
+	    permitted_by_dest_constraints(hks->key, NULL, id,
+	    NULL, NULL) != 0) {
 		debug3_f("key permitted at host but not after");
 		return -1;
 	}
@@ -502,6 +504,7 @@ process_request_identities(SocketEntry *e)
 	if ((msg = sshbuf_new()) == NULL || (keys = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new failed");
 	TAILQ_FOREACH(id, &idtab->idlist, next) {
+		/* identity not visible, don't include in response */
 		if (identity_permitted(id, e, NULL, NULL, NULL) != 0)
 			continue;
 		if ((r = sshkey_puts_opts(id->key, keys,
@@ -747,6 +750,7 @@ process_sign_request2(SocketEntry *e)
 		debug_f("user=%s", user);
 		if (identity_permitted(id, e, user, &fwd_host, &dest_host) != 0)
 			goto send;
+		/* XXX display fwd_host/dest_host in askpass UI */
 		/*
 		 * Ensure that the session ID is the most recent one
 		 * registered on the socket - it should have been bound by
@@ -849,6 +853,7 @@ process_remove_identity(SocketEntry *e)
 		debug_f("key not found");
 		goto done;
 	}
+	/* identity not visible, cannot be removed */
 	if (identity_permitted(id, e, NULL, NULL, NULL) != 0)
 		goto done; /* error already logged */
 	/* We have this key, free it. */
@@ -991,8 +996,7 @@ parse_dest_constraint(struct sshbuf *m, struct dest_constraint *dc)
 		r = SSH_ERR_FEATURE_UNSUPPORTED;
 		goto out;
 	}
-	debug2_f("parsed %s%s%s (%u keys) > %s%s%s (%u keys)",
-	    dc->from.user ? dc->from.user : "", dc->from.user ? "@" : "",
+	debug2_f("parsed %s (%u keys) > %s%s%s (%u keys)",
 	    dc->from.hostname ? dc->from.hostname : "(ORIGIN)", dc->from.nkeys,
 	    dc->to.user ? dc->to.user : "", dc->to.user ? "@" : "",
 	    dc->to.hostname ? dc->to.hostname : "(ANY)", dc->to.nkeys);
@@ -1217,6 +1221,7 @@ process_add_identity(SocketEntry *e)
 		/* Increment the number of identities. */
 		idtab->nentries++;
 	} else {
+		/* identity not visible, do not update */
 		if (identity_permitted(id, e, NULL, NULL, NULL) != 0)
 			goto out; /* error already logged */
 		/* key state might have been updated */
@@ -1474,6 +1479,12 @@ process_ext_session_bind(SocketEntry *e)
 	}
 	/* check whether sid/key already recorded */
 	for (i = 0; i < e->nsession_ids; i++) {
+		if (!e->session_ids[i].forwarded) {
+			error_f("attempt to bind session ID to socket "
+			    "previously bound for authentication attempt");
+			r = -1;
+			goto out;
+		}
 		sid_match = buf_equal(sid, e->session_ids[i].sid) == 0;
 		key_match = sshkey_equal(key, e->session_ids[i].key);
 		if (sid_match && key_match) {
@@ -1491,12 +1502,6 @@ process_ext_session_bind(SocketEntry *e)
 		 * new sid with previously-seen key can happen, e.g. multiple
 		 * connections to the same host.
 		 */
-		if (!e->session_ids[i].forwarded) {
-			error_f("attempt to bind session ID to socket "
-			    "previously bound for authentication attempt");
-			r = -1;
-			goto out;
-		}
 	}
 	/* record new key/sid */
 	if (e->nsession_ids >= AGENT_MAX_SESSION_IDS) {
