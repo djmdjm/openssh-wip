@@ -422,6 +422,9 @@ identity_permitted(Identity *id, SocketEntry *e, char *user,
 				error_f("tried to sign on forwarding hop");
 				return -1;
 			}
+		} else if (!hks->forwarded) {
+			error_f("tried to forward though signing bind");
+			return -1;
 		}
 		if (permitted_by_dest_constraints(fromkey, hks->key, id,
 		    test_user, hp) != 0)
