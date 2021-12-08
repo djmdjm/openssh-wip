@@ -302,6 +302,7 @@ done:
 	sshbuf_free(b);
 	sshauthopt_free(authopts);
 	sshkey_free(key);
+	sshkey_free(hostkey);
 	free(userstyle);
 	free(pkalg);
 	free(pkblob);
