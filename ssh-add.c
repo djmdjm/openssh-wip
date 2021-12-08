@@ -748,6 +748,7 @@ parse_dest_constraint(const char *s, struct dest_constraint ***dcp,
 			    "user on 'from' host", os);
 		}
 	}
+	/* XXX eliminate or error on duplicates */
 	debug2_f("constraint %zu: %s%s%s (%u keys) > %s%s%s (%u keys)", *ndcp,
 	    dc->from.user ? dc->from.user : "", dc->from.user ? "@" : "",
 	    dc->from.hostname ? dc->from.hostname : "(ORIGIN)", dc->from.nkeys,
