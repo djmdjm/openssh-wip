@@ -1217,13 +1217,18 @@ tolocal(int argc, char **argv, enum scp_mode_e mode, char *sftp_direct)
 static char *
 prepare_remote_path(struct sftp_conn *conn, const char *path)
 {
+	size_t nslash;
+
 	/* Handle ~ prefixed paths */
-	if (*path != '~')
-		return xstrdup(path);
 	if (*path == '\0' || strcmp(path, "~") == 0)
 		return xstrdup(".");
-	if (strncmp(path, "~/", 2) == 0)
-		return xstrdup(path + 2);
+	if (*path != '~')
+		return xstrdup(path);
+	if (strncmp(path, "~/", 2) == 0) {
+		if ((nslash = strspn(path + 2, "/")) == strlen(path + 2))
+			return xstrdup(".");
+		return xstrdup(path + 2 + nslash);
+	}
 	if (can_expand_path(conn))
 		return do_expand_path(conn, path);
 	/* No protocol extension */
