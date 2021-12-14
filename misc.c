@@ -1072,53 +1072,68 @@ freeargs(arglist *args)
 int
 tilde_expand(const char *filename, uid_t uid, char **retp)
 {
-	const char *path, *sep;
-	char user[128], *ret;
+	char *ocopy = NULL, *copy, *s = NULL;
+	const char *path = NULL, *user = NULL;
 	struct passwd *pw;
-	u_int len, slash;
+	size_t len;
+	int ret = -1, r, slash;
 
+	*retp = NULL;
 	if (*filename != '~') {
 		*retp = xstrdup(filename);
 		return 0;
 	}
-	filename++;
+	ocopy = copy = xstrdup(filename + 1);
 
-	path = strchr(filename, '/');
-	if (path != NULL && path > filename) {		/* ~user/path */
-		slash = path - filename;
-		if (slash > sizeof(user) - 1) {
-			error_f("~username too long");
-			return -1;
+	if (*copy == '\0')				/* ~ */
+		path = NULL;
+	else if (*copy == '/') {
+		copy += strspn(copy, "/");
+		if (*copy == '\0')
+			path = NULL;			/* ~/ */
+		else
+			path = copy;			/* ~/path */
+	} else {
+		user = copy;
+		if ((path = strchr(copy, '/')) != NULL) {
+			copy[path - copy] = '\0';
+			path++;
+			path += strspn(path, "/");
+			if (*path == '\0')		/* ~user/ */
+				path = NULL;
+			/* else				 ~user/path */
 		}
-		memcpy(user, filename, slash);
-		user[slash] = '\0';
+		/* else					~user */
+	}
+	if (user != NULL) {
 		if ((pw = getpwnam(user)) == NULL) {
 			error_f("No such user %s", user);
-			return -1;
+			goto out;
 		}
-	} else if ((pw = getpwuid(uid)) == NULL) {	/* ~/path */
+	} else if ((pw = getpwuid(uid)) == NULL) {
 		error_f("No such uid %ld", (long)uid);
-		return -1;
+		goto out;
 	}
 
 	/* Make sure directory has a trailing '/' */
-	len = strlen(pw->pw_dir);
-	if (len == 0 || pw->pw_dir[len - 1] != '/')
-		sep = "/";
-	else
-		sep = "";
+	slash = (len = strlen(pw->pw_dir)) == 0 || pw->pw_dir[len - 1] != '/';
 
-	/* Skip leading '/' from specified path */
-	if (path != NULL)
-		filename = path + 1;
-
-	if (xasprintf(&ret, "%s%s%s", pw->pw_dir, sep, filename) >= PATH_MAX) {
+	if ((r = xasprintf(&s, "%s%s%s", pw->pw_dir,
+	    slash ? "/" : "", path != NULL ? path : "")) <= 0) {
+		error_f("xasprintf failed");
+		goto out;
+	} else if (r >= PATH_MAX) {
 		error_f("Path too long");
-		return -1;
+		goto out;
 	}
-
-	*retp = ret;
-	return 0;
+	/* success */
+	ret = 0;
+	*retp = s;
+	s = NULL;
+ out:
+	free(s);
+	free(ocopy);
+	return ret;
 }
 
 char *
