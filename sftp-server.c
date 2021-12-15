@@ -526,7 +526,7 @@ status_to_message(u_int32_t status)
 }
 
 static void
-send_status(u_int32_t id, u_int32_t status)
+send_status_errmsg(u_int32_t id, u_int32_t status, const char *errmsg)
 {
 	struct sshbuf *msg;
 	int r;
@@ -542,14 +542,21 @@ send_status(u_int32_t id, u_int32_t status)
 	    (r = sshbuf_put_u32(msg, status)) != 0)
 		fatal_fr(r, "compose");
 	if (version >= 3) {
-		if ((r = sshbuf_put_cstring(msg,
-		    status_to_message(status))) != 0 ||
+		if ((r = sshbuf_put_cstring(msg, errmsg == NULL ?
+		    status_to_message(status) : errmsg)) != 0 ||
 		    (r = sshbuf_put_cstring(msg, "")) != 0)
 			fatal_fr(r, "compose message");
 	}
 	send_msg(msg);
 	sshbuf_free(msg);
 }
+
+static void
+send_status(u_int32_t id, u_int32_t status)
+{
+	return send_status_errmsg(id, status, NULL);
+}
+
 static void
 send_data_or_handle(char type, u_int32_t id, const u_char *data, int dlen)
 {
