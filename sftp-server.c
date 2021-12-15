@@ -1534,7 +1534,8 @@ process_extended_expand(u_int32_t id)
 		} else {
 			/* ~user expansions */
 			if (tilde_expand(path, pw->pw_uid, &npath) != 0) {
-				send_status(id, errno_to_portable(ENOENT));
+				send_status_errmsg(id,
+				    errno_to_portable(ENOENT), "no such user");
 				goto out;
 			}
 			free(path);
