@@ -158,6 +158,24 @@ struct sshkey_sig_details {
 	uint8_t sk_flags;	/* U2F signature flags; see ssh-sk.h */
 };
 
+struct sshkey_impl_funcs {
+	u_int (*size)(const struct sshkey *);	/* optional */
+	int (*alloc)(struct sshkey *);		/* optional */
+	void (*cleanup)(struct sshkey *);	/* optional */
+};
+
+struct sshkey_impl {
+	const char *name;
+	const char *shortname;
+	const char *sigalg;
+	int type;
+	int nid;
+	int cert;
+	int sigonly;
+	int keybits;
+	const struct sshkey_impl_funcs *funcs;
+};
+
 struct sshkey	*sshkey_new(int);
 void		 sshkey_free(struct sshkey *);
 int		 sshkey_equal_public(const struct sshkey *,
