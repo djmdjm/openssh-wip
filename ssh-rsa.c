@@ -58,6 +58,27 @@ ssh_rsa_cleanup(struct sshkey *k)
 	k->rsa = NULL;
 }
 
+static int
+ssh_rsa_equal(const struct sshkey *a, const struct sshkey *b)
+{
+	const BIGNUM *rsa_e_a, *rsa_n_a;
+	const BIGNUM *rsa_e_b, *rsa_n_b;
+
+	if (a->rsa == NULL || b->rsa == NULL)
+		return 0;
+	RSA_get0_key(a->rsa, &rsa_n_a, &rsa_e_a, NULL);
+	RSA_get0_key(b->rsa, &rsa_n_b, &rsa_e_b, NULL);
+	if (rsa_e_a == NULL || rsa_e_b == NULL)
+		return 0;
+	if (rsa_n_a == NULL || rsa_n_b == NULL)
+		return 0;
+	if (BN_cmp(rsa_e_a, rsa_e_b) != 0)
+		return 0;
+	if (BN_cmp(rsa_n_a, rsa_n_b) != 0)
+		return 0;
+	return 1;
+}
+
 static const char *
 rsa_hash_alg_ident(int hash_alg)
 {
@@ -470,6 +491,7 @@ static const struct sshkey_impl_funcs sshkey_rsa_funcs = {
 	/* .size = */		ssh_rsa_size,
 	/* .alloc = */		ssh_rsa_alloc,
 	/* .cleanup = */	ssh_rsa_cleanup,
+	/* .equal = */		ssh_rsa_equal,
 };
 
 const struct sshkey_impl sshkey_rsa_impl = {

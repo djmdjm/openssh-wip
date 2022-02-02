@@ -38,6 +38,16 @@ ssh_ed25519_cleanup(struct sshkey *k)
 	k->ed25519_sk = NULL;
 }
 
+static int
+ssh_ed25519_equal(const struct sshkey *a, const struct sshkey *b)
+{
+	if (a->ed25519_pk == NULL || b->ed25519_pk == NULL)
+		return 0;
+	if (memcmp(a->ed25519_pk, b->ed25519_pk, ED25519_PK_SZ) != 0)
+		return 0;
+	return 1;
+}
+
 int
 ssh_ed25519_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, u_int compat)
@@ -165,10 +175,12 @@ ssh_ed25519_verify(const struct sshkey *key,
 	return r;
 }
 
-static const struct sshkey_impl_funcs sshkey_ed25519_funcs = {
+/* NB. not static; used by ED25519-SK */
+const struct sshkey_impl_funcs sshkey_ed25519_funcs = {
 	/* .size = */		NULL,
 	/* .alloc = */		NULL,
 	/* .cleanup = */	ssh_ed25519_cleanup,
+	/* .equal = */		ssh_ed25519_equal,
 };
 
 const struct sshkey_impl sshkey_ed25519_impl = {
