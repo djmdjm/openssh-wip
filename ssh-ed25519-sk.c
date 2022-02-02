@@ -53,6 +53,21 @@ ssh_ed25519_sk_equal(const struct sshkey *a, const struct sshkey *b)
 	return 1;
 }
 
+static int
+ssh_ed25519_sk_serialize_public(const struct sshkey *key, struct sshbuf *b,
+    const char *typename, enum sshkey_serialize_rep opts)
+{
+	int r;
+
+	if ((r = sshkey_ed25519_funcs.serialize_public(key, b,
+	    typename, opts)) != 0)
+		return r;
+	if ((r = sshkey_serialize_sk(key, b)) != 0)
+		return r;
+
+	return 0;
+}
+
 int
 ssh_ed25519_sk_verify(const struct sshkey *key,
     const u_char *signature, size_t signaturelen,
@@ -185,6 +200,7 @@ static const struct sshkey_impl_funcs sshkey_ed25519_sk_funcs = {
 	/* .alloc = */		NULL,
 	/* .cleanup = */	ssh_ed25519_sk_cleanup,
 	/* .equal = */		ssh_ed25519_sk_equal,
+	/* .ssh_serialize_public = */ ssh_ed25519_sk_serialize_public,
 };
 
 const struct sshkey_impl sshkey_ed25519_sk_impl = {
