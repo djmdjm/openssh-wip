@@ -79,6 +79,24 @@ ssh_rsa_equal(const struct sshkey *a, const struct sshkey *b)
 	return 1;
 }
 
+static int
+ssh_rsa_serialize_public(const struct sshkey *key, struct sshbuf *b,
+    const char *typename, enum sshkey_serialize_rep opts)
+{
+	int r;
+	const BIGNUM *rsa_n, *rsa_e;
+
+	if (key->rsa == NULL)
+		return SSH_ERR_INVALID_ARGUMENT;
+	RSA_get0_key(key->rsa, &rsa_n, &rsa_e, NULL);
+	if ((r = sshbuf_put_cstring(b, typename)) != 0 ||
+	    (r = sshbuf_put_bignum2(b, rsa_e)) != 0 ||
+	    (r = sshbuf_put_bignum2(b, rsa_n)) != 0)
+		return r;
+
+	return 0;
+}
+
 static const char *
 rsa_hash_alg_ident(int hash_alg)
 {
@@ -492,6 +510,7 @@ static const struct sshkey_impl_funcs sshkey_rsa_funcs = {
 	/* .alloc = */		ssh_rsa_alloc,
 	/* .cleanup = */	ssh_rsa_cleanup,
 	/* .equal = */		ssh_rsa_equal,
+	/* .ssh_serialize_public = */ ssh_rsa_serialize_public,
 };
 
 const struct sshkey_impl sshkey_rsa_impl = {

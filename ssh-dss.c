@@ -94,6 +94,30 @@ ssh_dss_equal(const struct sshkey *a, const struct sshkey *b)
 	return 1;
 }
 
+static int
+ssh_dss_serialize_public(const struct sshkey *key, struct sshbuf *b,
+    const char *typename, enum sshkey_serialize_rep opts)
+{
+	int r;
+	const BIGNUM *dsa_p, *dsa_q, *dsa_g, *dsa_pub_key;
+
+	if (key->dsa == NULL)
+		return SSH_ERR_INVALID_ARGUMENT;
+	DSA_get0_pqg(key->dsa, &dsa_p, &dsa_q, &dsa_g);
+	DSA_get0_key(key->dsa, &dsa_pub_key, NULL);
+	if (dsa_p == NULL || dsa_q == NULL ||
+	    dsa_g == NULL || dsa_pub_key == NULL)
+		return SSH_ERR_INTERNAL_ERROR;
+	if ((r = sshbuf_put_cstring(b, typename)) != 0 ||
+	    (r = sshbuf_put_bignum2(b, dsa_p)) != 0 ||
+	    (r = sshbuf_put_bignum2(b, dsa_q)) != 0 ||
+	    (r = sshbuf_put_bignum2(b, dsa_g)) != 0 ||
+	    (r = sshbuf_put_bignum2(b, dsa_pub_key)) != 0)
+		return r;
+
+	return 0;
+}
+
 int
 ssh_dss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, u_int compat)
@@ -256,6 +280,7 @@ static const struct sshkey_impl_funcs sshkey_dss_funcs = {
 	/* .alloc = */		ssh_dss_alloc,
 	/* .cleanup = */	ssh_dss_cleanup,
 	/* .equal = */		ssh_dss_equal,
+	/* .ssh_serialize_public = */ ssh_dss_serialize_public,
 };
 
 const struct sshkey_impl sshkey_dss_impl = {
