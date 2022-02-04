@@ -119,6 +119,23 @@ ssh_ecdsa_sk_deserialize_public(const char *ktype, struct sshbuf *b,
 	return 0;
 }
 
+static int
+ssh_ecdsa_sk_deserialize_private(const char *ktype, struct sshbuf *b,
+    struct sshkey *key)
+{
+	int r;
+
+	if (!sshkey_is_cert(key)) {
+		if ((r = sshkey_ecdsa_funcs.deserialize_public(ktype,
+		    b, key)) != 0)
+			return r;
+	}
+	if ((r = sshkey_private_deserialize_sk(b, key)) != 0)
+		return r;
+
+	return 0;
+}
+
 /*
  * Check FIDO/W3C webauthn signatures clientData field against the expected
  * format and prepare a hash of it for use in signature verification.
@@ -387,6 +404,7 @@ static const struct sshkey_impl_funcs sshkey_ecdsa_sk_funcs = {
 	/* .ssh_serialize_public = */ ssh_ecdsa_sk_serialize_public,
 	/* .ssh_deserialize_public = */ ssh_ecdsa_sk_deserialize_public,
 	/* .ssh_serialize_private = */ ssh_ecdsa_sk_serialize_private,
+	/* .ssh_deserialize_private = */ ssh_ecdsa_sk_deserialize_private,
 	/* .generate = */	NULL,
 	/* .copy_public = */	ssh_ecdsa_sk_copy_public,
 	/* .sign = */		NULL,
