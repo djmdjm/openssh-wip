@@ -233,6 +233,7 @@ static const struct sshkey_impl_funcs sshkey_xmss_funcs = {
 	/* .cleanup = */	ssh_xmss_cleanup,
 	/* .equal = */		ssh_xmss_equal,
 	/* .ssh_serialize_public = */ ssh_xmss_serialize_public,
+	/* .generate = */	sshkey_xmss_generate_private_key,
 };
 
 const struct sshkey_impl sshkey_xmss_impl = {

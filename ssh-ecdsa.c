@@ -100,6 +100,24 @@ ssh_ecdsa_serialize_public(const struct sshkey *key, struct sshbuf *b,
 	return 0;
 }
 
+static int
+ssh_ecdsa_generate(struct sshkey *k, int bits)
+{
+	EC_KEY *private;
+
+	if ((k->ecdsa_nid = sshkey_ecdsa_bits_to_nid(bits)) == -1)
+		return SSH_ERR_KEY_LENGTH;
+	if ((private = EC_KEY_new_by_curve_name(k->ecdsa_nid)) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	if (EC_KEY_generate_key(private) != 1) {
+		EC_KEY_free(private);
+		return SSH_ERR_LIBCRYPTO_ERROR;
+	}
+	EC_KEY_set_asn1_flag(private, OPENSSL_EC_NAMED_CURVE);
+	k->ecdsa = private;
+	return 0;
+}
+
 /* ARGSUSED */
 int
 ssh_ecdsa_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
@@ -259,6 +277,7 @@ const struct sshkey_impl_funcs sshkey_ecdsa_funcs = {
 	/* .cleanup = */	ssh_ecdsa_cleanup,
 	/* .equal = */		ssh_ecdsa_equal,
 	/* .ssh_serialize_public = */ ssh_ecdsa_serialize_public,
+	/* .generate = */	ssh_ecdsa_generate,
 };
 
 const struct sshkey_impl sshkey_ecdsa_nistp256_impl = {

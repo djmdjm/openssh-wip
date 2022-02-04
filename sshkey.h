@@ -165,6 +165,7 @@ struct sshkey_impl_funcs {
 	int (*equal)(const struct sshkey *, const struct sshkey *);
 	int (*serialize_public)(const struct sshkey *, struct sshbuf *,
 	    const char *, enum sshkey_serialize_rep);
+	int (*generate)(struct sshkey *, int);	/* optional */
 };
 
 struct sshkey_impl {

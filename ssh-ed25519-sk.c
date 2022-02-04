@@ -201,6 +201,7 @@ static const struct sshkey_impl_funcs sshkey_ed25519_sk_funcs = {
 	/* .cleanup = */	ssh_ed25519_sk_cleanup,
 	/* .equal = */		ssh_ed25519_sk_equal,
 	/* .ssh_serialize_public = */ ssh_ed25519_sk_serialize_public,
+	/* .generate = */	NULL,
 };
 
 const struct sshkey_impl sshkey_ed25519_sk_impl = {

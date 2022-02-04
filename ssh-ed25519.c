@@ -63,6 +63,16 @@ ssh_ed25519_serialize_public(const struct sshkey *key, struct sshbuf *b,
 	return 0;
 }
 
+static int
+ssh_ed25519_generate(struct sshkey *k, int bits)
+{
+	if ((k->ed25519_pk = malloc(ED25519_PK_SZ)) == NULL ||
+	    (k->ed25519_sk = malloc(ED25519_SK_SZ)) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	crypto_sign_ed25519_keypair(k->ed25519_pk, k->ed25519_sk);
+	return 0;
+}
+
 int
 ssh_ed25519_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, u_int compat)
@@ -197,6 +207,7 @@ const struct sshkey_impl_funcs sshkey_ed25519_funcs = {
 	/* .cleanup = */	ssh_ed25519_cleanup,
 	/* .equal = */		ssh_ed25519_equal,
 	/* .ssh_serialize_public = */ ssh_ed25519_serialize_public,
+	/* .generate = */	ssh_ed25519_generate,
 };
 
 const struct sshkey_impl sshkey_ed25519_impl = {
