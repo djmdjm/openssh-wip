@@ -32,6 +32,18 @@
 
 static int openssh_RSA_verify(int, u_char *, size_t, u_char *, size_t, RSA *);
 
+/* XXX static */
+int
+check_rsa_length(const RSA *rsa)
+{
+	const BIGNUM *rsa_n;
+
+	RSA_get0_key(rsa, &rsa_n, NULL, NULL);
+	if (BN_num_bits(rsa_n) < SSH_RSA_MINIMUM_MODULUS_SIZE)
+		return SSH_ERR_KEY_LENGTH;
+	return 0;
+}
+
 static u_int
 ssh_rsa_size(const struct sshkey *key)
 {
@@ -81,7 +93,7 @@ ssh_rsa_equal(const struct sshkey *a, const struct sshkey *b)
 
 static int
 ssh_rsa_serialize_public(const struct sshkey *key, struct sshbuf *b,
-    const char *typename, enum sshkey_serialize_rep opts)
+    enum sshkey_serialize_rep opts)
 {
 	int r;
 	const BIGNUM *rsa_n, *rsa_e;
@@ -89,8 +101,7 @@ ssh_rsa_serialize_public(const struct sshkey *key, struct sshbuf *b,
 	if (key->rsa == NULL)
 		return SSH_ERR_INVALID_ARGUMENT;
 	RSA_get0_key(key->rsa, &rsa_n, &rsa_e, NULL);
-	if ((r = sshbuf_put_cstring(b, typename)) != 0 ||
-	    (r = sshbuf_put_bignum2(b, rsa_e)) != 0 ||
+	if ((r = sshbuf_put_bignum2(b, rsa_e)) != 0 ||
 	    (r = sshbuf_put_bignum2(b, rsa_n)) != 0)
 		return r;
 
@@ -149,6 +160,36 @@ ssh_rsa_copy_public(const struct sshkey *from, struct sshkey *to)
 	BN_clear_free(rsa_n_dup);
 	BN_clear_free(rsa_e_dup);
 	return r;
+}
+
+static int
+ssh_rsa_deserialize_public(const char *ktype, struct sshbuf *b,
+    struct sshkey *key)
+{
+	int ret = SSH_ERR_INTERNAL_ERROR;
+	BIGNUM *rsa_n = NULL, *rsa_e = NULL;
+
+	if (sshbuf_get_bignum2(b, &rsa_e) != 0 ||
+	    sshbuf_get_bignum2(b, &rsa_n) != 0) {
+		ret = SSH_ERR_INVALID_FORMAT;
+		goto out;
+	}
+	if (!RSA_set0_key(key->rsa, rsa_n, rsa_e, NULL)) {
+		ret = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	rsa_n = rsa_e = NULL; /* transferred */
+	if ((ret = check_rsa_length(key->rsa)) != 0)
+		goto out;
+#ifdef DEBUG_PK
+	RSA_print_fp(stderr, key->rsa, 8);
+#endif
+	/* success */
+	ret = 0;
+ out:
+	BN_clear_free(rsa_n);
+	BN_clear_free(rsa_e);
+	return ret;
 }
 
 static const char *
@@ -565,6 +606,7 @@ static const struct sshkey_impl_funcs sshkey_rsa_funcs = {
 	/* .cleanup = */	ssh_rsa_cleanup,
 	/* .equal = */		ssh_rsa_equal,
 	/* .ssh_serialize_public = */ ssh_rsa_serialize_public,
+	/* .ssh_deserialize_public = */ ssh_rsa_deserialize_public,
 	/* .generate = */	ssh_rsa_generate,
 	/* .copy_public = */	ssh_rsa_copy_public,
 };
