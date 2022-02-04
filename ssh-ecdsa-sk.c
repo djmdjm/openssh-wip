@@ -344,6 +344,7 @@ static const struct sshkey_impl_funcs sshkey_ecdsa_sk_funcs = {
 	/* .cleanup = */	ssh_ecdsa_sk_cleanup,
 	/* .equal = */		ssh_ecdsa_sk_equal,
 	/* .ssh_serialize_public = */ ssh_ecdsa_sk_serialize_public,
+	/* .generate = */	NULL,
 };
 
 const struct sshkey_impl sshkey_ecdsa_sk_impl = {

@@ -118,6 +118,24 @@ ssh_dss_serialize_public(const struct sshkey *key, struct sshbuf *b,
 	return 0;
 }
 
+static int
+ssh_dss_generate(struct sshkey *k, int bits)
+{
+	DSA *private;
+
+	if (bits != 1024)
+		return SSH_ERR_KEY_LENGTH;
+	if ((private = DSA_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	if (!DSA_generate_parameters_ex(private, bits, NULL, 0, NULL,
+	    NULL, NULL) || !DSA_generate_key(private)) {
+		DSA_free(private);
+		return SSH_ERR_LIBCRYPTO_ERROR;
+	}
+	k->dsa = private;
+	return 0;
+}
+
 int
 ssh_dss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, u_int compat)
@@ -281,6 +299,7 @@ static const struct sshkey_impl_funcs sshkey_dss_funcs = {
 	/* .cleanup = */	ssh_dss_cleanup,
 	/* .equal = */		ssh_dss_equal,
 	/* .ssh_serialize_public = */ ssh_dss_serialize_public,
+	/* .generate = */	ssh_dss_generate,
 };
 
 const struct sshkey_impl sshkey_dss_impl = {
