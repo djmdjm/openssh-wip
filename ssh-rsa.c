@@ -125,6 +125,32 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 	return ret;
 }
 
+static int
+ssh_rsa_copy_public(const struct sshkey *from, struct sshkey *to)
+{
+	const BIGNUM *rsa_n, *rsa_e;
+	BIGNUM *rsa_n_dup = NULL, *rsa_e_dup = NULL;
+	int r = SSH_ERR_INTERNAL_ERROR;
+
+	RSA_get0_key(from->rsa, &rsa_n, &rsa_e, NULL);
+	if ((rsa_n_dup = BN_dup(rsa_n)) == NULL ||
+	    (rsa_e_dup = BN_dup(rsa_e)) == NULL) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+	if (!RSA_set0_key(to->rsa, rsa_n_dup, rsa_e_dup, NULL)) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	rsa_n_dup = rsa_e_dup = NULL; /* transferred */
+	/* success */
+	r = 0;
+ out:
+	BN_clear_free(rsa_n_dup);
+	BN_clear_free(rsa_e_dup);
+	return r;
+}
+
 static const char *
 rsa_hash_alg_ident(int hash_alg)
 {
@@ -540,6 +566,7 @@ static const struct sshkey_impl_funcs sshkey_rsa_funcs = {
 	/* .equal = */		ssh_rsa_equal,
 	/* .ssh_serialize_public = */ ssh_rsa_serialize_public,
 	/* .generate = */	ssh_rsa_generate,
+	/* .copy_public = */	ssh_rsa_copy_public,
 };
 
 const struct sshkey_impl sshkey_rsa_impl = {
