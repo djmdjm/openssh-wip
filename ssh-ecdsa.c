@@ -100,6 +100,22 @@ ssh_ecdsa_serialize_public(const struct sshkey *key, struct sshbuf *b,
 }
 
 static int
+ssh_ecdsa_serialize_private(const struct sshkey *key, struct sshbuf *b,
+    enum sshkey_serialize_rep opts)
+{
+	int r;
+
+	if (!sshkey_is_cert(key)) {
+		if ((r = ssh_ecdsa_serialize_public(key, b, opts)) != 0)
+			return r;
+	}
+	if ((r = sshbuf_put_bignum2(b,
+	    EC_KEY_get0_private_key(key->ecdsa))) != 0)
+		return r;
+	return 0;
+}
+
+static int
 ssh_ecdsa_generate(struct sshkey *k, int bits)
 {
 	EC_KEY *private;
@@ -342,6 +358,7 @@ const struct sshkey_impl_funcs sshkey_ecdsa_funcs = {
 	/* .equal = */		ssh_ecdsa_equal,
 	/* .ssh_serialize_public = */ ssh_ecdsa_serialize_public,
 	/* .ssh_deserialize_public = */ ssh_ecdsa_deserialize_public,
+	/* .ssh_serialize_private = */ ssh_ecdsa_serialize_private,
 	/* .generate = */	ssh_ecdsa_generate,
 	/* .copy_public = */	ssh_ecdsa_copy_public,
 	/* .sign = */		ssh_ecdsa_sign,
