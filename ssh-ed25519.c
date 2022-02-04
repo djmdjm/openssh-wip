@@ -116,6 +116,31 @@ ssh_ed25519_deserialize_public(const char *ktype, struct sshbuf *b,
 }
 
 static int
+ssh_ed25519_deserialize_private(const char *ktype, struct sshbuf *b,
+    struct sshkey *key)
+{
+	int r;
+	size_t sklen = 0;
+	u_char *ed25519_sk = NULL;
+
+	if ((r = ssh_ed25519_deserialize_public(NULL, b, key)) != 0)
+		goto out;
+	if ((r = sshbuf_get_string(b, &ed25519_sk, &sklen)) != 0)
+		goto out;
+	if (sklen != ED25519_SK_SZ) {
+		r = SSH_ERR_INVALID_FORMAT;
+		goto out;
+	}
+	key->ed25519_sk = ed25519_sk;
+	ed25519_sk = NULL; /* transferred */
+	/* success */
+	r = 0;
+ out:
+	freezero(ed25519_sk, sklen);
+	return r;
+}
+
+static int
 ssh_ed25519_sign(struct sshkey *key,
     u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen,
@@ -254,6 +279,7 @@ const struct sshkey_impl_funcs sshkey_ed25519_funcs = {
 	/* .ssh_serialize_public = */ ssh_ed25519_serialize_public,
 	/* .ssh_deserialize_public = */ ssh_ed25519_deserialize_public,
 	/* .ssh_serialize_private = */ ssh_ed25519_serialize_private,
+	/* .ssh_deserialize_private = */ ssh_ed25519_deserialize_private,
 	/* .generate = */	ssh_ed25519_generate,
 	/* .copy_public = */	ssh_ed25519_copy_public,
 	/* .sign = */		ssh_ed25519_sign,
