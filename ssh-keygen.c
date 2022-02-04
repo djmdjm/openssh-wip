@@ -573,10 +573,13 @@ do_convert_private_ssh2(struct sshbuf *b)
 		error_f("remaining bytes in key blob %d", rlen);
 
 	/* try the key */
-	if (sshkey_sign(key, &sig, &slen, data, sizeof(data),
-	    NULL, NULL, NULL, 0) != 0 ||
-	    sshkey_verify(key, sig, slen, data, sizeof(data),
-	    NULL, 0, NULL) != 0) {
+	if ((r = sshkey_sign(key, &sig, &slen, data, sizeof(data),
+	    NULL, NULL, NULL, 0)) != 0)
+		error_fr(r, "signing with converted key failed");
+	else if ((r = sshkey_verify(key, sig, slen, data, sizeof(data),
+	    NULL, 0, NULL)) != 0)
+		error_fr(r, "verification with converted key failed");
+	if (r != 0) {
 		sshkey_free(key);
 		free(sig);
 		return NULL;
