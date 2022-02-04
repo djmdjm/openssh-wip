@@ -169,6 +169,12 @@ struct sshkey_impl_funcs {
 	    struct sshkey *);
 	int (*generate)(struct sshkey *, int);	/* optional */
 	int (*copy_public)(const struct sshkey *, struct sshkey *);
+	int (*sign)(struct sshkey *, u_char **, size_t *,
+	    const u_char *, size_t, const char *,
+	    const char *, const char *, u_int); /* optional */
+	int (*verify)(const struct sshkey *, const u_char *, size_t,
+	    const u_char *, size_t, const char *, u_int,
+	    struct sshkey_sig_details **);
 };
 
 struct sshkey_impl {
@@ -314,41 +320,6 @@ int	sshkey_deserialize_sk(struct sshbuf *b, struct sshkey *key);
 #ifdef WITH_OPENSSL
 int	check_rsa_length(const RSA *rsa); /* XXX remove */
 #endif
-
-int ssh_rsa_sign(const struct sshkey *key,
-    u_char **sigp, size_t *lenp, const u_char *data, size_t datalen,
-    const char *ident);
-int ssh_rsa_verify(const struct sshkey *key,
-    const u_char *sig, size_t siglen, const u_char *data, size_t datalen,
-    const char *alg);
-int ssh_dss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_dss_verify(const struct sshkey *key,
-    const u_char *signature, size_t signaturelen,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_ecdsa_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_ecdsa_verify(const struct sshkey *key,
-    const u_char *signature, size_t signaturelen,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_ecdsa_sk_verify(const struct sshkey *key,
-    const u_char *signature, size_t signaturelen,
-    const u_char *data, size_t datalen, u_int compat,
-    struct sshkey_sig_details **detailsp);
-int ssh_ed25519_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_ed25519_verify(const struct sshkey *key,
-    const u_char *signature, size_t signaturelen,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_ed25519_sk_verify(const struct sshkey *key,
-    const u_char *signature, size_t signaturelen,
-    const u_char *data, size_t datalen, u_int compat,
-    struct sshkey_sig_details **detailsp);
-int ssh_xmss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
-    const u_char *data, size_t datalen, u_int compat);
-int ssh_xmss_verify(const struct sshkey *key,
-    const u_char *signature, size_t signaturelen,
-    const u_char *data, size_t datalen, u_int compat);
 #endif
 
 #ifndef WITH_OPENSSL
