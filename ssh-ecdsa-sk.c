@@ -78,6 +78,18 @@ ssh_ecdsa_sk_serialize_public(const struct sshkey *key, struct sshbuf *b,
 	return 0;
 }
 
+static int
+ssh_ecdsa_sk_copy_public(const struct sshkey *from, struct sshkey *to)
+{
+	int r;
+
+	if ((r = sshkey_ecdsa_funcs.copy_public(from, to)) != 0)
+		return r;
+	if ((r = sshkey_copy_public_sk(from, to)) != 0)
+		return r;
+	return 0;
+}
+
 /*
  * Check FIDO/W3C webauthn signatures clientData field against the expected
  * format and prepare a hash of it for use in signature verification.
@@ -345,6 +357,7 @@ static const struct sshkey_impl_funcs sshkey_ecdsa_sk_funcs = {
 	/* .equal = */		ssh_ecdsa_sk_equal,
 	/* .ssh_serialize_public = */ ssh_ecdsa_sk_serialize_public,
 	/* .generate = */	NULL,
+	/* .copy_public = */	ssh_ecdsa_sk_copy_public,
 };
 
 const struct sshkey_impl sshkey_ecdsa_sk_impl = {

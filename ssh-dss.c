@@ -136,6 +136,43 @@ ssh_dss_generate(struct sshkey *k, int bits)
 	return 0;
 }
 
+static int
+ssh_dss_copy_public(const struct sshkey *from, struct sshkey *to)
+{
+	const BIGNUM *dsa_p, *dsa_q, *dsa_g, *dsa_pub_key;
+	BIGNUM *dsa_p_dup = NULL, *dsa_q_dup = NULL, *dsa_g_dup = NULL;
+	BIGNUM *dsa_pub_key_dup = NULL;
+	int r = SSH_ERR_INTERNAL_ERROR;
+
+	DSA_get0_pqg(from->dsa, &dsa_p, &dsa_q, &dsa_g);
+	DSA_get0_key(from->dsa, &dsa_pub_key, NULL);
+	if ((dsa_p_dup = BN_dup(dsa_p)) == NULL ||
+	    (dsa_q_dup = BN_dup(dsa_q)) == NULL ||
+	    (dsa_g_dup = BN_dup(dsa_g)) == NULL ||
+	    (dsa_pub_key_dup = BN_dup(dsa_pub_key)) == NULL) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+	if (!DSA_set0_pqg(to->dsa, dsa_p_dup, dsa_q_dup, dsa_g_dup)) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	dsa_p_dup = dsa_q_dup = dsa_g_dup = NULL; /* transferred */
+	if (!DSA_set0_key(to->dsa, dsa_pub_key_dup, NULL)) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	dsa_pub_key_dup = NULL; /* transferred */
+	/* success */
+	r = 0;
+ out:
+	BN_clear_free(dsa_p_dup);
+	BN_clear_free(dsa_q_dup);
+	BN_clear_free(dsa_g_dup);
+	BN_clear_free(dsa_pub_key_dup);
+	return r;
+}
+
 int
 ssh_dss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, u_int compat)
@@ -300,6 +337,7 @@ static const struct sshkey_impl_funcs sshkey_dss_funcs = {
 	/* .equal = */		ssh_dss_equal,
 	/* .ssh_serialize_public = */ ssh_dss_serialize_public,
 	/* .generate = */	ssh_dss_generate,
+	/* .copy_public = */	ssh_dss_copy_public,
 };
 
 const struct sshkey_impl sshkey_dss_impl = {

@@ -77,6 +77,31 @@ ssh_xmss_serialize_public(const struct sshkey *key, struct sshbuf *b,
 	return 0
 }
 
+static int
+ssh_xmss_copy_public(const struct sshkey *from, struct sshkey *to)
+{
+	int r = SSH_ERR_INTERNAL_ERROR;
+	u_int32_t left;
+	size_t pklen;
+
+	if ((r = sshkey_xmss_init(n, from->xmss_name)) != 0)
+		goto out;
+	if (from->xmss_pk == NULL)
+		return 0; /* XXX SSH_ERR_INTERNAL_ERROR ? */
+
+	if ((pklen = sshkey_xmss_pklen(k)) == 0 ||
+	    sshkey_xmss_pklen(n) != pklen)
+		return SSH_ERR_INTERNAL_ERROR;
+	if ((to->xmss_pk = malloc(pklen)) == NULL)
+		return SSH_ERR_ALLOC_FAIL; /* caller will free to->xmss_pk */
+	memcpy(to->xmss_pk, from->xmss_pk, pklen);
+	/* simulate number of signatures left on pubkey */
+	left = sshkey_xmss_signatures_left(k);
+	if (left)
+		sshkey_xmss_enable_maxsign(n, left);
+	return 0;
+}
+
 int
 ssh_xmss_sign(const struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, u_int compat)
@@ -232,6 +257,7 @@ static const struct sshkey_impl_funcs sshkey_xmss_funcs = {
 	/* .equal = */		ssh_xmss_equal,
 	/* .ssh_serialize_public = */ ssh_xmss_serialize_public,
 	/* .generate = */	sshkey_xmss_generate_private_key,
+	/* .copy_public = */	ssh_xmss_copy_publie,
 };
 
 const struct sshkey_impl sshkey_xmss_impl = {
