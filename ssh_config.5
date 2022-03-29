@@ -143,6 +143,7 @@ The available criteria keywords are:
 .Cm exec ,
 .Cm host ,
 .Cm originalhost ,
+.Cm Tag ,
 .Cm user ,
 and
 .Cm localuser .
@@ -210,6 +211,15 @@ options.
 The
 .Cm originalhost
 keyword matches against the hostname as it was specified on the command-line.
+The
+.Cm tagged
+keyword matches a tag name specified by a prior
+.Cm Tag
+directive or on the
+.Xr ssh 1
+command-line using the
+.Fl P
+flag.
 The
 .Cm user
 keyword matches against the target username on the remote host.
@@ -1875,6 +1885,10 @@ To disable TCP keepalive messages, the value should be set to
 See also
 .Cm ServerAliveInterval
 for protocol-level keepalives.
+.It Cm Tag
+Specify a configuration tag name that may be later used by a
+.Cm Match
+directive to select a block of configuation.
 .It Cm Tunnel
 Request
 .Xr tun 4

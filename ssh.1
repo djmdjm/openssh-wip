@@ -59,6 +59,7 @@
 .Op Fl O Ar ctl_cmd
 .Op Fl o Ar option
 .Op Fl p Ar port
+.Op Fl P Ar tag
 .Op Fl Q Ar query_option
 .Op Fl R Ar address
 .Op Fl S Ar ctl_path
@@ -593,6 +594,16 @@ For full details of the options listed below, and their possible values, see
 .It XAuthLocation
 .El
 .Pp
+.It Fl P Ar tag
+Specify a tag name that may be used to select configuration in
+.Xr ssh_config 5 .
+Refer to the
+.Cm Tag
+and
+.Cm Match
+keywords in
+.Xr ssh_config 5
+for more information.
 .It Fl p Ar port
 Port to connect to on the remote host.
 This can be specified on a
