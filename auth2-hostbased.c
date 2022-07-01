@@ -118,6 +118,10 @@ userauth_hostbased(struct ssh *ssh, const char *method)
 		    "(null)" : key->cert->signature_type);
 		goto done;
 	}
+	if ((r = sshkey_check_rsa_length(key, options.rsa_min_size)) != 0) {
+		logit("refusing %s key", sshkey_type(key));
+		goto done;
+	}
 
 	if (!authctxt->valid || authctxt->user == NULL) {
 		debug2_f("disabled because of invalid user");

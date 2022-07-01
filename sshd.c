@@ -1746,6 +1746,13 @@ main(int ac, char **av)
 				fatal_r(r, "Could not demote key: \"%s\"",
 				    options.host_key_files[i]);
 		}
+		if (pubkey != NULL && (r = sshkey_check_rsa_length(pubkey,
+		    options.rsa_min_size)) != 0) {
+			error_fr(r, "Host key %s", options.host_key_files[i]);
+			sshkey_free(pubkey);
+			sshkey_free(key);
+			continue;
+		}
 		sensitive_data.host_keys[i] = key;
 		sensitive_data.host_pubkeys[i] = pubkey;
 

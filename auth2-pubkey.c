@@ -172,6 +172,10 @@ userauth_pubkey(struct ssh *ssh, const char *method)
 		    "(null)" : key->cert->signature_type);
 		goto done;
 	}
+	if ((r = sshkey_check_rsa_length(key, options.rsa_min_size)) != 0) {
+		logit("refusing %s key", sshkey_type(key));
+		goto done;
+	}
 	key_s = format_key(key);
 	if (sshkey_is_cert(key))
 		ca_s = format_key(key->cert->signature_key);
