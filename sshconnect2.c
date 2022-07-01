@@ -91,6 +91,10 @@ static const struct ssh_conn_info *xxx_conn_info;
 static int
 verify_host_key_callback(struct sshkey *hostkey, struct ssh *ssh)
 {
+	int r;
+
+	if ((r = sshkey_check_rsa_length(hostkey, options.rsa_min_size)) != 0)
+		fatal_r(r, "Bad server host key");
 	if (verify_host_key(xxx_host, xxx_hostaddr, hostkey,
 	    xxx_conn_info) == -1)
 		fatal("Host key verification failed.");
@@ -1747,6 +1751,12 @@ pubkey_prepare(struct ssh *ssh, Authctxt *authctxt)
 	/* list of keys supported by the agent */
 	if ((r = get_agent_identities(ssh, &agent_fd, &idlist)) == 0) {
 		for (j = 0; j < idlist->nkeys; j++) {
+			if ((r = sshkey_check_rsa_length(idlist->keys[j],
+			    options.rsa_min_size)) != 0) {
+				debug_fr(r, "ignoring %s agent key",
+				    sshkey_ssh_name(idlist->keys[j]));
+				continue;
+			}
 			found = 0;
 			TAILQ_FOREACH(id, &files, next) {
 				/*
