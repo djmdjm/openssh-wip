@@ -177,6 +177,15 @@ int crossload_dir(struct sftp_conn *from, struct sftp_conn *to,
     Attrib *dirattrib, int preserve_flag, int print_flag,
     int follow_link_flag);
 
+/*
+ * User/group ID to name translation.
+ */
+int can_getusersgroups(struct sftp_conn *conn);
+int do_getusersgroups(struct sftp_conn *conn,
+    const u_int *uids, u_int nuids,
+    const u_int *gids, u_int ngids,
+    char ***usernamesp, char ***groupnamesp);
+
 /* Concatenate paths, taking care of slashes. Caller must free result. */
 char *path_append(const char *, const char *);
 
