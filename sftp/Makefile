@@ -2,7 +2,7 @@
 
 .PATH:		${.CURDIR}/..
 
-SRCS=	sftp.c sftp-client.c sftp-common.c sftp-glob.c
+SRCS=	sftp.c sftp-client.c sftp-common.c sftp-glob.c sftp-usergroup.c
 SRCS+=	atomicio.c cleanup.c fatal.c progressmeter.c utf8.c
 SRCS+=	${SRCS_BASE}
 
