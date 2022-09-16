@@ -1139,7 +1139,8 @@ process_readdir(u_int32_t id)
 				continue;
 			stat_to_attrib(&st, &(stats[count].attrib));
 			stats[count].name = xstrdup(dp->d_name);
-			stats[count].long_name = ls_file(dp->d_name, &st, 0, 0);
+			stats[count].long_name = ls_file(dp->d_name, &st,
+			    0, 0, NULL, NULL);
 			count++;
 			/* send up to 100 entries in one message */
 			/* XXX check packet size instead */

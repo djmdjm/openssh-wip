@@ -868,7 +868,7 @@ do_ls_dir(struct sftp_conn *conn, const char *path,
 				memset(&sb, 0, sizeof(sb));
 				attrib_to_stat(&d[n]->a, &sb);
 				lname = ls_file(fname, &sb, 1,
-				    (lflag & LS_SI_UNITS));
+				    (lflag & LS_SI_UNITS), NULL, NULL);
 				mprintf("%s\n", lname);
 				free(lname);
 			} else
@@ -999,7 +999,7 @@ do_globbed_ls(struct sftp_conn *conn, const char *path,
 				continue;
 			}
 			lname = ls_file(fname, g.gl_statv[i], 1,
-			    (lflag & LS_SI_UNITS));
+			    (lflag & LS_SI_UNITS), NULL, NULL);
 			mprintf("%s\n", lname);
 			free(lname);
 		} else {
