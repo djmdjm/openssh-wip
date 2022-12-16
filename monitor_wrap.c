@@ -326,6 +326,7 @@ out:
 	for (i = 0; i < options.num_log_verbose; i++)
 		log_verbose_add(options.log_verbose[i]);
 	process_permitopen(ssh, &options);
+	process_channel_timeouts(ssh, &options);
 	free(newopts);
 
 	sshbuf_free(m);
