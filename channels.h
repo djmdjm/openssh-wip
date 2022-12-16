@@ -312,9 +312,10 @@ int	 channel_input_status_confirm(int, u_int32_t, struct ssh *);
 
 /* file descriptor handling (read/write) */
 struct pollfd;
+struct timespec;
 
 void	 channel_prepare_poll(struct ssh *, struct pollfd **,
-	    u_int *, u_int *, u_int, time_t *);
+	    u_int *, u_int *, u_int, struct timespec *);
 void	 channel_after_poll(struct ssh *, struct pollfd *, u_int);
 void     channel_output_poll(struct ssh *);
 
