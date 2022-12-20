@@ -1834,7 +1834,7 @@ ssh_confirm_remote_forward(struct ssh *ssh, int type, u_int32_t seq, void *ctxt)
 }
 
 static void
-client_cleanup_stdio_fwd(struct ssh *ssh, int id, void *arg)
+client_cleanup_stdio_fwd(struct ssh *ssh, int id, int force, void *arg)
 {
 	debug("stdio forwarding: done");
 	cleanup_exit(0);

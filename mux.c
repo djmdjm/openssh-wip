@@ -175,7 +175,7 @@ static const struct {
 /* Cleanup callback fired on closure of mux client _session_ channel */
 /* ARGSUSED */
 static void
-mux_master_session_cleanup_cb(struct ssh *ssh, int cid, void *unused)
+mux_master_session_cleanup_cb(struct ssh *ssh, int cid, int force, void *unused)
 {
 	Channel *cc, *c = channel_by_id(ssh, cid);
 
@@ -197,7 +197,7 @@ mux_master_session_cleanup_cb(struct ssh *ssh, int cid, void *unused)
 /* Cleanup callback fired on closure of mux client _control_ channel */
 /* ARGSUSED */
 static void
-mux_master_control_cleanup_cb(struct ssh *ssh, int cid, void *unused)
+mux_master_control_cleanup_cb(struct ssh *ssh, int cid, int force, void *unused)
 {
 	Channel *sc, *c = channel_by_id(ssh, cid);
 
