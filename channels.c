@@ -289,6 +289,24 @@ channel_lookup(struct ssh *ssh, int id)
 }
 
 /*
+ * Sets "extended type" of a channel; used by session layer to add additional
+ * information about channel types (e.g. shell, login, subsystem) that can then
+ * be used to select timeouts.
+ */
+void
+channel_set_xtype(struct ssh *ssh, int id, const char *xctype)
+{
+	Channel *c;
+
+	if ((c = channel_by_id(ssh, id)) == NULL)
+		fatal_f("missing channel %d", id);
+	if (c->xctype != NULL)
+		free(c->xctype);
+	c->xctype = xstrdup(xctype);
+	debug2_f("labeled channel %d as %s", id, xctype);
+}
+
+/*
  * Register filedescriptors for a channel, used when allocating a channel or
  * when the channel consumer/producer is ready, e.g. shell exec'd
  */
@@ -644,6 +662,8 @@ channel_free(struct ssh *ssh, Channel *c)
 	c->path = NULL;
 	free(c->listening_addr);
 	c->listening_addr = NULL;
+	free(c->xctype);
+	c->xctype = NULL;
 	while ((cc = TAILQ_FIRST(&c->status_confirms)) != NULL) {
 		if (cc->abandon_cb != NULL)
 			cc->abandon_cb(ssh, c, cc->ctx);
@@ -859,9 +879,9 @@ channel_format_status(const Channel *c)
 {
 	char *ret = NULL;
 
-	xasprintf(&ret, "t%d %s%u i%u/%zu o%u/%zu e[%s]/%zu "
+	xasprintf(&ret, "t%d [%s] %s%u i%u/%zu o%u/%zu e[%s]/%zu "
 	    "fd %d/%d/%d sock %d cc %d io 0x%02x/0x%02x",
-	    c->type,
+	    c->type, c->xctype != NULL ? c->xctype : c->ctype,
 	    c->have_remote_id ? "r" : "nr", c->remote_id,
 	    c->istate, sshbuf_len(c->input),
 	    c->ostate, sshbuf_len(c->output),

@@ -172,7 +172,8 @@ struct Channel {
 	int     extended_usage;
 	int	single_connection;
 
-	char   *ctype;		/* type */
+	char   *ctype;		/* const type - NB. not freed on channel_free */
+	char   *xctype;		/* extended type */
 
 	/* callback */
 	channel_open_fn		*open_confirm;
@@ -279,6 +280,7 @@ void	 channel_free(struct ssh *, Channel *);
 void	 channel_free_all(struct ssh *);
 void	 channel_stop_listening(struct ssh *);
 void	 channel_force_close(struct ssh *, Channel *, int);
+void	 channel_set_xtype(struct ssh *, int, const char *);
 
 void	 channel_send_open(struct ssh *, int);
 void	 channel_request_start(struct ssh *, int, char *, int);
