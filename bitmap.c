@@ -22,7 +22,6 @@
 #include "bitmap.h"
 
 #define BITMAP_WTYPE	u_int
-#define BITMAP_MAX	(1<<24)
 #define BITMAP_BYTES	(sizeof(BITMAP_WTYPE))
 #define BITMAP_BITS	(sizeof(BITMAP_WTYPE) * 8)
 #define BITMAP_WMASK	((BITMAP_WTYPE)BITMAP_BITS - 1)
@@ -82,7 +81,7 @@ reserve(struct bitmap *b, u_int n)
 	BITMAP_WTYPE *tmp;
 	size_t nlen;
 
-	if (b->top >= b->len || n > BITMAP_MAX)
+	if (b->top >= b->len || n > BITMAP_MAXBITS)
 		return -1; /* invalid */
 	nlen = (n / BITMAP_BITS) + 1;
 	if (b->len < nlen) {
@@ -125,7 +124,7 @@ bitmap_clear_bit(struct bitmap *b, u_int n)
 {
 	size_t offset;
 
-	if (b->top >= b->len || n > BITMAP_MAX)
+	if (b->top >= b->len || n > BITMAP_MAXBITS)
 		return; /* invalid */
 	offset = n / BITMAP_BITS;
 	if (offset > b->top)
@@ -190,7 +189,7 @@ bitmap_from_string(struct bitmap *b, const void *p, size_t l)
 	size_t i, offset, shift;
 	const u_char *s = (const u_char *)p;
 
-	if (l > BITMAP_MAX / 8)
+	if (l > BITMAP_MAXBITS / 8)
 		return -1;
 	if ((r = reserve(b, l * 8)) != 0)
 		return r;

@@ -22,6 +22,8 @@
 
 /* Simple bit vector routines */
 
+#define BITMAP_MAXBITS	(1<<25)
+
 struct bitmap;
 
 /* Allocate a new bitmap. Returns NULL on allocation failure. */
