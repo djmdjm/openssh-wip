@@ -35,9 +35,14 @@
 #include "log.h"
 #include "digest.h"
 #include "bitmap.h"
+#include "bloom.h"
 #include "utf8.h"
 
 #include "krl.h"
+
+/* Approximate 1/n Bloom filter false positive rate. */
+#define KRL_DEFAULT_BLOOM_FP_RATE	1000
+#define KRL_MIN_BLOOM_ENTRIES		10
 
 /* #define DEBUG_KRL */
 #ifdef DEBUG_KRL
@@ -566,9 +571,111 @@ put_bitmap(struct sshbuf *buf, struct bitmap *bitmap)
 	return r;
 }
 
+static int
+bloom_filter_extension(struct sshbuf *buf, const struct sshbloom *bl,
+    u_int stype, const char *ext_name)
+{
+	struct sshbuf *ext_contents = NULL, *bloom_string = NULL;
+	int r = SSH_ERR_INTERNAL_ERROR;
+
+	debug3_f("extension %u %s", stype, ext_name);
+	if ((ext_contents = sshbuf_new()) == NULL ||
+	    (bloom_string = sshbuf_new()) == NULL) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+	if ((r = sshbloom_serialize(bl, bloom_string)) != 0)
+		goto out;
+	if ((r = sshbuf_put_cstring(ext_contents, ext_name)) != 0 ||
+	    (r = sshbuf_put_u8(ext_contents, 0)) != 0 || /* critical=false */
+	    (r = sshbuf_put_stringb(ext_contents, bloom_string)) != 0)
+		goto out;
+	if ((r = sshbuf_put_u8(buf, stype)) != 0 ||
+	    (r = sshbuf_put_stringb(buf, ext_contents)) != 0)
+		goto out;
+	/* success */
+	r = 0;
+ out:
+	sshbuf_free(bloom_string);
+	sshbuf_free(ext_contents);
+	return r;
+}
+
+static int
+serials_to_bloom(struct sshbuf *buf, struct revoked_serial_tree *rst,
+    u_int bloom_fp_rate)
+{
+	struct sshbloom *bl = NULL;
+	struct revoked_serial *rs;
+	int r = SSH_ERR_INTERNAL_ERROR;
+	uint64_t i, n = 0;
+
+	RB_FOREACH(rs, revoked_serial_tree, rst) {
+		n += (rs->hi - rs->lo) + 1;
+	}
+	if (n < KRL_MIN_BLOOM_ENTRIES || n > UINT_MAX)
+		return 0; /* too few; don't bother */
+	debug3_f("%llu serials in subsection", (unsigned long long)n);
+	if (sshbloom_can_alloc((u_int)n, bloom_fp_rate) != 0)
+		return 0;
+	if ((bl = sshbloom_new(n, bloom_fp_rate)) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	RB_FOREACH(rs, revoked_serial_tree, rst) {
+		/* add all [lo..hi] avoiding u64 overflow at loop end */
+		for (i = rs->lo; ; i++) {
+			if ((r = sshbloom_add_u64(bl, i)) != 0)
+				goto out;
+			if (i == rs->hi)
+				break;
+		}
+	}
+	if ((r = bloom_filter_extension(buf, bl, KRL_SECTION_CERT_EXTENSION,
+	    "cert-bloom-serial")) != 0)
+		goto out;
+	/* success */
+	r = 0;
+ out:
+	sshbloom_free(bl);
+	return r;
+}
+
+static int
+keyids_to_bloom(struct sshbuf *buf, struct revoked_key_id_tree *rkit,
+    u_int bloom_fp_rate)
+{
+	struct sshbloom *bl = NULL;
+	struct revoked_key_id *rki;
+	int r = SSH_ERR_INTERNAL_ERROR;
+	u_int n = 0;
+
+	RB_FOREACH(rki, revoked_key_id_tree, rkit) {
+		n++;
+	}
+	if (n < KRL_MIN_BLOOM_ENTRIES)
+		return 0; /* too few; don't bother */
+	debug3_f("%u key IDs in subsection", n);
+	if (sshbloom_can_alloc(n, bloom_fp_rate) != 0)
+		return 0;
+	if ((bl = sshbloom_new(n, bloom_fp_rate)) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	RB_FOREACH(rki, revoked_key_id_tree, rkit) {
+		if ((r = sshbloom_add_cstring(bl, rki->key_id)) != 0)
+			goto out;
+	}
+	if ((r = bloom_filter_extension(buf, bl, KRL_SECTION_CERT_EXTENSION,
+	    "cert-bloom-key-id")) != 0)
+		goto out;
+	/* success */
+	r = 0;
+ out:
+	sshbloom_free(bl);
+	return r;
+}
+
 /* Generate a KRL_SECTION_CERTIFICATES KRL section */
 static int
-revoked_certs_generate(struct revoked_certs *rc, struct sshbuf *buf)
+revoked_certs_generate(struct revoked_certs *rc, struct sshbuf *buf,
+    int allow_exts, u_int bloom_fp_rate)
 {
 	int final, force_new_sect, r = SSH_ERR_INTERNAL_ERROR;
 	u_int64_t i, contig, gap, last = 0, bitmap_start = 0;
@@ -590,6 +697,12 @@ revoked_certs_generate(struct revoked_certs *rc, struct sshbuf *buf)
 			goto out;
 	}
 	if ((r = sshbuf_put_string(buf, NULL, 0)) != 0)
+		goto out;
+
+	/* Record a Bloom filter for the serials */
+	if (allow_exts &&
+	    (r = serials_to_bloom(buf, &rc->revoked_serials,
+	    bloom_fp_rate)) != 0)
 		goto out;
 
 	/* Store the revoked serials.  */
@@ -715,6 +828,10 @@ revoked_certs_generate(struct revoked_certs *rc, struct sshbuf *buf)
 			goto out;
 	}
 	if (sshbuf_len(sect) != 0) {
+		if (allow_exts &&
+		    (r = keyids_to_bloom(buf, &rc->revoked_key_ids,
+		    bloom_fp_rate)) != 0)
+			goto out;
 		if ((r = sshbuf_put_u8(buf, KRL_SECTION_CERT_KEY_ID)) != 0 ||
 		    (r = sshbuf_put_stringb(buf, sect)) != 0)
 			goto out;
@@ -726,14 +843,50 @@ revoked_certs_generate(struct revoked_certs *rc, struct sshbuf *buf)
 	return r;
 }
 
+static int
+blobs_to_bloom(struct revoked_blob_tree *rbt, struct sshbuf *buf,
+    u_int stype, const char *ext_name, u_int bloom_fp_rate)
+{
+	struct revoked_blob *rb;
+	struct sshbloom *bl = NULL;
+	int r = SSH_ERR_INTERNAL_ERROR;
+	u_int n = 0;
+
+	RB_FOREACH(rb, revoked_blob_tree, rbt) {
+		n++;
+	}
+	if (n < KRL_MIN_BLOOM_ENTRIES)
+		return 0; /* too few; don't bother */
+	debug3_f("%u blobs in section %u %s", n, stype, ext_name);
+	if (sshbloom_can_alloc(n, bloom_fp_rate) != 0)
+		return 0;
+	if ((bl = sshbloom_new(n, bloom_fp_rate)) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	RB_FOREACH(rb, revoked_blob_tree, rbt) {
+		if ((r = sshbloom_add_ptr(bl, rb->blob, rb->len)) != 0)
+			goto out;
+	}
+	if ((r = bloom_filter_extension(buf, bl, stype, ext_name)) != 0)
+		goto out;
+	/* success */
+	r = 0;
+ out:
+	sshbloom_free(bl);
+	return r;
+}
+
 int
-ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf)
+ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf,
+    int allow_exts, u_int bloom_fp_rate)
 {
 	int r = SSH_ERR_INTERNAL_ERROR;
 	struct revoked_certs *rc;
 	struct revoked_blob *rb;
 	struct sshbuf *sect;
 	u_char *sblob = NULL;
+
+	if (bloom_fp_rate < 10)
+		bloom_fp_rate = KRL_DEFAULT_BLOOM_FP_RATE;
 
 	if (krl->generated_date == 0)
 		krl->generated_date = time(NULL);
@@ -754,7 +907,8 @@ ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf)
 	/* Store sections for revoked certificates */
 	TAILQ_FOREACH(rc, &krl->revoked_certs, entry) {
 		sshbuf_reset(sect);
-		if ((r = revoked_certs_generate(rc, sect)) != 0)
+		if ((r = revoked_certs_generate(rc, sect, allow_exts,
+		    bloom_fp_rate)) != 0)
 			goto out;
 		if ((r = sshbuf_put_u8(buf, KRL_SECTION_CERTIFICATES)) != 0 ||
 		    (r = sshbuf_put_stringb(buf, sect)) != 0)
@@ -769,6 +923,10 @@ ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf)
 			goto out;
 	}
 	if (sshbuf_len(sect) != 0) {
+		if (allow_exts && (r = blobs_to_bloom(&krl->revoked_keys,
+		    buf, KRL_SECTION_EXTENSION, "bloom-explicit-key",
+		    bloom_fp_rate) != 0))
+			goto out;
 		if ((r = sshbuf_put_u8(buf, KRL_SECTION_EXPLICIT_KEY)) != 0 ||
 		    (r = sshbuf_put_stringb(buf, sect)) != 0)
 			goto out;
@@ -780,6 +938,10 @@ ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf)
 			goto out;
 	}
 	if (sshbuf_len(sect) != 0) {
+		if (allow_exts && (r = blobs_to_bloom(&krl->revoked_sha1s,
+		    buf, KRL_SECTION_EXTENSION, "bloom-key-hash-sha1",
+		    bloom_fp_rate) != 0))
+			goto out;
 		if ((r = sshbuf_put_u8(buf,
 		    KRL_SECTION_FINGERPRINT_SHA1)) != 0 ||
 		    (r = sshbuf_put_stringb(buf, sect)) != 0)
@@ -792,6 +954,10 @@ ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf)
 			goto out;
 	}
 	if (sshbuf_len(sect) != 0) {
+		if (allow_exts && (r = blobs_to_bloom(&krl->revoked_sha256s,
+		    buf, KRL_SECTION_EXTENSION, "bloom-key-hash-sha256",
+		    bloom_fp_rate) != 0))
+			goto out;
 		if ((r = sshbuf_put_u8(buf,
 		    KRL_SECTION_FINGERPRINT_SHA256)) != 0 ||
 		    (r = sshbuf_put_stringb(buf, sect)) != 0)
