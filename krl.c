@@ -89,6 +89,8 @@ struct revoked_certs {
 	struct sshkey *ca_key;
 	struct revoked_serial_tree revoked_serials;
 	struct revoked_key_id_tree revoked_key_ids;
+	struct sshbloom *serial_bloom;
+	struct sshbloom *key_id_bloom;
 	TAILQ_ENTRY(revoked_certs) entry;
 };
 TAILQ_HEAD(revoked_certs_list, revoked_certs);
@@ -102,6 +104,9 @@ struct ssh_krl {
 	struct revoked_blob_tree revoked_sha1s;
 	struct revoked_blob_tree revoked_sha256s;
 	struct revoked_certs_list revoked_certs;
+	struct sshbloom *key_bloom;
+	struct sshbloom *sha1_bloom;
+	struct sshbloom *sha256_bloom;
 };
 
 /* Return equal if a and b overlap */
@@ -162,6 +167,8 @@ revoked_certs_free(struct revoked_certs *rc)
 		free(rki);
 	}
 	sshkey_free(rc->ca_key);
+	sshbloom_free(rc->serial_bloom);
+	sshbloom_free(rc->key_id_bloom);
 }
 
 void
@@ -193,7 +200,10 @@ ssh_krl_free(struct ssh_krl *krl)
 		TAILQ_REMOVE(&krl->revoked_certs, rc, entry);
 		revoked_certs_free(rc);
 	}
-	free(krl);
+	sshbloom_free(krl->key_bloom);
+	sshbloom_free(krl->sha1_bloom);
+	sshbloom_free(krl->sha256_bloom);
+	freezero(krl, sizeof(*krl));
 }
 
 void
@@ -988,12 +998,30 @@ format_timestamp(u_int64_t timestamp, char *ts, size_t nts)
 }
 
 static int
-cert_extension_subsection(struct sshbuf *subsect, struct ssh_krl *krl)
+parse_set_bloom_extension(struct sshbuf *buf, struct sshbloom **blp)
+{
+	struct sshbloom *bl = NULL;
+	int r;
+
+	if ((r = sshbloom_deserialize(buf, &bl)) != 0)
+		return r;
+	if (*blp != NULL) {
+		sshbloom_free(bl);
+		return SSH_ERR_INVALID_FORMAT;
+	}
+	*blp = bl;
+	return 0;
+}
+
+static int
+cert_extension_subsection(struct sshbuf *subsect, struct ssh_krl *krl,
+    struct sshkey *ca_key)
 {
 	int r = SSH_ERR_INTERNAL_ERROR;
 	u_char critical = 1;
 	struct sshbuf *value = NULL;
 	char *name = NULL;
+	struct revoked_certs *rc;
 
 	if ((r = sshbuf_get_cstring(subsect, &name, NULL)) != 0 ||
 	    (r = sshbuf_get_u8(subsect, &critical)) != 0 ||
@@ -1009,10 +1037,31 @@ cert_extension_subsection(struct sshbuf *subsect, struct ssh_krl *krl)
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
-	debug_f("cert extension %s critical %u len %zu",
+	debug3_f("cert extension %s critical %u len %zu",
 	    name, critical, sshbuf_len(value));
-	/* no extensions are currently supported */
-	if (critical) {
+	if (strcmp(name, "cert-bloom-serial") == 0) {
+		if ((r = revoked_certs_for_ca_key(krl, ca_key, &rc, 1)) != 0)
+			goto out;
+		if (RB_MIN(revoked_serial_tree, &rc->revoked_serials) != NULL) {
+			/* Bloom filter section must appear before serials */
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if ((r = parse_set_bloom_extension(value,
+		    &rc->serial_bloom)) != 0)
+			goto out;
+	} else if (strcmp(name, "cert-bloom-key-id") == 0) {
+		if ((r = revoked_certs_for_ca_key(krl, ca_key, &rc, 1)) != 0)
+			goto out;
+		if (RB_MIN(revoked_key_id_tree, &rc->revoked_key_ids) != NULL) {
+			/* Bloom filter section must appear before key IDs */
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if ((r = parse_set_bloom_extension(value,
+		    &rc->key_id_bloom)) != 0)
+			goto out;
+	} else if (critical) {
 		error("KRL contains unsupported critical certificate "
 		    "subsection \"%s\"", name);
 		r = SSH_ERR_FEATURE_UNSUPPORTED;
@@ -1038,6 +1087,7 @@ parse_revoked_certs(struct sshbuf *buf, struct ssh_krl *krl)
 	struct bitmap *bitmap = NULL;
 	char *key_id = NULL;
 	struct sshkey *ca_key = NULL;
+	struct revoked_certs *rc;
 
 	if ((subsect = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
@@ -1118,7 +1168,8 @@ parse_revoked_certs(struct sshbuf *buf, struct ssh_krl *krl)
 			}
 			break;
 		case KRL_SECTION_CERT_EXTENSION:
-			if ((r = cert_extension_subsection(subsect, krl)) != 0)
+			if ((r = cert_extension_subsection(subsect, krl,
+			    ca_key)) != 0)
 				goto out;
 			break;
 		default:
@@ -1132,7 +1183,24 @@ parse_revoked_certs(struct sshbuf *buf, struct ssh_krl *krl)
 			goto out;
 		}
 	}
-
+	/*
+	 * If Bloom filter extensions were present then their corresponding
+	 * revocation subsections must be too.
+	 */
+	if ((r = revoked_certs_for_ca_key(krl, ca_key, &rc, 0)) != 0) {
+		if ((RB_MIN(revoked_serial_tree,
+		    &rc->revoked_serials) == NULL &&
+		    rc->serial_bloom != NULL) ||
+		    (RB_MIN(revoked_key_id_tree,
+		    &rc->revoked_key_ids) == NULL &&
+		    rc->key_id_bloom != NULL)) {
+			error("KRL Bloom filter extension present without "
+			    "corresponding revocation section");
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+	}
+	/* success */
 	r = 0;
  out:
 	if (bitmap != NULL)
@@ -1188,10 +1256,37 @@ extension_section(struct sshbuf *sect, struct ssh_krl *krl)
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
-	debug_f("extension %s critical %u len %zu",
+	debug3_f("extension %s critical %u len %zu",
 	    name, critical, sshbuf_len(value));
-	/* no extensions are currently supported */
-	if (critical) {
+	if (strcmp(name, "bloom-explicit-key") == 0) {
+		if (RB_MIN(revoked_blob_tree, &krl->revoked_keys) != NULL) {
+			/* Bloom filter section must appear before keys */
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if ((r = parse_set_bloom_extension(value,
+		    &krl->key_bloom)) != 0)
+			goto out;
+	} else if (strcmp(name, "bloom-key-hash-sha1") == 0) {
+		if (RB_MIN(revoked_blob_tree, &krl->revoked_sha1s) != NULL) {
+			/* Bloom filter section must appear before SHA1s */
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if ((r = parse_set_bloom_extension(value,
+		    &krl->sha1_bloom)) != 0)
+			goto out;
+	} else if (strcmp(name, "bloom-key-hash-sha256") == 0) {
+		if (RB_MIN(revoked_blob_tree,
+		    &krl->revoked_sha256s) != NULL) {
+			/* Bloom filter section must appear before SHA1s */
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if ((r = parse_set_bloom_extension(value,
+		    &krl->sha256_bloom)) != 0)
+			goto out;
+	} else if (critical) {
 		error("KRL contains unsupported critical section \"%s\"", name);
 		r = SSH_ERR_FEATURE_UNSUPPORTED;
 		goto out;
@@ -1305,6 +1400,21 @@ ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp)
 			goto out;
 		}
 	}
+	/*
+	 * If Bloom filter extensions were present then their corresponding
+	 * revocation sections must be too.
+	 */
+	if ((RB_MIN(revoked_blob_tree, &krl->revoked_keys) == NULL &&
+	    krl->key_bloom != NULL) ||
+	    (RB_MIN(revoked_blob_tree, &krl->revoked_sha1s) == NULL &&
+	    krl->sha1_bloom != NULL) ||
+	    (RB_MIN(revoked_blob_tree, &krl->revoked_sha256s) == NULL &&
+	    krl->sha256_bloom != NULL)) {
+		error("KRL Bloom filter extension present without "
+		    "corresponding revocation section");
+		r = SSH_ERR_INVALID_FORMAT;
+		goto out;
+	}
 
 	/* Success */
 	*krlp = krl;
@@ -1323,14 +1433,25 @@ is_cert_revoked(const struct sshkey *key, struct revoked_certs *rc)
 {
 	struct revoked_serial rs, *ers;
 	struct revoked_key_id rki, *erki;
+	int r, found;
 
 	/* Check revocation by cert key ID */
-	memset(&rki, 0, sizeof(rki));
-	rki.key_id = key->cert->key_id;
-	erki = RB_FIND(revoked_key_id_tree, &rc->revoked_key_ids, &rki);
-	if (erki != NULL) {
-		KRL_DBG(("revoked by key ID"));
-		return SSH_ERR_KEY_REVOKED;
+	found = 1;
+	if (rc->key_id_bloom != NULL) {
+		if ((r = sshbloom_test_cstring(rc->key_id_bloom,
+		    key->cert->key_id, &found)) != 0)
+			return r;
+		if (found)
+			debug3_f("cert appears in key ID Bloom filter");
+	}
+	if (found) {
+		memset(&rki, 0, sizeof(rki));
+		rki.key_id = key->cert->key_id;
+		erki = RB_FIND(revoked_key_id_tree, &rc->revoked_key_ids, &rki);
+		if (erki != NULL) {
+			debug_f("revoked by key ID");
+			return SSH_ERR_KEY_REVOKED;
+		}
 	}
 
 	/*
@@ -1340,13 +1461,23 @@ is_cert_revoked(const struct sshkey *key, struct revoked_certs *rc)
 	if (key->cert->serial == 0)
 		return 0;
 
-	memset(&rs, 0, sizeof(rs));
-	rs.lo = rs.hi = key->cert->serial;
-	ers = RB_FIND(revoked_serial_tree, &rc->revoked_serials, &rs);
-	if (ers != NULL) {
-		KRL_DBG(("revoked serial %llu matched %llu:%llu",
-		    key->cert->serial, ers->lo, ers->hi));
-		return SSH_ERR_KEY_REVOKED;
+	found = 1;
+	if (rc->serial_bloom != NULL) {
+		if ((r = sshbloom_test_u64(rc->serial_bloom,
+		    key->cert->serial, &found)) != 0)
+			return r;
+		if (found)
+			debug3_f("cert appears in serial Bloom filter");
+	}
+	if (found) {
+		memset(&rs, 0, sizeof(rs));
+		rs.lo = rs.hi = key->cert->serial;
+		ers = RB_FIND(revoked_serial_tree, &rc->revoked_serials, &rs);
+		if (ers != NULL) {
+			debug_f("revoked serial %llu matched %llu:%llu",
+			    key->cert->serial, ers->lo, ers->hi);
+			return SSH_ERR_KEY_REVOKED;
+		}
 	}
 	return 0;
 }
@@ -1357,39 +1488,75 @@ is_key_revoked(struct ssh_krl *krl, const struct sshkey *key)
 {
 	struct revoked_blob rb, *erb;
 	struct revoked_certs *rc;
-	int r;
+	int r, found;
 
 	/* Check explicitly revoked hashes first */
 	memset(&rb, 0, sizeof(rb));
 	if ((r = sshkey_fingerprint_raw(key, SSH_DIGEST_SHA1,
 	    &rb.blob, &rb.len)) != 0)
 		return r;
-	erb = RB_FIND(revoked_blob_tree, &krl->revoked_sha1s, &rb);
-	free(rb.blob);
-	if (erb != NULL) {
-		KRL_DBG(("revoked by key SHA1"));
-		return SSH_ERR_KEY_REVOKED;
+	found = 1;
+	if (krl->sha1_bloom != NULL) {
+		if ((r = sshbloom_test_ptr(krl->sha1_bloom,
+		    rb.blob, rb.len, &found)) != 0) {
+			free(rb.blob);
+			return r;
+		}
+		if (found)
+			debug3_f("key appears in SHA1 Bloom filter");
+	}
+	if (found) {
+		erb = RB_FIND(revoked_blob_tree, &krl->revoked_sha1s, &rb);
+		free(rb.blob);
+		if (erb != NULL) {
+			debug_f("revoked by key SHA1");
+			return SSH_ERR_KEY_REVOKED;
+		}
 	}
 	memset(&rb, 0, sizeof(rb));
 	if ((r = sshkey_fingerprint_raw(key, SSH_DIGEST_SHA256,
 	    &rb.blob, &rb.len)) != 0)
 		return r;
-	erb = RB_FIND(revoked_blob_tree, &krl->revoked_sha256s, &rb);
-	free(rb.blob);
-	if (erb != NULL) {
-		KRL_DBG(("revoked by key SHA256"));
-		return SSH_ERR_KEY_REVOKED;
+	found = 1;
+	if (krl->sha256_bloom != NULL) {
+		if ((r = sshbloom_test_ptr(krl->sha256_bloom,
+		    rb.blob, rb.len, &found)) != 0) {
+			free(rb.blob);
+			return r;
+		}
+		if (found)
+			debug3_f("key appears in SHA1 Bloom filter");
+	}
+	if (found) {
+		erb = RB_FIND(revoked_blob_tree, &krl->revoked_sha256s, &rb);
+		free(rb.blob);
+		if (erb != NULL) {
+			debug_f("revoked by key SHA256");
+			return SSH_ERR_KEY_REVOKED;
+		}
 	}
 
 	/* Next, explicit keys */
 	memset(&rb, 0, sizeof(rb));
 	if ((r = plain_key_blob(key, &rb.blob, &rb.len)) != 0)
 		return r;
-	erb = RB_FIND(revoked_blob_tree, &krl->revoked_keys, &rb);
-	free(rb.blob);
-	if (erb != NULL) {
-		KRL_DBG(("revoked by explicit key"));
-		return SSH_ERR_KEY_REVOKED;
+	found = 1;
+	if (krl->key_bloom != NULL) {
+		if ((r = sshbloom_test_ptr(krl->key_bloom,
+		    rb.blob, rb.len, &found)) != 0) {
+			free(rb.blob);
+			return r;
+		}
+		if (found)
+			debug3_f("key appears in explicit key Bloom filter");
+	}
+	if (found) {
+		erb = RB_FIND(revoked_blob_tree, &krl->revoked_keys, &rb);
+		free(rb.blob);
+		if (erb != NULL) {
+			KRL_DBG(("revoked by explicit key"));
+			return SSH_ERR_KEY_REVOKED;
+		}
 	}
 
 	if (!sshkey_is_cert(key))
@@ -1481,6 +1648,8 @@ krl_dump(struct ssh_krl *krl, FILE *f)
 	}
 	fputc('\n', f);
 
+	if (krl->key_bloom)
+		fprintf(f, "# has revoked keys Bloom filter\n");
 	RB_FOREACH(rb, revoked_blob_tree, &krl->revoked_keys) {
 		if ((r = sshkey_from_blob(rb->blob, rb->len, &key)) != 0) {
 			ret = SSH_ERR_INVALID_FORMAT;
@@ -1497,11 +1666,15 @@ krl_dump(struct ssh_krl *krl, FILE *f)
 		free(fp);
 		free(key);
 	}
+	if (krl->sha256_bloom)
+		fprintf(f, "# has revoked key SHA256s Bloom filter\n");
 	RB_FOREACH(rb, revoked_blob_tree, &krl->revoked_sha256s) {
 		fp = tohex(rb->blob, rb->len);
 		fprintf(f, "hash: SHA256:%s\n", fp);
 		free(fp);
 	}
+	if (krl->sha1_bloom)
+		fprintf(f, "# has revoked key SHA1s Bloom filter\n");
 	RB_FOREACH(rb, revoked_blob_tree, &krl->revoked_sha1s) {
 		/*
 		 * There is not KRL spec keyword for raw SHA1 hashes, so
@@ -1527,6 +1700,8 @@ krl_dump(struct ssh_krl *krl, FILE *f)
 			    sshkey_ssh_name(rc->ca_key), fp);
 			free(fp);
 		}
+		if (rc->serial_bloom)
+			fprintf(f, "# has revoked serials Bloom filter\n");
 		RB_FOREACH(rs, revoked_serial_tree, &rc->revoked_serials) {
 			if (rs->lo == rs->hi) {
 				fprintf(f, "serial: %llu\n",
@@ -1537,6 +1712,8 @@ krl_dump(struct ssh_krl *krl, FILE *f)
 				    (unsigned long long)rs->hi);
 			}
 		}
+		if (rc->key_id_bloom)
+			fprintf(f, "# has revoked key IDs Bloom filter\n");
 		RB_FOREACH(rki, revoked_key_id_tree, &rc->revoked_key_ids) {
 			/*
 			 * We don't want key IDs with embedded newlines to
