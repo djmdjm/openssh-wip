@@ -28,8 +28,6 @@ typedef uint64_t crypto_uint64;
 int	crypto_hash_sha512(unsigned char *, const unsigned char *,
     unsigned long long);
 
-int	crypto_verify_32(const unsigned char *, const unsigned char *);
-
 #define crypto_sign_ed25519_SECRETKEYBYTES 64U
 #define crypto_sign_ed25519_PUBLICKEYBYTES 32U
 #define crypto_sign_ed25519_BYTES 64U
