@@ -2179,7 +2179,8 @@ do_show_cert(struct passwd *pw)
 }
 
 static void
-load_krl(const char *path, struct ssh_krl **krlp)
+load_krl(const char *path, struct ssh_krl **krlp,
+    struct sshkey **trusted_keys, size_t ntrusted_keys)
 {
 	struct sshbuf *krlbuf;
 	int r;
@@ -2187,7 +2188,8 @@ load_krl(const char *path, struct ssh_krl **krlp)
 	if ((r = sshbuf_load_file(path, &krlbuf)) != 0)
 		fatal_r(r, "Unable to load KRL %s", path);
 	/* XXX check sigs */
-	if ((r = ssh_krl_from_blob(krlbuf, krlp, NULL, 0)) != 0 ||
+	if ((r = ssh_krl_from_blob(krlbuf, krlp,
+	    trusted_keys, ntrusted_keys)) != 0 ||
 	    *krlp == NULL)
 		fatal_r(r, "Invalid KRL file %s", path);
 	sshbuf_free(krlbuf);
@@ -2379,19 +2381,53 @@ update_krl_from_file(struct passwd *pw, const char *file, int wild_ca,
 }
 
 static void
+krl_process_opts(struct passwd *pw, char * const *opts, size_t nopts,
+    struct sshkey ***sig_keys, size_t *nsig_keys)
+{
+	struct sshkey *key;
+	char *path;
+	size_t i;
+
+	for (i = 0; i < nopts; i++) {
+		if (strncasecmp(opts[i], "signing-key=", 12) == 0) {
+			path = tilde_expand_filename(opts[i] + 12, pw->pw_uid);
+			key = load_identity(path, NULL);
+			free(path);
+			*sig_keys = xrecallocarray(*sig_keys, *nsig_keys,
+			    *nsig_keys + 1, sizeof(*sig_keys));
+			(*sig_keys)[(*nsig_keys)++] = key;
+		} else
+			fatal("Invalid option \"%s\"", opts[i]);
+	}
+}
+
+static void
+free_sig_keys(struct sshkey **sig_keys, size_t nsig_keys)
+{
+	size_t i;
+
+	for (i = 0; i < nsig_keys; i++)
+		sshkey_free(sig_keys[i]);
+	free(sig_keys);
+}
+
+static void
 do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
     unsigned long long krl_version, const char *krl_comment,
+    char * const *opts, size_t nopts,
     int argc, char **argv)
 {
 	struct ssh_krl *krl;
 	struct stat sb;
-	struct sshkey *ca = NULL;
+	struct sshkey *ca = NULL, **sig_keys = NULL;
 	int i, r, wild_ca = 0;
+	size_t nsig_keys = 0;
 	char *tmp;
 	struct sshbuf *kbuf;
 
 	if (*identity_file == '\0')
 		fatal("KRL generation requires an output file");
+	krl_process_opts(pw, opts, nopts, &sig_keys, &nsig_keys);
 	if (stat(identity_file, &sb) == -1) {
 		if (errno != ENOENT)
 			fatal("Cannot access KRL \"%s\": %s",
@@ -2411,7 +2447,7 @@ do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
 	}
 
 	if (updating)
-		load_krl(identity_file, &krl);
+		load_krl(identity_file, &krl, NULL, 0);
 	else if ((krl = ssh_krl_init()) == NULL)
 		fatal("couldn't create KRL");
 
@@ -2425,26 +2461,30 @@ do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
 
 	if ((kbuf = sshbuf_new()) == NULL)
 		fatal("sshbuf_new failed");
-	if (ssh_krl_to_blob(krl, kbuf, NULL, 0) != 0)
+	if (ssh_krl_to_blob(krl, kbuf, sig_keys, nsig_keys) != 0)
 		fatal("Couldn't generate KRL");
 	if ((r = sshbuf_write_file(identity_file, kbuf)) != 0)
 		fatal("write %s: %s", identity_file, strerror(errno));
 	sshbuf_free(kbuf);
 	ssh_krl_free(krl);
 	sshkey_free(ca);
+	free_sig_keys(sig_keys, nsig_keys);
 }
 
 static void
-do_check_krl(struct passwd *pw, int print_krl, int argc, char **argv)
+do_check_krl(struct passwd *pw, int print_krl,
+    char * const *opts, size_t nopts, int argc, char **argv)
 {
 	int i, r, ret = 0;
 	char *comment;
 	struct ssh_krl *krl;
-	struct sshkey *k;
+	struct sshkey *k = NULL, **sig_keys = NULL;
+	size_t nsig_keys = 0;
 
 	if (*identity_file == '\0')
 		fatal("KRL checking requires an input file");
-	load_krl(identity_file, &krl);
+	krl_process_opts(pw, opts, nopts, &sig_keys, &nsig_keys);
+	load_krl(identity_file, &krl, sig_keys, nsig_keys);
 	if (print_krl)
 		krl_dump(krl, stdout);
 	for (i = 0; i < argc; i++) {
@@ -2460,6 +2500,7 @@ do_check_krl(struct passwd *pw, int print_krl, int argc, char **argv)
 		free(comment);
 	}
 	ssh_krl_free(krl);
+	free_sig_keys(sig_keys, nsig_keys);
 	exit(ret);
 }
 
@@ -2659,7 +2700,6 @@ sig_process_opts(char * const *opts, size_t nopts, char **hashalgp,
 	}
 	return 0;
 }
-
 
 static int
 sig_sign(const char *keypath, const char *sig_namespace, int require_agent,
@@ -3643,11 +3683,11 @@ main(int argc, char **argv)
 	}
 	if (gen_krl) {
 		do_gen_krl(pw, update_krl, ca_key_path,
-		    cert_serial, identity_comment, argc, argv);
+		    cert_serial, identity_comment, opts, nopts, argc, argv);
 		return (0);
 	}
 	if (check_krl) {
-		do_check_krl(pw, print_fingerprint, argc, argv);
+		do_check_krl(pw, print_fingerprint, opts, nopts, argc, argv);
 		return (0);
 	}
 	if (ca_key_path != NULL) {
