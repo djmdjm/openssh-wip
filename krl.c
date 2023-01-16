@@ -1054,87 +1054,81 @@ extension_section(struct sshbuf *sect, struct ssh_krl *krl)
 	return r;
 }
 
-/* Attempt to parse a KRL, checking its signature (if any) with sign_ca_keys. */
-int
-ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp,
-    const struct sshkey **sign_ca_keys, size_t nsign_ca_keys)
+/*
+ * Checks whether this is a KRL (correct magic) with supported version and
+ * verified signatures if present. NB. does not check whether keys are trusted
+ * to sign the KRL, caller must do by checking contents of returned key list.
+ * Does not modify buffer.
+ */
+static int
+check_krl_signature_header(struct sshbuf *buf,
+    struct sshkey ***signing_keysp, size_t *nsigning_keysp)
 {
-	struct sshbuf *copy = NULL, *sect = NULL;
-	struct ssh_krl *krl = NULL;
-	char timestamp[64];
-	int r = SSH_ERR_INTERNAL_ERROR, sig_seen;
-	struct sshkey *key = NULL, **ca_used = NULL, **tmp_ca_used;
+	int r = SSH_ERR_INTERNAL_ERROR;
+	struct sshbuf *copy = NULL;
+	u_int format_version;
 	u_char type;
 	const u_char *blob;
-	size_t i, j, sig_off, sects_off, blen, nca_used;
-	u_int format_version;
+	struct sshkey *key = NULL, **tmp, **sig_keys = NULL;
+	size_t i, sig_off, blen, nsig_keys = 0;
 
-	nca_used = 0;
-	*krlp = NULL;
-	if (sshbuf_len(buf) < sizeof(KRL_MAGIC) - 1 ||
-	    memcmp(sshbuf_ptr(buf), KRL_MAGIC, sizeof(KRL_MAGIC) - 1) != 0) {
-		debug3_f("not a KRL");
-		return SSH_ERR_KRL_BAD_MAGIC;
+	if (signing_keysp == NULL || nsigning_keysp == NULL)
+		return SSH_ERR_INTERNAL_ERROR;
+	*signing_keysp = NULL;
+	*nsigning_keysp = 0;
+
+	/* KRL must begin with magic string */
+	if ((r = sshbuf_cmp(buf, 0, KRL_MAGIC, sizeof(KRL_MAGIC) - 1)) != 0) {
+		debug2_f("bad KRL magic header");
+		goto out;
 	}
-
-	/* Take a copy of the KRL buffer so we can verify its signature later */
+	/* Don't modify original buffer */
 	if ((copy = sshbuf_fromb(buf)) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
+		error_f("sshbuf_fromb failed");
 		goto out;
 	}
-	if ((r = sshbuf_consume(copy, sizeof(KRL_MAGIC) - 1)) != 0)
-		goto out;
-
-	if ((krl = ssh_krl_init()) == NULL) {
-		error_f("alloc failed");
-		goto out;
-	}
-
-	if ((r = sshbuf_get_u32(copy, &format_version)) != 0)
+	if ((r = sshbuf_consume(copy, sizeof(KRL_MAGIC) - 1)) != 0 ||
+	    (r = sshbuf_get_u32(copy, &format_version)) != 0)
 		goto out;
 	if (format_version != KRL_FORMAT_VERSION) {
+		error_f("unsupported KRL format version %u", format_version);
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
-	if ((r = sshbuf_get_u64(copy, &krl->krl_version)) != 0 ||
-	    (r = sshbuf_get_u64(copy, &krl->generated_date)) != 0 ||
-	    (r = sshbuf_get_u64(copy, &krl->flags)) != 0 ||
+	/* Skip header contents */
+	if ((r = sshbuf_get_u64(copy, NULL)) != 0 ||
+	    (r = sshbuf_get_u64(copy, NULL)) != 0 ||
+	    (r = sshbuf_get_u64(copy, NULL)) != 0 ||
 	    (r = sshbuf_skip_string(copy)) != 0 ||
-	    (r = sshbuf_get_cstring(copy, &krl->comment, NULL)) != 0)
+	    (r = sshbuf_get_cstring(copy, NULL, NULL)) != 0) {
+		error_fr(r, "parse KRL header");
 		goto out;
-
-	format_timestamp(krl->generated_date, timestamp, sizeof(timestamp));
-	debug("KRL version %llu generated at %s%s%s",
-	    (long long unsigned)krl->krl_version, timestamp,
-	    *krl->comment ? ": " : "", krl->comment);
-
+	}
 	/*
-	 * 1st pass: verify signatures, if any. This is done to avoid
-	 * detailed parsing of data whose provenance is unverified.
+	 * Perform minimal parsing (section type/len only) to reach signature
+	 * sections, if present.
 	 */
-	sig_seen = 0;
 	if (sshbuf_len(buf) < sshbuf_len(copy)) {
 		/* Shouldn't happen */
 		r = SSH_ERR_INTERNAL_ERROR;
 		goto out;
 	}
-	sects_off = sshbuf_len(buf) - sshbuf_len(copy);
 	while (sshbuf_len(copy) > 0) {
 		if ((r = sshbuf_get_u8(copy, &type)) != 0 ||
 		    (r = sshbuf_get_string_direct(copy, &blob, &blen)) != 0)
 			goto out;
-		KRL_DBG(("first pass, section 0x%02x", type));
+		KRL_DBG(("section 0x%02x", type));
 		if (type != KRL_SECTION_SIGNATURE) {
-			if (sig_seen) {
+			/* Format requires signature section(s) be at end */
+			if (nsig_keys != 0) {
 				error("KRL contains non-signature section "
 				    "after signature");
 				r = SSH_ERR_INVALID_FORMAT;
 				goto out;
 			}
-			/* Not interested for now. */
-			continue;
+			continue; /* only interested in signature sections */
 		}
-		sig_seen = 1;
+		/* This is a signature section */
 		/* First string component is the signing key */
 		if ((r = sshkey_from_blob(blob, blen, &key)) != 0) {
 			r = SSH_ERR_INVALID_FORMAT;
@@ -1145,19 +1139,20 @@ ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp,
 			r = SSH_ERR_INTERNAL_ERROR;
 			goto out;
 		}
+		/* signature is over entire buffer to here; capture offset */
 		sig_off = sshbuf_len(buf) - sshbuf_len(copy);
 		/* Second string component is the signature itself */
 		if ((r = sshbuf_get_string_direct(copy, &blob, &blen)) != 0) {
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
 		}
-		/* Check signature over entire KRL up to this point */
+		/* Verify signature */
 		if ((r = sshkey_verify(key, blob, blen,
 		    sshbuf_ptr(buf), sig_off, NULL, 0, NULL)) != 0)
 			goto out;
 		/* Check if this key has already signed this KRL */
-		for (i = 0; i < nca_used; i++) {
-			if (sshkey_equal(ca_used[i], key)) {
+		for (i = 0; i < nsig_keys; i++) {
+			if (sshkey_equal(sig_keys[i], key)) {
 				error("KRL signed more than once with "
 				    "the same key");
 				r = SSH_ERR_INVALID_FORMAT;
@@ -1165,41 +1160,135 @@ ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp,
 			}
 		}
 		/* Record keys used to sign the KRL */
-		tmp_ca_used = recallocarray(ca_used, nca_used, nca_used + 1,
-		    sizeof(*ca_used));
-		if (tmp_ca_used == NULL) {
+		if ((tmp = recallocarray(sig_keys, nsig_keys, nsig_keys + 1,
+		    sizeof(*sig_keys))) == NULL) {
 			r = SSH_ERR_ALLOC_FAIL;
 			goto out;
 		}
-		ca_used = tmp_ca_used;
-		ca_used[nca_used++] = key;
+		sig_keys = tmp;
+		sig_keys[nsig_keys++] = key;
 		key = NULL;
 	}
 
-	if (sshbuf_len(copy) != 0) {
-		/* Shouldn't happen */
-		r = SSH_ERR_INTERNAL_ERROR;
+	/* success */
+	r = 0;
+	*signing_keysp = sig_keys;
+	*nsigning_keysp = nsig_keys;
+	nsig_keys = 0;
+	sig_keys = NULL; /* transferred */
+ out:
+	for (i = 0; i < nsig_keys; i++)
+		sshkey_free(sig_keys[i]);
+	free(sig_keys);
+	sshkey_free(key);
+	sshbuf_free(copy);
+	return r;
+}
+
+/*
+ * Check that the signing keys "sig_keys" extracted from a KRL during parsing
+ * are not all revoked by the KRL and that, if a set of trusted signing keys
+ * were specified, that at least one of them matches the unrevoked keys.
+ */
+static int
+check_krl_signing_keys(struct ssh_krl *krl,
+    struct sshkey **sig_keys, size_t nsig_keys,
+    struct sshkey * const *trusted_keys, size_t ntrusted_keys)
+{
+	int good_sig = 0;
+	size_t i, j;
+
+	/* Check that the key(s) used to sign the KRL weren't revoked */
+	if (nsig_keys != 0) {
+		good_sig = 0;
+		for (i = 0; i < nsig_keys; i++) {
+			if (ssh_krl_check_key(krl, sig_keys[i]) == 0)
+				good_sig = 1;
+			else {
+				/* Remove this key from consideration later */
+				sshkey_free(sig_keys[i]);
+				sig_keys[i] = NULL;
+			}
+		}
+		if (!good_sig) {
+			error("All keys used to sign KRL were revoked");
+			return SSH_ERR_KEY_REVOKED;
+		}
+	}
+	/*
+	 * If we have trusted signing keys, then verify that one was used
+	 * to sign the KRL (revoked keys have been eliminated).
+	 */
+	if (ntrusted_keys == 0)
+		return 0; /* no trusted signing keys = nothing to do */
+	for (i = 0; i < ntrusted_keys; i++) {
+		for (j = 0; j < nsig_keys; j++) {
+			if (sig_keys[j] == NULL)
+				continue;
+			if (sshkey_equal(sig_keys[j], trusted_keys[i])) {
+				return 0; /* only need one good signature */
+			}
+		}
+	}
+	/* no keys matches */
+	error("KRL not signed with any trusted key");
+	return SSH_ERR_SIGNATURE_INVALID;
+}
+
+
+/* Attempt to parse a KRL, checking its signature (if any) with sign_ca_keys. */
+int
+ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp,
+    struct sshkey * const *sign_ca_keys, size_t nsign_ca_keys)
+{
+	struct sshbuf *copy = NULL, *sect = NULL;
+	struct ssh_krl *krl = NULL;
+	char timestamp[64];
+	int r = SSH_ERR_INTERNAL_ERROR;
+	struct sshkey *key = NULL, **sig_keys = NULL;
+	u_char type;
+	size_t i, nsig_keys = 0;
+
+	*krlp = NULL;
+	if ((r = check_krl_signature_header(buf, &sig_keys, &nsig_keys)) != 0)
+		return r;
+
+	if ((krl = ssh_krl_init()) == NULL) {
+		error_f("alloc failed");
 		goto out;
 	}
-
-	/*
-	 * 2nd pass: parse and load the KRL, skipping the header to the point
-	 * where the section start.
-	 */
-	sshbuf_free(copy);
+	/* Don't modify buffer */
 	if ((copy = sshbuf_fromb(buf)) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if ((r = sshbuf_consume(copy, sects_off)) != 0)
+	/*
+	 * Magic header and format version have already been checked,
+	 * so skip those and proceed to parse the remainder of the header
+	 */
+	if ((r = sshbuf_consume(copy, sizeof(KRL_MAGIC) - 1)) != 0 ||
+	    (r = sshbuf_get_u32(copy, NULL)) != 0 || /* format version */
+	    (r = sshbuf_get_u64(copy, &krl->krl_version)) != 0 ||
+	    (r = sshbuf_get_u64(copy, &krl->generated_date)) != 0 ||
+	    (r = sshbuf_get_u64(copy, &krl->flags)) != 0 ||
+	    (r = sshbuf_skip_string(copy)) != 0 ||
+	    (r = sshbuf_get_cstring(copy, &krl->comment, NULL)) != 0) {
+		error_fr(r, "parse KRL header");
 		goto out;
+	}
+	format_timestamp(krl->generated_date, timestamp, sizeof(timestamp));
+	debug("KRL version %llu generated at %s%s%s",
+	    (long long unsigned)krl->krl_version, timestamp,
+	    *krl->comment ? ": " : "", krl->comment);
+
+	/* Parse and load the KRL sections. */
 	while (sshbuf_len(copy) > 0) {
 		sshbuf_free(sect);
 		sect = NULL;
 		if ((r = sshbuf_get_u8(copy, &type)) != 0 ||
 		    (r = sshbuf_froms(copy, &sect)) != 0)
 			goto out;
-		KRL_DBG(("second pass, section 0x%02x", type));
+		KRL_DBG(("section 0x%02x", type));
 
 		switch (type) {
 		case KRL_SECTION_CERTIFICATES:
@@ -1244,50 +1333,19 @@ ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp,
 		}
 	}
 
-	/* Check that the key(s) used to sign the KRL weren't revoked */
-	sig_seen = 0;
-	for (i = 0; i < nca_used; i++) {
-		if (ssh_krl_check_key(krl, ca_used[i]) == 0)
-			sig_seen = 1;
-		else {
-			sshkey_free(ca_used[i]);
-			ca_used[i] = NULL;
-		}
-	}
-	if (nca_used && !sig_seen) {
-		error("All keys used to sign KRL were revoked");
-		r = SSH_ERR_KEY_REVOKED;
+	if ((r = check_krl_signing_keys(krl, sig_keys, nsig_keys,
+	    sign_ca_keys, nsign_ca_keys)) != 0)
 		goto out;
-	}
 
-	/* If we have CA keys, then verify that one was used to sign the KRL */
-	if (sig_seen && nsign_ca_keys != 0) {
-		sig_seen = 0;
-		for (i = 0; !sig_seen && i < nsign_ca_keys; i++) {
-			for (j = 0; j < nca_used; j++) {
-				if (ca_used[j] == NULL)
-					continue;
-				if (sshkey_equal(ca_used[j], sign_ca_keys[i])) {
-					sig_seen = 1;
-					break;
-				}
-			}
-		}
-		if (!sig_seen) {
-			r = SSH_ERR_SIGNATURE_INVALID;
-			error("KRL not signed with any trusted key");
-			goto out;
-		}
-	}
-
+	/* Success */
 	*krlp = krl;
 	r = 0;
  out:
 	if (r != 0)
 		ssh_krl_free(krl);
-	for (i = 0; i < nca_used; i++)
-		sshkey_free(ca_used[i]);
-	free(ca_used);
+	for (i = 0; i < nsig_keys; i++)
+		sshkey_free(sig_keys[i]);
+	free(sig_keys);
 	sshkey_free(key);
 	sshbuf_free(copy);
 	sshbuf_free(sect);
