@@ -292,13 +292,11 @@ input_userauth_request(int type, u_int32_t seq, struct ssh *ssh)
 		}
 		ssh_packet_set_log_preamble(ssh, "%suser %s",
 		    authctxt->valid ? "authenticating " : "invalid ", user);
-		setproctitle("%s%s", authctxt->valid ? user : "unknown",
-		    use_privsep ? " [net]" : "");
+		setproctitle("%s [net]", authctxt->valid ? user : "unknown");
 		authctxt->user = xstrdup(user);
 		authctxt->service = xstrdup(service);
 		authctxt->style = style ? xstrdup(style) : NULL;
-		if (use_privsep)
-			mm_inform_authserv(service, style);
+		mm_inform_authserv(service, style);
 		userauth_banner(ssh);
 		if ((r = kex_server_update_ext_info(ssh)) != 0)
 			fatal_fr(r, "kex_server_update_ext_info failed");
