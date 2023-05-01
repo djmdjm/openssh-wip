@@ -619,9 +619,15 @@ usage(void)
 }
 
 static void
+parse_hostkeys(struct sshbuf *hostkeys)
+{
+	/* XXX */
+}
+
+static void
 recv_rexec_state(int fd, struct sshbuf *conf)
 {
-	struct sshbuf *m, *inc;
+	struct sshbuf *m, *inc, *hostkeys;
 	u_char *cp, ver;
 	size_t len;
 	int r;
@@ -637,7 +643,8 @@ recv_rexec_state(int fd, struct sshbuf *conf)
 		fatal_fr(r, "parse version");
 	if (ver != 0)
 		fatal_f("rexec version mismatch");
-	if ((r = sshbuf_get_string(m, &cp, &len)) != 0 ||
+	if ((r = sshbuf_get_string(m, &cp, &len)) != 0 || /* XXX _direct */
+	    (r = sshbuf_froms(m, &hostkeys)) != 0 ||
 	    (r = sshbuf_get_stringb(m, inc)) != 0)
 		fatal_fr(r, "parse config");
 
@@ -655,8 +662,11 @@ recv_rexec_state(int fd, struct sshbuf *conf)
 		TAILQ_INSERT_TAIL(&includes, item, entry);
 	}
 
+	parse_hostkeys(hostkeys);
+
 	free(cp);
 	sshbuf_free(m);
+	sshbuf_free(hostkeys);
 
 	debug3_f("done");
 }
