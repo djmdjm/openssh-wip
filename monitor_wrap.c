@@ -107,16 +107,6 @@ mm_log_handler(LogLevel level, int forced, const char *msg, void *ctx)
 	sshbuf_free(log_msg);
 }
 
-int
-mm_is_monitor(void)
-{
-	/*
-	 * m_pid is only set in the privileged part, and
-	 * points to the unprivileged child.
-	 */
-	return (pmonitor && pmonitor->m_pid > 0);
-}
-
 static void
 mm_reap(void)
 {
