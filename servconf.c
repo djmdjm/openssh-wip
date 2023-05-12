@@ -859,21 +859,6 @@ process_queued_listen_addrs(ServerOptions *options)
 	options->num_queued_listens = 0;
 }
 
-struct connection_info *
-get_connection_info(struct ssh *ssh, int populate, int use_dns)
-{
-	static struct connection_info ci;
-
-	if (ssh == NULL || !populate)
-		return &ci;
-	ci.host = use_dns ? ssh_remote_hostname(ssh) : ssh_remote_ipaddr(ssh);
-	ci.address = ssh_remote_ipaddr(ssh);
-	ci.laddress = ssh_local_ipaddr(ssh);
-	ci.lport = ssh_local_port(ssh);
-	ci.rdomain = ssh_packet_rdomain_in(ssh);
-	return &ci;
-}
-
 /*
  * The strategy for the Match blocks is that the config file is parsed twice.
  *
