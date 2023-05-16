@@ -58,20 +58,22 @@ DPADD+=	${LIBZ}
 .endif
 
 # The random relink kit, used on OpenBSD by /etc/rc
+RELINK_TAR=${PROG}.tar
 
 Makefile.relink: ${.CURDIR}/../Makefile.inc ${.CURDIR}/Makefile
 	# XXX assume a concatenation of these is OK
 	cat ${.CURDIR}/../Makefile.inc ${.CURDIR}/Makefile > Makefile.relink
 
-sshd.tar: ${OBJS} Makefile.relink
+${RELINK_TAR}: ${OBJS} Makefile.relink
 	tar cf $@ ${OBJS} Makefile.relink
 
-afterinstall: sshd.tar
+afterinstall: ${RELINK_TAR}
 	install -d -o root -g wheel -m 755 \
-	    ${DESTDIR}/usr/share/relink/usr/sbin/sshd
-	install -o ${BINOWN} -g ${BINGRP} -m 640 \
-	    sshd.tar ${DESTDIR}/usr/share/relink/usr/sbin/sshd/sshd.tar
+	    ${DESTDIR}/usr/share/relink/${BINDIR}/${PROG}
+	install -o ${BINOWN} -g ${BINGRP} -m 640 ${RELINK_TAR} \
+		${DESTDIR}/usr/share/relink/${BINDIR}/${PROG}/${RELINK_TAR}
 
 relink:
-	cc -o sshd `echo ${OBJS} | tr ' ' '\n' | sort -R` ${LDADD}
-	./sshd -V && install -o root -g wheel -m ${BINMODE} sshd /usr/sbin/sshd
+	cc -o ${PROG} `echo ${OBJS} | tr ' ' '\n' | sort -R` ${LDADD}
+	./${PROG} -V && install -o root -g wheel -m ${BINMODE} ${PROG} \
+		${BINDIR}/${PROG}
