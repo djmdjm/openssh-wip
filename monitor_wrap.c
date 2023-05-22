@@ -822,6 +822,40 @@ mm_ssh_gssapi_userok(char *user)
 }
 #endif /* GSSAPI */
 
+void
+mm_ssh_poll_child_exit(u_int *nchildren, u_int **pids, u_int **statuses)
+{
+	struct sshbuf *m;
+	int r;
+	u_int pid, status;
+
+	*nchildren = 0;
+	*pids = NULL;
+	*statuses = NULL;
+
+	if ((m = sshbuf_new()) == NULL)
+		fatal_f("sshbuf_new failed");
+
+	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_CHILD_EXIT, m);
+	mm_request_receive_expect(pmonitor->m_recvfd,
+	    MONITOR_ANS_CHILD_EXIT, m);
+
+	while (sshbuf_len(m) != 0) {
+		if ((r = sshbuf_get_u32(m, &pid) != 0) ||
+		    (r = sshbuf_get_u32(m, &status) != 0))
+			fatal_fr(r, "parse");
+		*pids = xrecallocarray(*pids, *nchildren,
+		    (*nchildren) + 1, sizeof(**pids));
+		*statuses = xrecallocarray(*statuses, *nchildren,
+		    (*nchildren) + 1, sizeof(**statuses));
+		(*pids)[*nchildren] = pid;
+		(*statuses)[*nchildren] = status;
+		(*nchildren)++;
+	}
+	sshbuf_free(m);
+	debug3_f("polled %u exited children", *nchildren);
+}
+
 /*
  * Inform channels layer of permitopen options for a single forwarding
  * direction (local/remote).

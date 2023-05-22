@@ -73,6 +73,7 @@
 #include "dispatch.h"
 #include "auth-options.h"
 #include "serverloop.h"
+#include "monitor_wrap.h"
 #include "ssherr.h"
 
 extern ServerOptions options;
@@ -298,15 +299,25 @@ collect_children(struct ssh *ssh)
 {
 	pid_t pid;
 	int status;
+	u_int i, nchildren, *statuses = NULL, *pids = NULL;
 
-	if (child_terminated) {
-		debug("Received SIGCHLD.");
-		while ((pid = waitpid(-1, &status, WNOHANG)) > 0 ||
-		    (pid == -1 && errno == EINTR))
-			if (pid > 0)
-				session_close_by_pid(ssh, pid, status);
-		child_terminated = 0;
-	}
+	if (!child_terminated)
+		return;
+	debug("Received SIGCHLD.");
+
+	/* XXX remove */
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0 ||
+	    (pid == -1 && errno == EINTR))
+		if (pid > 0)
+			session_close_by_pid(ssh, pid, status);
+
+	mm_ssh_poll_child_exit(&nchildren, &pids, &statuses);
+	for (i = 0; i < nchildren; i++)
+		session_close_by_pid(ssh, (pid_t)pids[i], (int)statuses[i]);
+
+	child_terminated = 0;
+	free(statuses);
+	free(pids);
 }
 
 void
@@ -323,6 +334,7 @@ server_loop2(struct ssh *ssh)
 	if (sigemptyset(&bsigset) == -1 || sigaddset(&bsigset, SIGCHLD) == -1)
 		error_f("bsigset setup: %s", strerror(errno));
 	ssh_signal(SIGCHLD, sigchld_handler);
+	ssh_signal(SIGUSR1, sigchld_handler);
 	child_terminated = 0;
 	connection_in = ssh_packet_get_connection_in(ssh);
 	connection_out = ssh_packet_get_connection_out(ssh);
