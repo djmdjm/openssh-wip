@@ -57,6 +57,7 @@ int mm_hostbased_key_allowed(struct ssh *, struct passwd *, const char *,
     const char *, struct sshkey *);
 int mm_sshkey_verify(const struct sshkey *, const u_char *, size_t,
     const u_char *, size_t, const char *, u_int, struct sshkey_sig_details **);
+void mm_ssh_poll_child_exit(u_int *, u_int **, u_int **);
 
 void mm_decode_activate_server_options(struct ssh *ssh, struct sshbuf *m);
 

@@ -112,6 +112,7 @@ int mm_answer_keyverify(struct ssh *, int, struct sshbuf *);
 int mm_answer_pty(struct ssh *, int, struct sshbuf *);
 int mm_answer_pty_cleanup(struct ssh *, int, struct sshbuf *);
 int mm_answer_term(struct ssh *, int, struct sshbuf *);
+int mm_answer_child_exit(struct ssh *, int, struct sshbuf *);
 int mm_answer_sesskey(struct ssh *, int, struct sshbuf *);
 int mm_answer_sessid(struct ssh *, int, struct sshbuf *);
 int mm_answer_state(struct ssh *, int, struct sshbuf *);
@@ -146,6 +147,10 @@ static char *auth_submethod = NULL;
 static u_int session_id2_len = 0;
 static u_char *session_id2 = NULL;
 static pid_t monitor_child_pid;
+
+/* session child tracking */
+static sig_atomic_t received_sigchld = 0;
+static u_int nchildren = 0, *pids = NULL, *statuses = NULL;
 
 struct mon_table {
 	enum monitor_reqtype type;
@@ -198,6 +203,7 @@ struct mon_table mon_dispatch_postauth20[] = {
     {MONITOR_REQ_PTY, 0, mm_answer_pty},
     {MONITOR_REQ_PTYCLEANUP, 0, mm_answer_pty_cleanup},
     {MONITOR_REQ_TERM, 0, mm_answer_term},
+    {MONITOR_REQ_CHILD_EXIT, 0, mm_answer_child_exit},
     {0, 0, NULL}
 };
 
@@ -330,6 +336,12 @@ monitor_child_handler(int sig)
 	kill(monitor_child_pid, sig);
 }
 
+static void
+monitor_child_sigchld(int sig)
+{
+	received_sigchld = 1;
+}
+
 void
 monitor_child_postauth(struct ssh *ssh, struct monitor *pmonitor)
 {
@@ -340,6 +352,7 @@ monitor_child_postauth(struct ssh *ssh, struct monitor *pmonitor)
 	ssh_signal(SIGHUP, &monitor_child_handler);
 	ssh_signal(SIGTERM, &monitor_child_handler);
 	ssh_signal(SIGINT, &monitor_child_handler);
+	ssh_signal(SIGCHLD, &monitor_child_sigchld);
 
 	mon_dispatch = mon_dispatch_postauth20;
 
@@ -411,6 +424,39 @@ monitor_read_log(struct monitor *pmonitor)
 	return 0;
 }
 
+static void
+reap_children(void)
+{
+	pid_t pid;
+	int inform = 0, st;
+
+	for (;;) {
+		if ((pid = waitpid(-1, &st, WNOHANG)) < 0) {
+			if (errno == EINTR)
+				continue;
+			fatal_f("waitpid: %s", strerror(errno));
+		}
+		if (pid == 0)
+			break;
+		debug3_f("child %u terminated %s %u%s", (u_int)pid,
+			WIFEXITED(st) ? "with exit status" : "on signal",
+			WIFEXITED(st) ? WEXITSTATUS(st) : WTERMSIG(st),
+			WCOREDUMP(st) ? " (core dumped)" : "");
+		/* XXX check the pid against the PIDs of active sessions */
+		pids = xrecallocarray(pids, nchildren, nchildren + 1,
+		    sizeof(*pids));
+		statuses = xrecallocarray(statuses, nchildren, nchildren + 1,
+		    sizeof(*statuses));
+		pids[nchildren] = (u_int)pid;
+		statuses[nchildren] = (u_int)st;
+		inform = 1;
+	}
+	/* inform child */
+	if (inform)
+		kill(monitor_child_pid, SIGUSR1);
+	received_sigchld = 0;
+}
+
 static int
 monitor_read(struct ssh *ssh, struct monitor *pmonitor, struct mon_table *ent,
     struct mon_table **pent)
@@ -419,14 +465,21 @@ monitor_read(struct ssh *ssh, struct monitor *pmonitor, struct mon_table *ent,
 	int r, ret;
 	u_char type;
 	struct pollfd pfd[2];
+	sigset_t nsigset, osigset;
 
+	sigemptyset(&nsigset);
+	sigaddset(&nsigset, SIGCHLD);
 	for (;;) {
+		sigprocmask(SIG_BLOCK, &nsigset, &osigset);
+		if (received_sigchld)
+			reap_children();
+
 		memset(&pfd, 0, sizeof(pfd));
 		pfd[0].fd = pmonitor->m_sendfd;
 		pfd[0].events = POLLIN;
 		pfd[1].fd = pmonitor->m_log_recvfd;
 		pfd[1].events = pfd[1].fd == -1 ? 0 : POLLIN;
-		if (poll(pfd, pfd[1].fd == -1 ? 1 : 2, -1) == -1) {
+		if (ppoll(pfd, pfd[1].fd == -1 ? 1 : 2, NULL, &osigset) == -1) {
 			if (errno == EINTR || errno == EAGAIN)
 				continue;
 			fatal_f("poll: %s", strerror(errno));
@@ -1564,6 +1617,25 @@ mm_answer_term(struct ssh *ssh, int sock, struct sshbuf *req)
 
 	/* Terminate process */
 	exit(res);
+}
+
+int
+mm_answer_child_exit(struct ssh *ssh, int sock, struct sshbuf *m)
+{
+	int r;
+	u_int i;
+
+	debug3_f("enter; %u children pending", nchildren);
+	sshbuf_reset(m);
+
+	for (i = 0; i < nchildren; i++) {
+		if ((r = sshbuf_put_u32(m, pids[i])) != 0 ||
+		    (r = sshbuf_put_u32(m, statuses[i])) != 0)
+			fatal_fr(r, "compose");
+	}
+
+	mm_request_send(sock, MONITOR_ANS_CHILD_EXIT, m);
+	return 0;
 }
 
 /* This function requires careful sanity checking */
