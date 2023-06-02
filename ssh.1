@@ -99,7 +99,8 @@ A complete command line may be specified as
 .Ar command ,
 or it may have additional arguments.
 If supplied, the arguments will be appended to the command, separated by
-spaces, before it is sent to the server to be executed.
+spaces, before it is sent to the server to be executed, using the remote
+user's shell.
 .Pp
 The options are as follows:
 .Pp
@@ -1444,8 +1445,10 @@ or related script.
 may be necessary to redirect the input from
 .Pa /dev/null
 to make this work.)
+This program may also be used for some notifications for the user, including
+situations where they are required to touch a FIDO token.
 .It Ev SSH_ASKPASS_REQUIRE
-Allows further control over the use of an askpass program.
+Allows further control over the use of the askpass program.
 If this variable is set to
 .Dq never
 then
@@ -1463,6 +1466,19 @@ then the askpass program will be used for all passphrase input regardless
 of whether
 .Ev DISPLAY
 is set.
+.Pp
+It is possible to control the use of the askpass program for requesting
+passphrases and issuing notifications separately by prefixing the above
+keywords with either
+.Dq askpass:
+or
+.Dq notify: .
+For example, a
+.Ev SSH_ASKPASS_REQUIRE
+value of
+.Dq askpass:force notify:never
+would require the use of the askpass program for requesting passphrases but
+disable it for notifications.
 .It Ev SSH_AUTH_SOCK
 Identifies the path of a
 .Ux Ns -domain
