@@ -282,7 +282,8 @@ notify_start(int force_askpass, const char *fmt, ...)
 
 	if ((s = getenv("DISPLAY")) != NULL)
 		have_display = *s != '\0';
-	if ((askpass = getenv("SSH_ASKPASS")) == NULL)
+	askpass = getenv(SSH_ASKPASS_NOTIFY_ENV);
+	if (askpass == NULL && (askpass = getenv(SSH_ASKPASS_ENV)) == NULL)
 		askpass = _PATH_SSH_ASKPASS_DEFAULT;
 	if (*askpass == '\0')
 		askpass = NULL;

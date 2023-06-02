@@ -68,6 +68,11 @@
 #define SSH_ASKPASS_ENV		"SSH_ASKPASS"
 
 /*
+ * Environment variable to set an askpass that is used for notifications only.
+ */
+#define SSH_ASKPASS_NOTIFY_ENV	"SSH_ASKPASS_NOTIFY"
+
+/*
  * Environment variable to control whether or not askpass is used.
  */
 #define SSH_ASKPASS_REQUIRE_ENV		"SSH_ASKPASS_REQUIRE"

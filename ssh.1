@@ -1447,6 +1447,13 @@ may be necessary to redirect the input from
 to make this work.)
 This program may also be used for some notifications for the user, including
 situations where they are required to touch a FIDO token.
+.It Ev SSH_ASKPASS_NOTIFY
+Specifies a program to be used instead of the default askpass program (or any
+one set via
+.Ev SSH_ASKPASS )
+that is used only for displaying notifications to the user, and not for
+requesting passphrases.
+By default, the same askpass program is used for both cases.
 .It Ev SSH_ASKPASS_REQUIRE
 Allows further control over the use of the askpass program.
 If this variable is set to
