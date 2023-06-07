@@ -2,15 +2,20 @@
 
 .PATH:		${.CURDIR}/..
 
-SRCS=	sshd.c servconf.c sshpty.c srclimit.c groupaccess.c auth2-methods.c
-SRCS+=	dns.c fatal.c compat.c utf8.c authfd.c canohost.c kex-names.c
-SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} \
-	${SRCS_MAC} ${SRCS_UTL} ${SRCS_SK_CLIENT}
+SRCS=	sshd-unpriv-postauth.c auth2-methods.c \
+	sshpty.c sshlogin.c servconf.c \
+	serverloop.c auth-log.c auth-options.c \
+	session.c groupaccess.c monitor_wrap.c monitor_msg.c \
+	sftp-server.c sftp-common.c sftp-realpath.c
+SRCS+=	compat.c dns.c fatal.c hostfile.c readpass.c utf8.c uidswap.c
+SRCS+=	atomicio.c
+SRCS+=	${SRCS_BASE} ${SRCS_KEX} ${SRCS_KEXS} ${SRCS_KEY} \
+	${SRCS_PROT} ${SRCS_PKT} ${SRCS_UTL} ${SRCS_SK_CLIENT}
 
-PROG=	sshd
+PROG=	sshd-unpriv-postauth
+BINDIR=	/usr/libexec
 BINMODE=511
-BINDIR=	/usr/sbin
-MAN=	sshd.8 sshd_config.5
+NOMAN=	1
 
 .include <bsd.own.mk> # for KERBEROS and AFS
 

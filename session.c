@@ -113,7 +113,7 @@ void	do_child(struct ssh *, Session *, const char *);
 void	do_motd(void);
 int	check_quietlogin(Session *, const char *);
 
-static void do_authenticated2(struct ssh *, Authctxt *);
+static void do_authenticated2(struct ssh *);
 
 static int session_pty_req(struct ssh *, Session *);
 
@@ -127,6 +127,7 @@ extern void destroy_sensitive_data(void);
 extern struct sshbuf *loginmsg;
 extern struct sshauthopt *auth_opts;
 extern char *tun_fwd_ifnames; /* serverloop.c */
+extern login_cap_t *lc;
 
 /* original command from peer. */
 const char *original_command = NULL;
@@ -140,8 +141,6 @@ static Session *sessions = NULL;
 #define SUBSYSTEM_EXT			1
 #define SUBSYSTEM_INT_SFTP		2
 #define SUBSYSTEM_INT_SFTP_ERROR	3
-
-login_cap_t *lc;
 
 static int is_child = 0;
 static int in_chroot = 0;
@@ -345,7 +344,7 @@ do_authenticated(struct ssh *ssh, Authctxt *authctxt)
 
 	prepare_auth_info_file(authctxt->pw, authctxt->session_info);
 
-	do_authenticated2(ssh, authctxt);
+	do_authenticated2(ssh);
 
 	do_cleanup(ssh, authctxt);
 }
@@ -705,8 +704,6 @@ do_login(struct ssh *ssh, Session *s, const char *command)
 {
 	socklen_t fromlen;
 	struct sockaddr_storage from;
-	struct passwd * pw = s->pw;
-	pid_t pid = getpid();
 
 	/*
 	 * Get IP address of client. If the connection is not a socket, let
@@ -721,13 +718,6 @@ do_login(struct ssh *ssh, Session *s, const char *command)
 			cleanup_exit(255);
 		}
 	}
-
-	/* Record that there was a login on that tty from the remote host. */
-	if (!use_privsep)
-		record_login(pid, s->tty, pw->pw_name, pw->pw_uid,
-		    session_get_remote_name_or_ip(ssh, utmp_len,
-		    options.use_dns),
-		    (struct sockaddr *)&from, fromlen);
 
 	if (check_quietlogin(s, command))
 		return;
@@ -1177,13 +1167,6 @@ do_pwchange(Session *s)
 static void
 child_close_fds(struct ssh *ssh)
 {
-	extern int auth_sock;
-
-	if (auth_sock != -1) {
-		close(auth_sock);
-		auth_sock = -1;
-	}
-
 	if (ssh_packet_get_connection_in(ssh) ==
 	    ssh_packet_get_connection_out(ssh))
 		close(ssh_packet_get_connection_in(ssh));
@@ -1233,8 +1216,7 @@ do_child(struct ssh *ssh, Session *s, const char *command)
 
 	sshpkt_fmt_connection_id(ssh, remote_id, sizeof(remote_id));
 
-	/* remove hostkey from the child's memory */
-	destroy_sensitive_data();
+	/* remove keys from memory */
 	ssh_packet_clear_keys(ssh);
 
 	/* Force a password change */
@@ -1397,7 +1379,7 @@ do_child(struct ssh *ssh, Session *s, const char *command)
 	exit(1);
 }
 
-void
+static void
 session_unused(int id)
 {
 	debug3_f("session id %d unused", id);
@@ -1486,26 +1468,10 @@ session_open(Authctxt *authctxt, int chanid)
 	s->authctxt = authctxt;
 	s->pw = authctxt->pw;
 	if (s->pw == NULL || !authctxt->valid)
-		fatal("no user for session %d", s->self);
+		fatal("no user for session %d (pw %p valid %d)", s->self, s->pw, authctxt->valid);
 	debug("session_open: session %d: link with channel %d", s->self, chanid);
 	s->chanid = chanid;
 	return 1;
-}
-
-Session *
-session_by_tty(char *tty)
-{
-	int i;
-	for (i = 0; i < sessions_nalloc; i++) {
-		Session *s = &sessions[i];
-		if (s->used && s->ttyfd != -1 && strcmp(s->tty, tty) == 0) {
-			debug("session_by_tty: session %d tty %s", i, tty);
-			return s;
-		}
-	}
-	debug("session_by_tty: unknown tty %.100s", tty);
-	session_dump();
-	return NULL;
 }
 
 static Session *
@@ -1606,8 +1572,7 @@ session_pty_req(struct ssh *ssh, Session *s)
 
 	/* Allocate a pty and open it. */
 	debug("Allocating pty.");
-	if (!PRIVSEP(pty_allocate(&s->ptyfd, &s->ttyfd, s->tty,
-	    sizeof(s->tty)))) {
+	if (!mm_pty_allocate(&s->ptyfd, &s->ttyfd, s->tty, sizeof(s->tty))) {
 		free(s->term);
 		s->term = NULL;
 		s->ptyfd = -1;
@@ -1621,9 +1586,6 @@ session_pty_req(struct ssh *ssh, Session *s)
 
 	if ((r = sshpkt_get_end(ssh)) != 0)
 		sshpkt_fatal(ssh, r, "%s: parse packet", __func__);
-
-	if (!use_privsep)
-		pty_setowner(s->pw, s->tty);
 
 	/* Set window size from the packet. */
 	pty_change_window_size(s->ptyfd, s->row, s->col, s->xpixel, s->ypixel);
@@ -1840,10 +1802,6 @@ session_signal_req(struct ssh *ssh, Session *s)
 		    signame, s->forced ? "forced-command" : "subsystem");
 		goto out;
 	}
-	if (!use_privsep || mm_is_monitor()) {
-		error_f("session signalling requires privilege separation");
-		goto out;
-	}
 
 	debug_f("signal %s, killpg(%ld, %d)", signame, (long)s->pid, sig);
 	temporarily_use_uid(s->pw);
@@ -1943,47 +1901,10 @@ session_set_fds(struct ssh *ssh, Session *s,
 	    1, is_tty, CHAN_SES_WINDOW_DEFAULT);
 }
 
-/*
- * Function to perform pty cleanup. Also called if we get aborted abnormally
- * (e.g., due to a dropped connection).
- */
-void
-session_pty_cleanup2(Session *s)
-{
-	if (s == NULL) {
-		error_f("no session");
-		return;
-	}
-	if (s->ttyfd == -1)
-		return;
-
-	debug_f("session %d release %s", s->self, s->tty);
-
-	/* Record that the user has logged out. */
-	if (s->pid != 0)
-		record_logout(s->pid, s->tty);
-
-	/* Release the pseudo-tty. */
-	if (getuid() == 0)
-		pty_release(s->tty);
-
-	/*
-	 * Close the server side of the socket pairs.  We must do this after
-	 * the pty cleanup, so that another process doesn't get this pty
-	 * while we're still cleaning up.
-	 */
-	if (s->ptymaster != -1 && close(s->ptymaster) == -1)
-		error("close(s->ptymaster/%d): %s",
-		    s->ptymaster, strerror(errno));
-
-	/* unlink pty from session */
-	s->ttyfd = -1;
-}
-
 void
 session_pty_cleanup(Session *s)
 {
-	PRIVSEP(session_pty_cleanup2(s));
+	mm_session_pty_cleanup2(s);
 }
 
 static char *
@@ -2193,17 +2114,13 @@ session_close_by_channel(struct ssh *ssh, int id, int force, void *arg)
 }
 
 void
-session_destroy_all(struct ssh *ssh, void (*closefunc)(Session *))
+session_destroy_all(struct ssh *ssh)
 {
 	int i;
 	for (i = 0; i < sessions_nalloc; i++) {
 		Session *s = &sessions[i];
-		if (s->used) {
-			if (closefunc != NULL)
-				closefunc(s);
-			else
-				session_close(ssh, s);
-		}
+		if (s->used)
+			session_close(ssh, s);
 	}
 }
 
@@ -2229,10 +2146,12 @@ session_tty_list(void)
 void
 session_proctitle(Session *s)
 {
+	debug_f("called");
 	if (s->pw == NULL)
 		error("no user for session %d", s->self);
 	else
 		setproctitle("%s@%s", s->pw->pw_name, session_tty_list());
+	debug_f("done");
 }
 
 int
@@ -2297,9 +2216,9 @@ session_setup_x11fwd(struct ssh *ssh, Session *s)
 }
 
 static void
-do_authenticated2(struct ssh *ssh, Authctxt *authctxt)
+do_authenticated2(struct ssh *ssh)
 {
-	server_loop2(ssh, authctxt);
+	server_loop2(ssh);
 }
 
 void
@@ -2320,11 +2239,6 @@ do_cleanup(struct ssh *ssh, Authctxt *authctxt)
 
 	if (authctxt == NULL || !authctxt->authenticated)
 		return;
-#ifdef KRB5
-	if (options.kerberos_ticket_cleanup &&
-	    authctxt->krb5_ctx)
-		krb5_cleanup_proc(authctxt);
-#endif
 
 #ifdef GSSAPI
 	if (options.gss_cleanup_creds)
@@ -2342,26 +2256,4 @@ do_cleanup(struct ssh *ssh, Authctxt *authctxt)
 		free(auth_info_file);
 		auth_info_file = NULL;
 	}
-
-	/*
-	 * Cleanup ptys/utmp only if privsep is disabled,
-	 * or if running in monitor.
-	 */
-	if (!use_privsep || mm_is_monitor())
-		session_destroy_all(ssh, session_pty_cleanup2);
 }
-
-/* Return a name for the remote host that fits inside utmp_size */
-
-const char *
-session_get_remote_name_or_ip(struct ssh *ssh, u_int utmp_size, int use_dns)
-{
-	const char *remote = "";
-
-	if (utmp_size > 0)
-		remote = auth_get_canonical_hostname(ssh, use_dns);
-	if (utmp_size == 0 || strlen(remote) > utmp_size)
-		remote = ssh_remote_ipaddr(ssh);
-	return remote;
-}
-

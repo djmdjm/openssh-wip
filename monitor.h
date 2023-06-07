@@ -56,9 +56,12 @@ enum monitor_reqtype {
 	MONITOR_REQ_GSSUSEROK = 46, MONITOR_ANS_GSSUSEROK = 47,
 	MONITOR_REQ_GSSCHECKMIC = 48, MONITOR_ANS_GSSCHECKMIC = 49,
 	MONITOR_REQ_TERM = 50,
+	MONITOR_REQ_STATE = 51, MONITOR_ANS_STATE = 52,
+	MONITOR_REQ_CHILD_EXIT = 53, MONITOR_ANS_CHILD_EXIT = 54,
 };
 
 struct ssh;
+struct sshbuf;
 
 struct monitor {
 	int			 m_recvfd;
@@ -76,13 +79,15 @@ struct Authctxt;
 void monitor_child_preauth(struct ssh *, struct monitor *);
 void monitor_child_postauth(struct ssh *, struct monitor *);
 
-void monitor_clear_keystate(struct ssh *, struct monitor *);
-void monitor_apply_keystate(struct ssh *, struct monitor *);
-
 /* Prototypes for request sending and receiving */
 void mm_request_send(int, enum monitor_reqtype, struct sshbuf *);
 void mm_request_receive(int, struct sshbuf *);
 void mm_request_receive_expect(int, enum monitor_reqtype, struct sshbuf *);
 void mm_get_keystate(struct ssh *, struct monitor *);
+
+/* XXX: should be returned via a monitor call rather than config_fd */
+void mm_encode_server_options(struct sshbuf *);
+
+struct sshbuf *pack_hostkeys(void);
 
 #endif /* _MONITOR_H_ */

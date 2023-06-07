@@ -65,8 +65,6 @@ static void parse_server_config_depth(ServerOptions *options,
     const char *filename, struct sshbuf *conf, struct include_list *includes,
     struct connection_info *connectinfo, int flags, int *activep, int depth);
 
-/* Use of privilege separation or not */
-extern int use_privsep;
 extern struct sshbuf *cfg;
 
 /* Initializes the server options to their default values. */
@@ -180,6 +178,9 @@ initialize_server_options(ServerOptions *options)
 	options->channel_timeouts = NULL;
 	options->num_channel_timeouts = 0;
 	options->unused_connection_timeout = -1;
+	options->sshd_monitor_path = NULL;
+	options->sshd_privsep_preauth_path = NULL;
+	options->sshd_privsep_postauth_path = NULL;
 }
 
 /* Returns 1 if a string option is unset or set to "none" or 0 otherwise. */
@@ -423,12 +424,16 @@ fill_default_server_options(ServerOptions *options)
 		options->required_rsa_size = SSH_RSA_MINIMUM_MODULUS_SIZE;
 	if (options->unused_connection_timeout == -1)
 		options->unused_connection_timeout = 0;
+	if (options->sshd_monitor_path == NULL)
+		options->sshd_monitor_path = xstrdup(_PATH_SSHD_MONITOR);
+	if (options->sshd_privsep_preauth_path == NULL)
+		options->sshd_privsep_preauth_path =
+		    xstrdup(_PATH_SSHD_PRIVSEP_PREAUTH);
+	if (options->sshd_privsep_postauth_path == NULL)
+		options->sshd_privsep_postauth_path =
+		    xstrdup(_PATH_SSHD_PRIVSEP_POSTAUTH);
 
 	assemble_algorithms(options);
-
-	/* Turn privilege separation and sandboxing on by default */
-	if (use_privsep == -1)
-		use_privsep = PRIVSEP_ON;
 
 #define CLEAR_ON_NONE(v) \
 	do { \
@@ -504,6 +509,7 @@ typedef enum {
 	sAllowStreamLocalForwarding, sFingerprintHash, sDisableForwarding,
 	sExposeAuthInfo, sRDomain, sPubkeyAuthOptions, sSecurityKeyProvider,
 	sRequiredRSASize, sChannelTimeout, sUnusedConnectionTimeout,
+	sSshdMonitorPath, sSshdPrivsepPreauthPath,
 	sDeprecated, sIgnore, sUnsupported
 } ServerOpCodes;
 
@@ -650,6 +656,8 @@ static struct {
 	{ "requiredrsasize", sRequiredRSASize, SSHCFG_ALL },
 	{ "channeltimeout", sChannelTimeout, SSHCFG_ALL },
 	{ "unusedconnectiontimeout", sUnusedConnectionTimeout, SSHCFG_ALL },
+	{ "sshdmonitorpath", sSshdMonitorPath, SSHCFG_GLOBAL },
+	{ "sshdprivseppreauthpath", sSshdPrivsepPreauthPath, SSHCFG_GLOBAL },
 	{ NULL, sBadOption, 0 }
 };
 
@@ -852,63 +860,9 @@ process_queued_listen_addrs(ServerOptions *options)
 	options->num_queued_listens = 0;
 }
 
-/*
- * Inform channels layer of permitopen options for a single forwarding
- * direction (local/remote).
- */
-static void
-process_permitopen_list(struct ssh *ssh, ServerOpCodes opcode,
-    char **opens, u_int num_opens)
-{
-	u_int i;
-	int port;
-	char *host, *arg, *oarg;
-	int where = opcode == sPermitOpen ? FORWARD_LOCAL : FORWARD_REMOTE;
-	const char *what = lookup_opcode_name(opcode);
-
-	channel_clear_permission(ssh, FORWARD_ADM, where);
-	if (num_opens == 0)
-		return; /* permit any */
-
-	/* handle keywords: "any" / "none" */
-	if (num_opens == 1 && strcmp(opens[0], "any") == 0)
-		return;
-	if (num_opens == 1 && strcmp(opens[0], "none") == 0) {
-		channel_disable_admin(ssh, where);
-		return;
-	}
-	/* Otherwise treat it as a list of permitted host:port */
-	for (i = 0; i < num_opens; i++) {
-		oarg = arg = xstrdup(opens[i]);
-		host = hpdelim(&arg);
-		if (host == NULL)
-			fatal_f("missing host in %s", what);
-		host = cleanhostname(host);
-		if (arg == NULL || ((port = permitopen_port(arg)) < 0))
-			fatal_f("bad port number in %s", what);
-		/* Send it to channels layer */
-		channel_add_permission(ssh, FORWARD_ADM,
-		    where, host, port);
-		free(oarg);
-	}
-}
-
-/*
- * Inform channels layer of permitopen options from configuration.
- */
-void
-process_permitopen(struct ssh *ssh, ServerOptions *options)
-{
-	process_permitopen_list(ssh, sPermitOpen,
-	    options->permitted_opens, options->num_permitted_opens);
-	process_permitopen_list(ssh, sPermitListen,
-	    options->permitted_listens,
-	    options->num_permitted_listens);
-}
-
 /* Parse a ChannelTimeout clause "pattern=interval" */
-static int
-parse_timeout(const char *s, char **typep, u_int *secsp)
+int
+parse_channel_timeout(const char *s, char **typep, u_int *secsp)
 {
 	char *cp, *sdup;
 	int secs;
@@ -937,40 +891,6 @@ parse_timeout(const char *s, char **typep, u_int *secsp)
 		*secsp = (u_int)secs;
 	free(sdup);
 	return 0;
-}
-
-void
-process_channel_timeouts(struct ssh *ssh, ServerOptions *options)
-{
-	u_int i, secs;
-	char *type;
-
-	debug3_f("setting %u timeouts", options->num_channel_timeouts);
-	channel_clear_timeouts(ssh);
-	for (i = 0; i < options->num_channel_timeouts; i++) {
-		if (parse_timeout(options->channel_timeouts[i],
-		    &type, &secs) != 0) {
-			fatal_f("internal error: bad timeout %s",
-			    options->channel_timeouts[i]);
-		}
-		channel_add_timeout(ssh, type, secs);
-		free(type);
-	}
-}
-
-struct connection_info *
-get_connection_info(struct ssh *ssh, int populate, int use_dns)
-{
-	static struct connection_info ci;
-
-	if (ssh == NULL || !populate)
-		return &ci;
-	ci.host = auth_get_canonical_hostname(ssh, use_dns);
-	ci.address = ssh_remote_ipaddr(ssh);
-	ci.laddress = ssh_local_ipaddr(ssh);
-	ci.lport = ssh_local_port(ssh);
-	ci.rdomain = ssh_packet_rdomain_in(ssh);
-	return &ci;
 }
 
 /*
@@ -2467,7 +2387,8 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 					    filename, linenum, keyword);
 					goto out;
 				}
-			} else if (parse_timeout(arg, NULL, NULL) != 0) {
+			} else if (parse_channel_timeout(arg,
+			    NULL, NULL) != 0) {
 				fatal("%s line %d: invalid channel timeout %s",
 				    filename, linenum, arg);
 			}
@@ -2489,6 +2410,14 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			break;
 		}
 		goto parse_time;
+
+	case sSshdMonitorPath:
+		charptr = &options->sshd_monitor_path;
+		goto parse_filename;
+
+	case sSshdPrivsepPreauthPath:
+		charptr = &options->sshd_privsep_preauth_path;
+		goto parse_filename;
 
 	case sDeprecated:
 	case sIgnore:
@@ -3010,6 +2939,8 @@ dump_config(ServerOptions *o)
 	dump_cfg_string(sHostKeyAlgorithms, o->hostkeyalgorithms);
 	dump_cfg_string(sPubkeyAcceptedAlgorithms, o->pubkey_accepted_algos);
 	dump_cfg_string(sRDomain, o->routing_domain);
+	dump_cfg_string(sSshdMonitorPath, o->sshd_monitor_path);
+	dump_cfg_string(sSshdPrivsepPreauthPath, o->sshd_privsep_preauth_path);
 
 	/* string arguments requiring a lookup */
 	dump_cfg_string(sLogLevel, log_level_name(o->log_level));

@@ -95,11 +95,15 @@ struct Authctxt {
  * the client.
  */
 
+struct authmethod_cfg {
+	const char *name;
+	const char *synonym;
+	int *enabled;
+};
+
 struct Authmethod {
-	char	*name;
-	char	*synonym;
+	struct authmethod_cfg *cfg;
 	int	(*userauth)(struct ssh *, const char *);
-	int	*enabled;
 };
 
 /*
@@ -130,6 +134,11 @@ int	 user_key_allowed(struct ssh *ssh, struct passwd *, struct sshkey *,
     int, struct sshauthopt **);
 int	 auth2_key_already_used(Authctxt *, const struct sshkey *);
 
+/* Lookup */
+Authmethod *authmethod_byname(const char *);
+Authmethod *authmethod_lookup(Authctxt *, const char *);
+char *authmethods_get(Authctxt *authctxt);
+
 /*
  * Handling auth method-specific information for logging and prevention
  * of key reuse during multiple authentication.
@@ -151,7 +160,6 @@ void	krb5_cleanup_proc(Authctxt *authctxt);
 void	do_authentication2(struct ssh *);
 
 void	auth_log(struct ssh *, int, int, const char *, const char *);
-void	auth_maxtries_exceeded(struct ssh *) __attribute__((noreturn));
 void	userauth_finish(struct ssh *, int, const char *, const char *);
 int	auth_root_allowed(struct ssh *, const char *);
 
@@ -161,26 +169,16 @@ int	 auth2_update_methods_lists(Authctxt *, const char *, const char *);
 int	 auth2_setup_methods_lists(Authctxt *);
 int	 auth2_method_allowed(Authctxt *, const char *, const char *);
 
-void	privsep_challenge_enable(void);
-
 int	auth2_challenge(struct ssh *, char *);
 void	auth2_challenge_stop(struct ssh *);
 int	bsdauth_query(void *, char **, char **, u_int *, char ***, u_int **);
 int	bsdauth_respond(void *, u_int, char **);
 
-int	allowed_user(struct ssh *, struct passwd *);
 struct passwd * getpwnamallow(struct ssh *, const char *user);
-
-char	*expand_authorized_keys(const char *, struct passwd *pw);
-char	*authorized_principals_file(struct passwd *);
 
 int	 auth_key_is_revoked(struct sshkey *);
 
 const char	*auth_get_canonical_hostname(struct ssh *, int);
-
-HostStatus
-check_key_in_hostfiles(struct passwd *, struct sshkey *, const char *,
-    const char *, const char *);
 
 /* hostkey handling */
 struct sshkey	*get_hostkey_by_index(int);

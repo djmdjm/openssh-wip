@@ -54,7 +54,6 @@
 #include "auth.h"
 #include "auth-options.h"
 #include "canohost.h"
-#include "uidswap.h"
 #include "packet.h"
 #ifdef GSSAPI
 #include "ssh-gss.h"
@@ -63,15 +62,14 @@
 #include "monitor_wrap.h"
 #include "ssherr.h"
 #include "channels.h"
+#include "krl.h"
 
 /* import */
 extern ServerOptions options;
 extern struct include_list includes;
-extern int use_privsep;
-extern struct sshauthopt *auth_opts;
 
-/* Debugging messages */
-static struct sshbuf *auth_debug;
+/* XXX used by session.c */
+login_cap_t *lc;
 
 /*
  * Check if the user is allowed to log in via ssh. If user is listed
@@ -82,7 +80,7 @@ static struct sshbuf *auth_debug;
  * If the user's shell is not executable, false will be returned.
  * Otherwise true is returned.
  */
-int
+static int
 allowed_user(struct ssh *ssh, struct passwd * pw)
 {
 	struct stat st;
@@ -196,238 +194,21 @@ allowed_user(struct ssh *ssh, struct passwd * pw)
 	return 1;
 }
 
-/*
- * Formats any key left in authctxt->auth_method_key for inclusion in
- * auth_log()'s message. Also includes authxtct->auth_method_info if present.
- */
-static char *
-format_method_key(Authctxt *authctxt)
-{
-	const struct sshkey *key = authctxt->auth_method_key;
-	const char *methinfo = authctxt->auth_method_info;
-	char *fp, *cafp, *ret = NULL;
-
-	if (key == NULL)
-		return NULL;
-
-	if (sshkey_is_cert(key)) {
-		fp = sshkey_fingerprint(key,
-		    options.fingerprint_hash, SSH_FP_DEFAULT);
-		cafp = sshkey_fingerprint(key->cert->signature_key,
-		    options.fingerprint_hash, SSH_FP_DEFAULT);
-		xasprintf(&ret, "%s %s ID %s (serial %llu) CA %s %s%s%s",
-		    sshkey_type(key), fp == NULL ? "(null)" : fp,
-		    key->cert->key_id,
-		    (unsigned long long)key->cert->serial,
-		    sshkey_type(key->cert->signature_key),
-		    cafp == NULL ? "(null)" : cafp,
-		    methinfo == NULL ? "" : ", ",
-		    methinfo == NULL ? "" : methinfo);
-		free(fp);
-		free(cafp);
-	} else {
-		fp = sshkey_fingerprint(key, options.fingerprint_hash,
-		    SSH_FP_DEFAULT);
-		xasprintf(&ret, "%s %s%s%s", sshkey_type(key),
-		    fp == NULL ? "(null)" : fp,
-		    methinfo == NULL ? "" : ", ",
-		    methinfo == NULL ? "" : methinfo);
-		free(fp);
-	}
-	return ret;
-}
-
-void
-auth_log(struct ssh *ssh, int authenticated, int partial,
-    const char *method, const char *submethod)
-{
-	Authctxt *authctxt = (Authctxt *)ssh->authctxt;
-	int level = SYSLOG_LEVEL_VERBOSE;
-	const char *authmsg;
-	char *extra = NULL;
-
-	if (use_privsep && !mm_is_monitor() && !authctxt->postponed)
-		return;
-
-	/* Raise logging level */
-	if (authenticated == 1 ||
-	    !authctxt->valid ||
-	    authctxt->failures >= options.max_authtries / 2 ||
-	    strcmp(method, "password") == 0)
-		level = SYSLOG_LEVEL_INFO;
-
-	if (authctxt->postponed)
-		authmsg = "Postponed";
-	else if (partial)
-		authmsg = "Partial";
-	else
-		authmsg = authenticated ? "Accepted" : "Failed";
-
-	if ((extra = format_method_key(authctxt)) == NULL) {
-		if (authctxt->auth_method_info != NULL)
-			extra = xstrdup(authctxt->auth_method_info);
-	}
-
-	do_log2(level, "%s %s%s%s for %s%.100s from %.200s port %d ssh2%s%s",
-	    authmsg,
-	    method,
-	    submethod != NULL ? "/" : "", submethod == NULL ? "" : submethod,
-	    authctxt->valid ? "" : "invalid user ",
-	    authctxt->user,
-	    ssh_remote_ipaddr(ssh),
-	    ssh_remote_port(ssh),
-	    extra != NULL ? ": " : "",
-	    extra != NULL ? extra : "");
-
-	free(extra);
-}
-
-void
-auth_maxtries_exceeded(struct ssh *ssh)
-{
-	Authctxt *authctxt = (Authctxt *)ssh->authctxt;
-
-	error("maximum authentication attempts exceeded for "
-	    "%s%.100s from %.200s port %d ssh2",
-	    authctxt->valid ? "" : "invalid user ",
-	    authctxt->user,
-	    ssh_remote_ipaddr(ssh),
-	    ssh_remote_port(ssh));
-	ssh_packet_disconnect(ssh, "Too many authentication failures");
-	/* NOTREACHED */
-}
-
-/*
- * Check whether root logins are disallowed.
- */
-int
-auth_root_allowed(struct ssh *ssh, const char *method)
-{
-	switch (options.permit_root_login) {
-	case PERMIT_YES:
-		return 1;
-	case PERMIT_NO_PASSWD:
-		if (strcmp(method, "publickey") == 0 ||
-		    strcmp(method, "hostbased") == 0 ||
-		    strcmp(method, "gssapi-with-mic") == 0)
-			return 1;
-		break;
-	case PERMIT_FORCED_ONLY:
-		if (auth_opts->force_command != NULL) {
-			logit("Root login accepted for forced command.");
-			return 1;
-		}
-		break;
-	}
-	logit("ROOT LOGIN REFUSED FROM %.200s port %d",
-	    ssh_remote_ipaddr(ssh), ssh_remote_port(ssh));
-	return 0;
-}
-
-
-/*
- * Given a template and a passwd structure, build a filename
- * by substituting % tokenised options. Currently, %% becomes '%',
- * %h becomes the home directory and %u the username.
- *
- * This returns a buffer allocated by xmalloc.
- */
-char *
-expand_authorized_keys(const char *filename, struct passwd *pw)
-{
-	char *file, uidstr[32], ret[PATH_MAX];
-	int i;
-
-	snprintf(uidstr, sizeof(uidstr), "%llu",
-	    (unsigned long long)pw->pw_uid);
-	file = percent_expand(filename, "h", pw->pw_dir,
-	    "u", pw->pw_name, "U", uidstr, (char *)NULL);
-
-	/*
-	 * Ensure that filename starts anchored. If not, be backward
-	 * compatible and prepend the '%h/'
-	 */
-	if (path_absolute(file))
-		return (file);
-
-	i = snprintf(ret, sizeof(ret), "%s/%s", pw->pw_dir, file);
-	if (i < 0 || (size_t)i >= sizeof(ret))
-		fatal("expand_authorized_keys: path too long");
-	free(file);
-	return (xstrdup(ret));
-}
-
-char *
-authorized_principals_file(struct passwd *pw)
-{
-	if (options.authorized_principals_file == NULL)
-		return NULL;
-	return expand_authorized_keys(options.authorized_principals_file, pw);
-}
-
-/* return ok if key exists in sysfile or userfile */
-HostStatus
-check_key_in_hostfiles(struct passwd *pw, struct sshkey *key, const char *host,
-    const char *sysfile, const char *userfile)
-{
-	char *user_hostfile;
-	struct stat st;
-	HostStatus host_status;
-	struct hostkeys *hostkeys;
-	const struct hostkey_entry *found;
-
-	hostkeys = init_hostkeys();
-	load_hostkeys(hostkeys, host, sysfile, 0);
-	if (userfile != NULL) {
-		user_hostfile = tilde_expand_filename(userfile, pw->pw_uid);
-		if (options.strict_modes &&
-		    (stat(user_hostfile, &st) == 0) &&
-		    ((st.st_uid != 0 && st.st_uid != pw->pw_uid) ||
-		    (st.st_mode & 022) != 0)) {
-			logit("Authentication refused for %.100s: "
-			    "bad owner or modes for %.200s",
-			    pw->pw_name, user_hostfile);
-			auth_debug_add("Ignored %.200s: bad ownership or modes",
-			    user_hostfile);
-		} else {
-			temporarily_use_uid(pw);
-			load_hostkeys(hostkeys, host, user_hostfile, 0);
-			restore_uid();
-		}
-		free(user_hostfile);
-	}
-	host_status = check_key_in_hostkeys(hostkeys, key, &found);
-	if (host_status == HOST_REVOKED)
-		error("WARNING: revoked key for %s attempted authentication",
-		    host);
-	else if (host_status == HOST_OK)
-		debug_f("key for %s found at %s:%ld",
-		    found->host, found->file, found->line);
-	else
-		debug_f("key for host %s not found", host);
-
-	free_hostkeys(hostkeys);
-
-	return host_status;
-}
-
 struct passwd *
 getpwnamallow(struct ssh *ssh, const char *user)
 {
-	extern login_cap_t *lc;
 	auth_session_t *as;
 	struct passwd *pw;
 	struct connection_info *ci;
 	u_int i;
 
-	ci = get_connection_info(ssh, 1, options.use_dns);
+	ci = server_get_connection_info(ssh, 1, options.use_dns);
 	ci->user = user;
 	parse_server_match_config(&options, &includes, ci);
 	log_change_level(options.log_level);
 	log_verbose_reset();
 	for (i = 0; i < options.num_log_verbose; i++)
 		log_verbose_add(options.log_verbose[i]);
-	process_permitopen(ssh, &options);
 
 	pw = getpwnam(user);
 	if (pw == NULL) {
@@ -469,7 +250,7 @@ auth_key_is_revoked(struct sshkey *key)
 		goto out;
 	}
 
-	r = sshkey_check_revoked(key, options.revoked_keys_file);
+	r = ssh_krl_check_revoked(key, options.revoked_keys_file);
 	switch (r) {
 	case 0:
 		break; /* not revoked */
@@ -492,163 +273,6 @@ auth_key_is_revoked(struct sshkey *key)
 	return r == 0 ? 0 : 1;
 }
 
-void
-auth_debug_add(const char *fmt,...)
-{
-	char buf[1024];
-	va_list args;
-	int r;
-
-	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, args);
-	va_end(args);
-	debug3("%s", buf);
-	if (auth_debug != NULL)
-		if ((r = sshbuf_put_cstring(auth_debug, buf)) != 0)
-			fatal_fr(r, "sshbuf_put_cstring");
-}
-
-void
-auth_debug_send(struct ssh *ssh)
-{
-	char *msg;
-	int r;
-
-	if (auth_debug == NULL)
-		return;
-	while (sshbuf_len(auth_debug) != 0) {
-		if ((r = sshbuf_get_cstring(auth_debug, &msg, NULL)) != 0)
-			fatal_fr(r, "sshbuf_get_cstring");
-		ssh_packet_send_debug(ssh, "%s", msg);
-		free(msg);
-	}
-}
-
-void
-auth_debug_reset(void)
-{
-	if (auth_debug != NULL)
-		sshbuf_reset(auth_debug);
-	else if ((auth_debug = sshbuf_new()) == NULL)
-		fatal_f("sshbuf_new failed");
-}
-
-struct passwd *
-fakepw(void)
-{
-	static int done = 0;
-	static struct passwd fake;
-	const char hashchars[] = "./ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	    "abcdefghijklmnopqrstuvwxyz0123456789"; /* from bcrypt.c */
-	char *cp;
-
-	if (done)
-		return (&fake);
-
-	memset(&fake, 0, sizeof(fake));
-	fake.pw_name = "NOUSER";
-	fake.pw_passwd = xstrdup("$2a$10$"
-	    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-	for (cp = fake.pw_passwd + 7; *cp != '\0'; cp++)
-		*cp = hashchars[arc4random_uniform(sizeof(hashchars) - 1)];
-	fake.pw_gecos = "NOUSER";
-	fake.pw_uid = (uid_t)-1;
-	fake.pw_gid = (gid_t)-1;
-	fake.pw_class = "";
-	fake.pw_dir = "/nonexist";
-	fake.pw_shell = "/nonexist";
-	done = 1;
-
-	return (&fake);
-}
-
-/*
- * Returns the remote DNS hostname as a string. The returned string must not
- * be freed. NB. this will usually trigger a DNS query the first time it is
- * called.
- * This function does additional checks on the hostname to mitigate some
- * attacks on based on conflation of hostnames and IP addresses.
- */
-
-static char *
-remote_hostname(struct ssh *ssh)
-{
-	struct sockaddr_storage from;
-	socklen_t fromlen;
-	struct addrinfo hints, *ai, *aitop;
-	char name[NI_MAXHOST], ntop2[NI_MAXHOST];
-	const char *ntop = ssh_remote_ipaddr(ssh);
-
-	/* Get IP address of client. */
-	fromlen = sizeof(from);
-	memset(&from, 0, sizeof(from));
-	if (getpeername(ssh_packet_get_connection_in(ssh),
-	    (struct sockaddr *)&from, &fromlen) == -1) {
-		debug("getpeername failed: %.100s", strerror(errno));
-		return xstrdup(ntop);
-	}
-
-	debug3("Trying to reverse map address %.100s.", ntop);
-	/* Map the IP address to a host name. */
-	if (getnameinfo((struct sockaddr *)&from, fromlen, name, sizeof(name),
-	    NULL, 0, NI_NAMEREQD) != 0) {
-		/* Host name not found.  Use ip address. */
-		return xstrdup(ntop);
-	}
-
-	/*
-	 * if reverse lookup result looks like a numeric hostname,
-	 * someone is trying to trick us by PTR record like following:
-	 *	1.1.1.10.in-addr.arpa.	IN PTR	2.3.4.5
-	 */
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_socktype = SOCK_DGRAM;	/*dummy*/
-	hints.ai_flags = AI_NUMERICHOST;
-	if (getaddrinfo(name, NULL, &hints, &ai) == 0) {
-		logit("Nasty PTR record \"%s\" is set up for %s, ignoring",
-		    name, ntop);
-		freeaddrinfo(ai);
-		return xstrdup(ntop);
-	}
-
-	/* Names are stored in lowercase. */
-	lowercase(name);
-
-	/*
-	 * Map it back to an IP address and check that the given
-	 * address actually is an address of this host.  This is
-	 * necessary because anyone with access to a name server can
-	 * define arbitrary names for an IP address. Mapping from
-	 * name to IP address can be trusted better (but can still be
-	 * fooled if the intruder has access to the name server of
-	 * the domain).
-	 */
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = from.ss_family;
-	hints.ai_socktype = SOCK_STREAM;
-	if (getaddrinfo(name, NULL, &hints, &aitop) != 0) {
-		logit("reverse mapping checking getaddrinfo for %.700s "
-		    "[%s] failed.", name, ntop);
-		return xstrdup(ntop);
-	}
-	/* Look for the address from the list of addresses. */
-	for (ai = aitop; ai; ai = ai->ai_next) {
-		if (getnameinfo(ai->ai_addr, ai->ai_addrlen, ntop2,
-		    sizeof(ntop2), NULL, 0, NI_NUMERICHOST) == 0 &&
-		    (strcmp(ntop, ntop2) == 0))
-				break;
-	}
-	freeaddrinfo(aitop);
-	/* If we reached the end of the list, the address was not there. */
-	if (ai == NULL) {
-		/* Address not found for the host name. */
-		logit("Address %.100s maps to %.600s, but this does not "
-		    "map back to the address.", ntop, name);
-		return xstrdup(ntop);
-	}
-	return xstrdup(name);
-}
-
 /*
  * Return the canonical name of the host in the other side of the current
  * connection.  The host name is cached, so it is efficient to call this
@@ -662,116 +286,8 @@ auth_get_canonical_hostname(struct ssh *ssh, int use_dns)
 
 	if (!use_dns)
 		return ssh_remote_ipaddr(ssh);
-	else if (dnsname != NULL)
+	if (dnsname != NULL)
 		return dnsname;
-	else {
-		dnsname = remote_hostname(ssh);
-		return dnsname;
-	}
-}
-
-/* These functions link key/cert options to the auth framework */
-
-/* Log sshauthopt options locally and (optionally) for remote transmission */
-void
-auth_log_authopts(const char *loc, const struct sshauthopt *opts, int do_remote)
-{
-	int do_env = options.permit_user_env && opts->nenv > 0;
-	int do_permitopen = opts->npermitopen > 0 &&
-	    (options.allow_tcp_forwarding & FORWARD_LOCAL) != 0;
-	int do_permitlisten = opts->npermitlisten > 0 &&
-	    (options.allow_tcp_forwarding & FORWARD_REMOTE) != 0;
-	size_t i;
-	char msg[1024], buf[64];
-
-	snprintf(buf, sizeof(buf), "%d", opts->force_tun_device);
-	/* Try to keep this alphabetically sorted */
-	snprintf(msg, sizeof(msg), "key options:%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
-	    opts->permit_agent_forwarding_flag ? " agent-forwarding" : "",
-	    opts->force_command == NULL ? "" : " command",
-	    do_env ?  " environment" : "",
-	    opts->valid_before == 0 ? "" : "expires",
-	    opts->no_require_user_presence ? " no-touch-required" : "",
-	    do_permitopen ?  " permitopen" : "",
-	    do_permitlisten ?  " permitlisten" : "",
-	    opts->permit_port_forwarding_flag ? " port-forwarding" : "",
-	    opts->cert_principals == NULL ? "" : " principals",
-	    opts->permit_pty_flag ? " pty" : "",
-	    opts->require_verify ? " uv" : "",
-	    opts->force_tun_device == -1 ? "" : " tun=",
-	    opts->force_tun_device == -1 ? "" : buf,
-	    opts->permit_user_rc ? " user-rc" : "",
-	    opts->permit_x11_forwarding_flag ? " x11-forwarding" : "");
-
-	debug("%s: %s", loc, msg);
-	if (do_remote)
-		auth_debug_add("%s: %s", loc, msg);
-
-	if (options.permit_user_env) {
-		for (i = 0; i < opts->nenv; i++) {
-			debug("%s: environment: %s", loc, opts->env[i]);
-			if (do_remote) {
-				auth_debug_add("%s: environment: %s",
-				    loc, opts->env[i]);
-			}
-		}
-	}
-
-	/* Go into a little more details for the local logs. */
-	if (opts->valid_before != 0) {
-		format_absolute_time(opts->valid_before, buf, sizeof(buf));
-		debug("%s: expires at %s", loc, buf);
-	}
-	if (opts->cert_principals != NULL) {
-		debug("%s: authorized principals: \"%s\"",
-		    loc, opts->cert_principals);
-	}
-	if (opts->force_command != NULL)
-		debug("%s: forced command: \"%s\"", loc, opts->force_command);
-	if (do_permitopen) {
-		for (i = 0; i < opts->npermitopen; i++) {
-			debug("%s: permitted open: %s",
-			    loc, opts->permitopen[i]);
-		}
-	}
-	if (do_permitlisten) {
-		for (i = 0; i < opts->npermitlisten; i++) {
-			debug("%s: permitted listen: %s",
-			    loc, opts->permitlisten[i]);
-		}
-	}
-}
-
-/* Activate a new set of key/cert options; merging with what is there. */
-int
-auth_activate_options(struct ssh *ssh, struct sshauthopt *opts)
-{
-	struct sshauthopt *old = auth_opts;
-	const char *emsg = NULL;
-
-	debug_f("setting new authentication options");
-	if ((auth_opts = sshauthopt_merge(old, opts, &emsg)) == NULL) {
-		error("Inconsistent authentication options: %s", emsg);
-		return -1;
-	}
-	return 0;
-}
-
-/* Disable forwarding, etc for the session */
-void
-auth_restrict_session(struct ssh *ssh)
-{
-	struct sshauthopt *restricted;
-
-	debug_f("restricting session");
-
-	/* A blank sshauthopt defaults to permitting nothing */
-	if ((restricted = sshauthopt_new()) == NULL)
-		fatal_f("sshauthopt_new failed");
-	restricted->permit_pty_flag = 1;
-	restricted->restricted = 1;
-
-	if (auth_activate_options(ssh, restricted) != 0)
-		fatal_f("failed to restrict session");
-	sshauthopt_free(restricted);
+	dnsname = ssh_remote_hostname(ssh);
+	return dnsname;
 }
