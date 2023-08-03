@@ -1903,21 +1903,19 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 		}
 		options->subsystem_name[options->num_subsystems] = xstrdup(arg);
 		arg = argv_next(&ac, &av);
-		if (!arg || *arg == '\0')
+		if (!arg || *arg == '\0') {
 			fatal("%s line %d: Missing subsystem command.",
 			    filename, linenum);
-		options->subsystem_command[options->num_subsystems] = xstrdup(arg);
-
-		/* Collect arguments (separate to executable) */
-		p = xstrdup(arg);
-		len = strlen(p) + 1;
-		while ((arg = argv_next(&ac, &av)) != NULL) {
-			len += 1 + strlen(arg);
-			p = xreallocarray(p, 1, len);
-			strlcat(p, " ", len);
-			strlcat(p, arg, len);
 		}
-		options->subsystem_args[options->num_subsystems] = p;
+		options->subsystem_command[options->num_subsystems] =
+		    xstrdup(arg);
+		/* Collect arguments (separate to executable) */
+		arg = argv_assemble(1, &arg); /* quote command correctly */
+		arg2 = argv_assemble(ac, av); /* rest of command */
+		xasprintf(&options->subsystem_args[options->num_subsystems],
+		    "%s %s", arg, arg2);
+		free(arg2);
+		argv_consume(&ac);
 		options->num_subsystems++;
 		break;
 
