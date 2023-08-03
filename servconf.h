@@ -20,8 +20,6 @@
 
 #define MAX_PORTS		256	/* Max # ports. */
 
-#define MAX_SUBSYSTEMS		256	/* Max # subsystems. */
-
 /* permit_root_login */
 #define	PERMIT_NOT_SET		-1
 #define	PERMIT_NO		0
@@ -165,9 +163,9 @@ typedef struct {
 	char   **deny_groups;
 
 	u_int num_subsystems;
-	char   *subsystem_name[MAX_SUBSYSTEMS];
-	char   *subsystem_command[MAX_SUBSYSTEMS];
-	char   *subsystem_args[MAX_SUBSYSTEMS];
+	char   **subsystem_name;
+	char   **subsystem_command;
+	char   **subsystem_args;
 
 	u_int num_accept_env;
 	char   **accept_env;
