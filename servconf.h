@@ -290,6 +290,9 @@ TAILQ_HEAD(include_list, include_item);
 		M_CP_STRARRAYOPT(permitted_listens, num_permitted_listens); \
 		M_CP_STRARRAYOPT(channel_timeouts, num_channel_timeouts); \
 		M_CP_STRARRAYOPT(log_verbose, num_log_verbose); \
+		M_CP_STRARRAYOPT(subsystem_name, num_subsystems); \
+		M_CP_STRARRAYOPT(subsystem_command, num_subsystems); \
+		M_CP_STRARRAYOPT(subsystem_args, num_subsystems); \
 	} while (0)
 
 struct connection_info *get_connection_info(struct ssh *, int, int);
@@ -306,6 +309,7 @@ void	 parse_server_match_config(ServerOptions *,
 	    struct include_list *includes, struct connection_info *);
 int	 parse_server_match_testspec(struct connection_info *, char *);
 int	 server_match_spec_complete(struct connection_info *);
+void	 servconf_merge_subsystems(ServerOptions *, ServerOptions *);
 void	 copy_set_server_options(ServerOptions *, ServerOptions *, int);
 void	 dump_config(ServerOptions *);
 char	*derelativise_path(const char *);
