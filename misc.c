@@ -2947,3 +2947,18 @@ lib_contains_symbol(const char *path, const char *s)
 	free(nl[0].n_name);
 	return ret;
 }
+
+int
+signal_is_crash(int sig)
+{
+	switch (sig) {
+	case SIGSEGV:
+	case SIGBUS:
+	case SIGTRAP:
+	case SIGSYS:
+	case SIGFPE:
+	case SIGILL:
+		return 1;
+	}
+	return 0;
+}
