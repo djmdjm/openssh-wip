@@ -2060,6 +2060,18 @@ ssh_packet_not_very_much_data_to_write(struct ssh *ssh)
 		return sshbuf_len(ssh->state->output) < 128 * 1024;
 }
 
+/*
+ * returns true when there are at most a few keystrokes of data to write
+ * and the connection is in interactive mode.
+ */
+
+int
+ssh_packet_interactive_data_to_write(struct ssh *ssh)
+{
+	return ssh->state->interactive_mode &&
+	    sshbuf_len(ssh->state->output) < 256;
+}
+
 void
 ssh_packet_set_tos(struct ssh *ssh, int tos)
 {

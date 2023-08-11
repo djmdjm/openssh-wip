@@ -2792,22 +2792,33 @@ ptimeout_deadline_ms(struct timespec *pt, long ms)
 	ptimeout_deadline_tsp(pt, &p);
 }
 
+/* Specify a poll/ppoll deadline at wall clock monotime 'when' (timespec) */
+void
+ptimeout_deadline_monotime_tsp(struct timespec *pt, struct timespec *when)
+{
+	struct timespec now, t;
+
+	monotime_ts(&now);
+
+	if (timespeccmp(&now, when, >=)) {
+		/* 'when' is now or in the past. Timeout ASAP */
+		pt->tv_sec = 0;
+		pt->tv_nsec = 0;
+	} else {
+		timespecsub(when, &now, &t);
+		ptimeout_deadline_tsp(pt, &t);
+	}
+}
+
 /* Specify a poll/ppoll deadline at wall clock monotime 'when' */
 void
 ptimeout_deadline_monotime(struct timespec *pt, time_t when)
 {
-	struct timespec now, t;
+	struct timespec t;
 
 	t.tv_sec = when;
 	t.tv_nsec = 0;
-	monotime_ts(&now);
-
-	if (timespeccmp(&now, &t, >=))
-		ptimeout_deadline_sec(pt, 0);
-	else {
-		timespecsub(&t, &now, &t);
-		ptimeout_deadline_tsp(pt, &t);
-	}
+	ptimeout_deadline_monotime_tsp(pt, &t);
 }
 
 /* Get a poll(2) timeout value in milliseconds */
