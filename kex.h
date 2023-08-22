@@ -104,6 +104,7 @@ enum kex_exchange {
 #define KEX_HAS_PUBKEY_HOSTBOUND	0x0004
 #define KEX_RSA_SHA2_256_SUPPORTED 	0x0008 /* only set in server for now */
 #define KEX_RSA_SHA2_512_SUPPORTED 	0x0010 /* only set in server for now */
+#define KEX_HAS_PING		 	0x0020
 
 struct sshenc {
 	char	*name;

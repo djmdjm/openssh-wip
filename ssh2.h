@@ -108,6 +108,10 @@
 #define SSH2_MSG_KEX_ECDH_INIT				30
 #define SSH2_MSG_KEX_ECDH_REPLY				31
 
+/* transport layer: OpenSSH extensions */
+#define SSH2_MSG_PING					192
+#define SSH2_MSG_PONG					193
+
 /* user authentication: generic */
 
 #define SSH2_MSG_USERAUTH_REQUEST			50
