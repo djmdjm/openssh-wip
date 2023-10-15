@@ -107,6 +107,35 @@ ssh_askpass(char *askpass, const char *msg, const char *env_hint)
 	return pass;
 }
 
+#define FORCE_NONE	0
+#define FORCE_PREFER	1
+#define FORCE_FORCE	2
+#define FORCE_NEVER	3
+
+/*
+ * Check $SSH_ASKPASS_REQUIRE for the given context (askpass or notify),
+ * returns one of the FORCE_* values.
+ */
+static int
+check_forced(int is_notify)
+{
+	const char *s;
+
+	if ((s = getenv(SSH_ASKPASS_REQUIRE_ENV)) == NULL)
+		return FORCE_NONE;
+
+	if (strcasecmp(s, "force") == 0 ||
+	    strstr(s, is_notify ? "notify:force" : "askpass:force"))
+		return FORCE_FORCE;
+	if (strcasecmp(s, "never") == 0 ||
+	    strstr(s, is_notify ? "notify:never" : "askpass:never"))
+		return FORCE_NEVER;
+	if (strcasecmp(s, "prefer") == 0 ||
+	    strstr(s, is_notify ? "notify:prefer" : "askpass:prefer"))
+		return FORCE_PREFER;
+	return FORCE_NONE;
+}
+
 /* private/internal read_passphrase flags */
 #define RP_ASK_PERMISSION	0x8000 /* pass hint to askpass for confirm UI */
 
@@ -126,14 +155,18 @@ read_passphrase(const char *prompt, int flags)
 
 	if ((s = getenv("DISPLAY")) != NULL)
 		allow_askpass = *s != '\0';
-	if ((s = getenv(SSH_ASKPASS_REQUIRE_ENV)) != NULL) {
-		if (strcasecmp(s, "force") == 0) {
-			use_askpass = 1;
-			allow_askpass = 1;
-		} else if (strcasecmp(s, "prefer") == 0)
-			use_askpass = allow_askpass;
-		else if (strcasecmp(s, "never") == 0)
-			allow_askpass = 0;
+
+	switch (check_forced(0)) {
+	case FORCE_PREFER:
+		use_askpass = allow_askpass;
+		break;
+	case FORCE_FORCE:
+		use_askpass = 1;
+		allow_askpass = 1;
+		break;
+	case FORCE_NEVER:
+		allow_askpass = 0;
+		break;
 	}
 
 	rppflags = (flags & RP_ECHO) ? RPP_ECHO_ON : RPP_ECHO_OFF;
@@ -241,29 +274,50 @@ notify_start(int force_askpass, const char *fmt, ...)
 	void (*osigchld)(int) = NULL;
 	const char *askpass, *s;
 	struct notifier_ctx *ret = NULL;
+	int have_display = 0, use_askpass = 0;
 
 	va_start(args, fmt);
 	xvasprintf(&prompt, fmt, args);
 	va_end(args);
 
-	if (fflush(NULL) != 0)
-		error_f("fflush: %s", strerror(errno));
-	if (!force_askpass && isatty(STDERR_FILENO)) {
-		writemsg(prompt);
-		goto out_ctx;
-	}
-	if ((askpass = getenv("SSH_ASKPASS")) == NULL)
+	if ((s = getenv("DISPLAY")) != NULL)
+		have_display = *s != '\0';
+	askpass = getenv(SSH_ASKPASS_NOTIFY_ENV);
+	if (askpass == NULL && (askpass = getenv(SSH_ASKPASS_ENV)) == NULL)
 		askpass = _PATH_SSH_ASKPASS_DEFAULT;
-	if (*askpass == '\0') {
+	if (*askpass == '\0')
+		askpass = NULL;
+
+	switch (check_forced(1)) {
+	case FORCE_PREFER:
+		use_askpass = have_display && askpass != NULL;
+		break;
+	case FORCE_FORCE:
+		use_askpass = 1;
+		break;
+	case FORCE_NEVER:
+		use_askpass = 0;
+		break;
+	}
+	use_askpass |= force_askpass;
+	if (use_askpass && askpass == NULL) {
 		debug3_f("cannot notify: no askpass");
 		goto out;
 	}
-	if (getenv("DISPLAY") == NULL &&
-	    ((s = getenv(SSH_ASKPASS_REQUIRE_ENV)) == NULL ||
-	    strcmp(s, "force") != 0)) {
-		debug3_f("cannot notify: no display");
-		goto out;
+
+	if (fflush(NULL) != 0)
+		error_f("fflush: %s", strerror(errno));
+	if (!use_askpass) {
+		if (isatty(STDERR_FILENO)) {
+			writemsg(prompt);
+			goto out_ctx;
+		}
+		if (!have_display || askpass == NULL) {
+			debug3_f("cannot notify: no askpass/display");
+			goto out;
+		}
 	}
+	/* using askpass */
 	osigchld = ssh_signal(SIGCHLD, SIG_DFL);
 	if ((pid = fork()) == -1) {
 		error_f("fork: %s", strerror(errno));
