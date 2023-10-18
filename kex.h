@@ -53,12 +53,17 @@
 #define	KEX_ECDH_SHA2_NISTP256		"ecdh-sha2-nistp256"
 #define	KEX_ECDH_SHA2_NISTP384		"ecdh-sha2-nistp384"
 #define	KEX_ECDH_SHA2_NISTP521		"ecdh-sha2-nistp521"
+#define	KEX_ECDH_SHA2_NISTP256_FTH	"ecdh-sha2-nistp256-fth"
+#define	KEX_ECDH_SHA2_NISTP384_FTH	"ecdh-sha2-nistp384-fth"
+#define	KEX_ECDH_SHA2_NISTP521_FTH	"ecdh-sha2-nistp521-fth"
 #define	KEX_CURVE25519_SHA256		"curve25519-sha256"
+#define	KEX_CURVE25519_SHA256_FTH	"curve25519-fth-sha256"
 #define	KEX_CURVE25519_SHA256_OLD	"curve25519-sha256@libssh.org"
 #define	KEX_SNTRUP761X25519_SHA512	"sntrup761x25519-sha512"
 #define	KEX_SNTRUP761X25519_SHA512_OLD	"sntrup761x25519-sha512@openssh.com"
+#define	KEX_SNTRUP761X25519_SHA512_FTH	"sntrup761x25519-fth-sha512"
 #define	KEX_MLKEM768X25519_SHA256	"mlkem768x25519-sha256"
-
+#define KEX_MLKEM768X25519_SHA256_FTH	"mlkem768x25519-fth-sha256"
 #define COMP_NONE	0
 #define COMP_DELAYED	2
 
@@ -96,6 +101,10 @@ enum kex_exchange {
 	KEX_C25519_SHA256,
 	KEX_KEM_SNTRUP761X25519_SHA512,
 	KEX_KEM_MLKEM768X25519_SHA256,
+	KEX_ECDH_SHA2_FTH,
+	KEX_C25519_SHA256_FTH,
+	KEX_KEM_SNTRUP761X25519_SHA512_FTH,
+	KEX_KEM_MLKEM768X25519_SHA256_FTH,
 	KEX_MAX
 };
 
@@ -107,6 +116,7 @@ enum kex_exchange {
 #define KEX_RSA_SHA2_512_SUPPORTED	0x0010 /* only set in server for now */
 #define KEX_HAS_PING			0x0020
 #define KEX_HAS_EXT_INFO_IN_AUTH	0x0040
+#define KEX_IS_FTH			0x0080
 
 struct sshenc {
 	char	*name;
@@ -131,6 +141,7 @@ struct newkeys {
 
 struct ssh;
 struct sshbuf;
+struct ssh_digest_ctx;
 
 struct kex {
 	struct newkeys	*newkeys[MODE_MAX];
@@ -154,6 +165,9 @@ struct kex {
 	struct sshbuf *session_id;
 	struct sshbuf *initial_sig;
 	struct sshkey *initial_hostkey;
+	u_char	*prekex_hash_in, *prekex_hash_out;
+	size_t	prekex_hash_len;
+	struct ssh_digest_ctx *prekex_hash_ctx_in, *prekex_hash_ctx_out;
 	sig_atomic_t done;
 	u_int	flags;
 	int	hash_alg;
@@ -182,6 +196,7 @@ int	 kex_name_valid(const char *);
 u_int	 kex_type_from_name(const char *);
 int	 kex_hash_from_name(const char *);
 int	 kex_nid_from_name(const char *);
+int	 kex_is_fth_from_name(const char *);
 int	 kex_names_valid(const char *);
 char	*kex_alg_list(char);
 char	*kex_names_cat(const char *, const char *);
@@ -214,6 +229,10 @@ int	 kex_send_newkeys(struct ssh *);
 int	 kex_start_rekex(struct ssh *);
 int	 kex_server_update_ext_info(struct ssh *);
 void	 kex_set_server_sig_algs(struct ssh *, const char *);
+
+int	 kex_update_transcript_out(struct ssh *, u_int, const struct sshbuf *);
+int	 kex_update_transcript_in(struct ssh *, u_int, const struct sshbuf *);
+int	 kex_finalise_transcript(struct ssh *);
 
 int	 kexgex_client(struct ssh *);
 int	 kexgex_server(struct ssh *);
