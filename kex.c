@@ -252,6 +252,99 @@ kex_reset_dispatch(struct ssh *ssh)
 	    SSH2_MSG_TRANSPORT_MAX, &kex_protocol_error);
 }
 
+static void
+kex_start_transcript(struct ssh *ssh)
+{
+	struct kex *kex = ssh->kex;
+
+	debug3_f("start transcript using %s",
+	    ssh_digest_alg_name(kex->hash_alg));
+	kex->prekex_hash_len = ssh_digest_bytes(kex->hash_alg);
+	if (kex->prekex_hash_len == 0)
+		fatal_f("internal error: hashlen(alg %d) == 0", kex->hash_alg);
+	kex->prekex_hash_ctx_in = ssh_digest_start(kex->hash_alg);
+	kex->prekex_hash_ctx_out = ssh_digest_start(kex->hash_alg);
+	if (kex->prekex_hash_ctx_in == NULL || kex->prekex_hash_ctx_out == NULL)
+		fatal_f("internal error: init(alg %d) failed", kex->hash_alg);
+}
+
+static void
+kex_update_transcript_hash(struct ssh_digest_ctx *ctx, u_int seqnr,
+    const struct sshbuf *pkt)
+{
+	u_char seq[4];
+	int r;
+
+	/* extend hash with seqnr and packet (inc len + padlen) */
+	put_u32(seq, seqnr);
+	if ((r = ssh_digest_update(ctx, seq, sizeof(seq))) != 0 ||
+	    (r = ssh_digest_update_buffer(ctx, pkt)) != 0)
+		fatal_fr(r, "hash outgoing packet");
+}
+
+int
+kex_update_transcript_out(struct ssh *ssh, u_int seqnr,
+    const struct sshbuf *pkt)
+{
+	struct kex *kex = ssh->kex;
+
+	if (kex->prekex_hash_ctx_out == NULL)
+		return 0;
+	kex_update_transcript_hash(kex->prekex_hash_ctx_out, seqnr, pkt);
+
+	return 0;
+}
+
+int
+kex_update_transcript_in(struct ssh *ssh, u_int seqnr, const struct sshbuf *pkt)
+{
+	struct kex *kex = ssh->kex;
+
+	if (kex->prekex_hash_ctx_in == NULL)
+		return 0;
+	kex_update_transcript_hash(kex->prekex_hash_ctx_in, seqnr, pkt);
+	return 0;
+}
+
+static void
+kex_finalise_transcript_hash(const char *which, struct ssh_digest_ctx *ctx,
+    int hash_alg, u_char **hashp, size_t hash_len)
+{
+	u_char *hash = NULL;
+	int r;
+	char *hex;
+
+	*hashp = NULL;
+	if (ctx == NULL)
+		return;
+	hash = xcalloc(1, hash_len);
+	if ((r = ssh_digest_final(ctx, hash, hash_len)) != 0)
+		fatal_fr(r, "ssh_digest_final failed for %s transcript", which);
+	hex = tohex(hash, hash_len);
+	debug3_f("prekex hash %s: %s:%s", which,
+	    ssh_digest_alg_name(hash_alg), hex);
+	free(hex);
+	*hashp = hash;
+}
+
+int
+kex_finalise_transcript(struct ssh *ssh)
+{
+	struct kex *kex = ssh->kex;
+
+	kex_finalise_transcript_hash("in", kex->prekex_hash_ctx_in,
+	    kex->hash_alg, &kex->prekex_hash_in, kex->prekex_hash_len);
+	ssh_digest_free(kex->prekex_hash_ctx_in);
+
+	kex_finalise_transcript_hash("out", kex->prekex_hash_ctx_out,
+	    kex->hash_alg, &kex->prekex_hash_out, kex->prekex_hash_len);
+	ssh_digest_free(kex->prekex_hash_ctx_out);
+
+	kex->prekex_hash_ctx_in = kex->prekex_hash_ctx_out = NULL;
+
+	return 0;
+}
+
 void
 kex_set_server_sig_algs(struct ssh *ssh, const char *allowed_algs)
 {
@@ -560,6 +653,7 @@ kex_input_newkeys(int type, u_int32_t seq, struct ssh *ssh)
 	kex->flags &= ~KEX_INIT_SENT;
 	free(kex->name);
 	kex->name = NULL;
+
 	return 0;
 }
 
@@ -653,6 +747,8 @@ kex_input_kexinit(int type, u_int32_t seq, struct ssh *ssh)
 			return r;
 	if ((r = kex_choose_conf(ssh, seq)) != 0)
 		return r;
+	if ((kex->flags & KEX_IS_FTH) != 0)
+		kex_start_transcript(ssh);
 
 	if (kex->kex_type < KEX_MAX && kex->kex[kex->kex_type] != NULL)
 		return (kex->kex[kex->kex_type])(ssh);
@@ -735,6 +831,10 @@ kex_free(struct kex *kex)
 	free(kex->failed_choice);
 	free(kex->hostkey_alg);
 	free(kex->name);
+	ssh_digest_free(kex->prekex_hash_ctx_in);
+	ssh_digest_free(kex->prekex_hash_ctx_out);
+	free(kex->prekex_hash_in);
+	free(kex->prekex_hash_out);
 	free(kex);
 }
 
@@ -863,6 +963,8 @@ choose_kex(struct kex *k, char *client, char *server)
 	k->kex_type = kex_type_from_name(k->name);
 	k->hash_alg = kex_hash_from_name(k->name);
 	k->ec_nid = kex_nid_from_name(k->name);
+	if (kex_is_fth_from_name(k->name) != 0)
+		k->flags |= KEX_IS_FTH;
 	return 0;
 }
 
@@ -952,13 +1054,6 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 			kex->kex_strict = kexalgs_contains(peer,
 			    "kex-strict-s-v00@openssh.com");
 		}
-		if (kex->kex_strict) {
-			debug3_f("will use strict KEX ordering");
-			if (seq != 0)
-				ssh_packet_disconnect(ssh,
-				    "strict KEX violation: "
-				    "KEXINIT was not the first packet");
-		}
 	}
 
 	/* Check whether client supports rsa-sha2 algorithms */
@@ -978,6 +1073,10 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 		peer[PROPOSAL_KEX_ALGS] = NULL;
 		goto out;
 	}
+	/* full-transcript hash KEX algorithms imply strict KEX */
+	if ((kex->flags & KEX_IS_FTH) != 0)
+		kex->kex_strict = 1;
+
 	if ((r = choose_hostkeyalg(kex, cprop[PROPOSAL_SERVER_HOST_KEY_ALGS],
 	    sprop[PROPOSAL_SERVER_HOST_KEY_ALGS])) != 0) {
 		kex->failed_choice = peer[PROPOSAL_SERVER_HOST_KEY_ALGS];
@@ -1037,6 +1136,14 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 	/* XXX need runden? */
 	kex->we_need = need;
 	kex->dh_need = dh_need;
+
+	if (kex->kex_strict) {
+		debug3_f("will use strict KEX ordering");
+		if ((kex->flags & KEX_INITIAL) != 0 && seq != 0)
+			ssh_packet_disconnect(ssh,
+			    "strict KEX violation: "
+			    "KEXINIT was not the first packet");
+	}
 
 	/* ignore the next message if the proposals do not match */
 	if (first_kex_follows && !proposals_match(my, peer))
