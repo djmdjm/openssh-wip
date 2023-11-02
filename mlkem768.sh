@@ -1,0 +1,72 @@
+#!/bin/sh
+#       $OpenBSD$
+#       Placed in the Public Domain.
+#
+
+WANT_LIBCRUX_REVISION="origin/main"
+
+# Apache2.0 license only; need to replace.
+XXXFILES="
+	libcrux/libcrux-ml-kem/cg/karamel/target.h
+	libcrux/libcrux-ml-kem/cg/eurydice_glue.h
+"
+
+FILES="
+	$XXXFILES
+	libcrux/libcrux-ml-kem/cg/libcrux_core.h
+	libcrux/libcrux-ml-kem/cg/libcrux_ct_ops.h
+	libcrux/libcrux-ml-kem/cg/libcrux_sha3_portable.h
+	libcrux/libcrux-ml-kem/cg/libcrux_mlkem768_portable.h
+"
+
+START="$PWD"
+die() {
+	echo "$@" 1>&2
+	exit 1
+}
+
+set -xe
+test -d libcrux || git clone https://github.com/cryspen/libcrux
+cd libcrux
+test `git diff | wc -l` -ne 0 && die "tree has unstaged changes"
+git fetch
+git checkout -B extract 1>&2
+git reset --hard $WANT_LIBCRUX_REVISION 1>&2
+LIBCRUX_REVISION=`git rev-parse HEAD`
+
+set -e
+cd $START
+echo -n '/*  $OpenBSD$ */'
+echo
+echo '/* Extracted from libcrux revision $LIBCRUX_REVISION */'
+echo
+echo '/*'
+cat libcrux/LICENSE-MIT | sed 's/^/ * /;s/ *$//'
+echo ' */'
+echo
+
+echo
+for i in $FILES; do
+	echo "/* from $i */"
+	# Changes to all files:
+	#  - remove all includes, we inline everything required.
+	#  - make functions not required elsewhere static.
+	#  - rename the functions we do use.
+	#  - remove unnecessary defines and externs.
+	sed -e "/#include/d" \
+	    -e 's/[	 ]*$//' \
+	    $i | \
+	case "$i" in
+# XXX example
+#	# Remove unused function to prevent warning.
+#	libcrux/libcrux-ml-kem/cg/somefile.c)
+#	    sed \
+#		-e '/int some_func(/,/^}$/d' \
+#	    ;;
+	# Default: pass through.
+	*)
+	    cat
+	    ;;
+	esac
+	echo
+done

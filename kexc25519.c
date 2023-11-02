@@ -69,7 +69,7 @@ kexc25519_shared_key_ext(const u_char key[CURVE25519_SIZE],
 		return SSH_ERR_KEY_INVALID_EC_VALUE;
 
 #ifdef DEBUG_KEXECDH
-	dump_digest("shared secret", shared_key, CURVE25519_SIZE);
+	dump_digest("shared secret 25519", shared_key, CURVE25519_SIZE);
 #endif
 	if (raw)
 		r = sshbuf_put(out, shared_key, CURVE25519_SIZE);

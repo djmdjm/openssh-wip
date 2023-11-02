@@ -25,6 +25,7 @@
  */
 
 #define KEX_SERVER_KEX	\
+	"mlkem768x25519-sha256@openssh.com," \
 	"sntrup761x25519-sha512," \
 	"sntrup761x25519-sha512@openssh.com," \
 	"curve25519-sha256," \
