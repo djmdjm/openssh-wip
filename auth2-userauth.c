@@ -55,6 +55,7 @@
 #include "monitor_wrap.h"
 #include "ssherr.h"
 #include "digest.h"
+#include "kex.h"
 
 /* import */
 extern ServerOptions options;
