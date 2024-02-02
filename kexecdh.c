@@ -30,56 +30,67 @@
 #include <string.h>
 #include <signal.h>
 
-#include <openssl/ecdh.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
 
 #include "sshkey.h"
 #include "kex.h"
 #include "sshbuf.h"
 #include "digest.h"
 #include "ssherr.h"
+#include "log.h"
 
 static int
-kex_ecdh_dec_key_group(struct kex *, const struct sshbuf *, EC_KEY *key,
-    const EC_GROUP *, struct sshbuf **);
+kex_ecdh_dec_key_group(struct kex *kex, const struct sshbuf *ec_blob,
+    EVP_PKEY *pkey, struct sshbuf **shared_secretp);
+
+static EVP_PKEY *
+generate_ec_keys(int ec_nid)
+{
+	EVP_PKEY *pkey = NULL;
+	EVP_PKEY_CTX *ctx = NULL;
+
+	if ((ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL)) == NULL ||
+	    EVP_PKEY_keygen_init(ctx) != 1 ||
+	    EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, ec_nid) <= 0 ||
+	    EVP_PKEY_keygen(ctx, &pkey) != 1) {
+		error_f("Could not generate ec keys");
+		goto out;
+	}
+ out:
+	EVP_PKEY_CTX_free(ctx);
+	return pkey;
+}
 
 int
 kex_ecdh_keypair(struct kex *kex)
 {
-	EC_KEY *client_key = NULL;
-	const EC_GROUP *group;
-	const EC_POINT *public_key;
+	EVP_PKEY *client_key = NULL;
 	struct sshbuf *buf = NULL;
 	int r;
 
-	if ((client_key = EC_KEY_new_by_curve_name(kex->ec_nid)) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	if (EC_KEY_generate_key(client_key) != 1) {
+	if ((client_key = generate_ec_keys(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	group = EC_KEY_get0_group(client_key);
-	public_key = EC_KEY_get0_public_key(client_key);
 
 	if ((buf = sshbuf_new()) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if ((r = sshbuf_put_ec(buf, public_key, group)) != 0 ||
+	if ((r = sshbuf_put_ec(buf, client_key)) != 0 ||
 	    (r = sshbuf_get_u32(buf, NULL)) != 0)
 		goto out;
 #ifdef DEBUG_KEXECDH
 	fputs("client private key:\n", stderr);
 	sshkey_dump_ec_key(client_key);
 #endif
-	kex->ec_client_key = client_key;
-	kex->ec_group = group;
+	kex->pkey = client_key;
 	client_key = NULL;	/* owned by the kex */
 	kex->client_pub = buf;
 	buf = NULL;
  out:
-	EC_KEY_free(client_key);
+	EVP_PKEY_free(client_key);
 	sshbuf_free(buf);
 	return r;
 }
@@ -88,55 +99,49 @@ int
 kex_ecdh_enc(struct kex *kex, const struct sshbuf *client_blob,
     struct sshbuf **server_blobp, struct sshbuf **shared_secretp)
 {
-	const EC_GROUP *group;
-	const EC_POINT *pub_key;
-	EC_KEY *server_key = NULL;
+	EVP_PKEY *server_key = NULL;
 	struct sshbuf *server_blob = NULL;
 	int r;
 
 	*server_blobp = NULL;
 	*shared_secretp = NULL;
 
-	if ((server_key = EC_KEY_new_by_curve_name(kex->ec_nid)) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	if (EC_KEY_generate_key(server_key) != 1) {
+	if ((server_key = generate_ec_keys(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	group = EC_KEY_get0_group(server_key);
 
 #ifdef DEBUG_KEXECDH
 	fputs("server private key:\n", stderr);
 	sshkey_dump_ec_key(server_key);
 #endif
-	pub_key = EC_KEY_get0_public_key(server_key);
 	if ((server_blob = sshbuf_new()) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if ((r = sshbuf_put_ec(server_blob, pub_key, group)) != 0 ||
+	if ((r = sshbuf_put_ec(server_blob, server_key)) != 0 ||
 	    (r = sshbuf_get_u32(server_blob, NULL)) != 0)
 		goto out;
-	if ((r = kex_ecdh_dec_key_group(kex, client_blob, server_key, group,
+	if ((r = kex_ecdh_dec_key_group(kex, client_blob, server_key,
 	    shared_secretp)) != 0)
 		goto out;
 	*server_blobp = server_blob;
 	server_blob = NULL;
  out:
-	EC_KEY_free(server_key);
+	EVP_PKEY_free(server_key);
 	sshbuf_free(server_blob);
 	return r;
 }
 
 static int
 kex_ecdh_dec_key_group(struct kex *kex, const struct sshbuf *ec_blob,
-    EC_KEY *key, const EC_GROUP *group, struct sshbuf **shared_secretp)
+    EVP_PKEY *pkey, struct sshbuf **shared_secretp)
 {
 	struct sshbuf *buf = NULL;
 	BIGNUM *shared_secret = NULL;
-	EC_POINT *dh_pub = NULL;
+	EVP_PKEY_CTX *ctx = NULL;
+	EVP_PKEY *peer_key = NULL;
+	EC_KEY *ec = NULL;
 	u_char *kbuf = NULL;
 	size_t klen = 0;
 	int r;
@@ -149,43 +154,70 @@ kex_ecdh_dec_key_group(struct kex *kex, const struct sshbuf *ec_blob,
 	}
 	if ((r = sshbuf_put_stringb(buf, ec_blob)) != 0)
 		goto out;
-	if ((dh_pub = EC_POINT_new(group)) == NULL) {
+	if ((ec = EC_KEY_new_by_curve_name(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if ((r = sshbuf_get_ec(buf, dh_pub, group)) != 0) {
+	if ((r = sshbuf_get_eckey(buf, ec)) != 0)
+		goto out;
+
+	if ((peer_key = EVP_PKEY_new()) == NULL) {
+		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	sshbuf_reset(buf);
+
+	if (EVP_PKEY_set1_EC_KEY(peer_key, ec) != 1) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
 
 #ifdef DEBUG_KEXECDH
 	fputs("public key:\n", stderr);
-	sshkey_dump_ec_point(group, dh_pub);
+// wahern: TODO
+//	EVP_PKEY_print_public_fp(stderr, peer_key, 0, NULL);
+	sshkey_dump_ec_point(EC_KEY_get0_group(ec),
+	    EC_KEY_get0_public_key(ec));
 #endif
-	if (sshkey_ec_validate_public(group, dh_pub) != 0) {
+// wahern: TODO use EVP_PKEY_public_check instead? original patch simply
+// removed sshkey_ec_validate_public call in 1.1.1 case, but did call
+// EVP_PKEY_public_check in 3.x case
+	if (sshkey_ec_validate_public(EC_KEY_get0_group(ec),
+	    EC_KEY_get0_public_key(ec)) != 0) {
 		r = SSH_ERR_MESSAGE_INCOMPLETE;
 		goto out;
 	}
-	klen = (EC_GROUP_get_degree(group) + 7) / 8;
-	if ((kbuf = malloc(klen)) == NULL ||
-	    (shared_secret = BN_new()) == NULL) {
+	if ((ctx = EVP_PKEY_CTX_new(pkey, NULL)) == NULL ||
+	    EVP_PKEY_derive_init(ctx) != 1 ||
+	    EVP_PKEY_derive_set_peer(ctx, peer_key) != 1 ||
+	    EVP_PKEY_derive(ctx, NULL, &klen) != 1) {
+		error_f("Failed to get derive information");
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	if ((kbuf = malloc(klen)) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if (ECDH_compute_key(kbuf, klen, dh_pub, key, NULL) != (int)klen ||
-	    BN_bin2bn(kbuf, klen, shared_secret) == NULL) {
+	if (EVP_PKEY_derive(ctx, kbuf, &klen) != 1) {
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
 #ifdef DEBUG_KEXECDH
 	dump_digest("shared secret", kbuf, klen);
 #endif
+	if ((shared_secret = BN_new()) == NULL ||
+	    (BN_bin2bn(kbuf, klen, shared_secret) == NULL)) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
 	if ((r = sshbuf_put_bignum2(buf, shared_secret)) != 0)
 		goto out;
 	*shared_secretp = buf;
 	buf = NULL;
  out:
-	EC_POINT_clear_free(dh_pub);
+	EVP_PKEY_CTX_free(ctx);
+	EVP_PKEY_free(peer_key);
+	EC_KEY_free(ec);
 	BN_clear_free(shared_secret);
 	freezero(kbuf, klen);
 	sshbuf_free(buf);
@@ -198,9 +230,9 @@ kex_ecdh_dec(struct kex *kex, const struct sshbuf *server_blob,
 {
 	int r;
 
-	r = kex_ecdh_dec_key_group(kex, server_blob, kex->ec_client_key,
-	    kex->ec_group, shared_secretp);
-	EC_KEY_free(kex->ec_client_key);
-	kex->ec_client_key = NULL;
+	r = kex_ecdh_dec_key_group(kex, server_blob, kex->pkey,
+	    shared_secretp);
+	EVP_PKEY_free(kex->pkey);
+	kex->pkey = NULL;
 	return r;
 }

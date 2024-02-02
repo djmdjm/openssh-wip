@@ -252,9 +252,21 @@ rsa_encrypt(int flen, const u_char *from, u_char *to, RSA *rsa, int padding)
 		error_f("sshkey_new failed");
 		goto fail;
 	}
+	key->pkey = EVP_PKEY_new();
+	if (key->pkey == NULL) {
+		error("EVP_PKEY_new failed");
+		sshkey_free(key);
+		key = NULL;
+		goto fail;
+	}
+	if (EVP_PKEY_set1_RSA(key->pkey, rsa) <= 0) {
+		error("EVP_PKEY_set1_RSA failed");
+		sshkey_free(key);
+		key = NULL;
+		goto fail;
+	}
+
 	key->type = KEY_RSA;
-	RSA_up_ref(rsa);
-	key->rsa = rsa;
 	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
 		error_fr(r, "encode key");
 		goto fail;
@@ -321,21 +333,37 @@ ecdsa_do_sign(const unsigned char *dgst, int dgst_len, const BIGNUM *inv,
 	if ((helper = helper_by_ec(ec)) == NULL || helper->fd == -1)
 		fatal_f("no helper for PKCS11 key");
 	debug3_f("signing with PKCS11 provider %s", helper->path);
-	nid = sshkey_ecdsa_key_to_nid(ec);
-	if (nid < 0) {
-		error_f("couldn't get curve nid");
-		goto fail;
-	}
 
 	key = sshkey_new(KEY_UNSPEC);
 	if (key == NULL) {
 		error_f("sshkey_new failed");
 		goto fail;
 	}
-	key->ecdsa = ec;
+	key->pkey = EVP_PKEY_new();
+	if (key->pkey == NULL) {
+		error("EVP_PKEY_new failed");
+		sshkey_free(key);
+		key = NULL;
+		goto fail;
+	}
+
+	if (EVP_PKEY_set1_EC_KEY(key->pkey, ec) <= 0) {
+		error("EVP_PKEY_set1_EC_KEY failed");
+		sshkey_free(key);
+		key = NULL;
+		goto fail;
+	}
+
+	nid = sshkey_ecdsa_key_to_nid(key->pkey);
+	if (nid < 0) {
+		error("couldn't get curve nid");
+		sshkey_free(key);
+		key = NULL;
+		goto fail;
+	}
+
 	key->ecdsa_nid = nid;
 	key->type = KEY_ECDSA;
-	EC_KEY_up_ref(ec);
 
 	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
 		error_fr(r, "encode key");
@@ -391,13 +419,19 @@ wrap_key(struct helper *helper, struct sshkey *k)
 {
 	debug3_f("wrap %s for provider %s", sshkey_type(k), helper->path);
 	if (k->type == KEY_RSA) {
-		RSA_set_method(k->rsa, helper->rsa_meth);
+		RSA *rsa = EVP_PKEY_get1_RSA(k->pkey);
+		RSA_set_method(rsa, helper->rsa_meth);
 		if (helper->nrsa++ >= INT_MAX)
 			fatal_f("RSA refcount error");
+		EVP_PKEY_set1_RSA(k->pkey, rsa);
+		RSA_free(rsa);
 	} else if (k->type == KEY_ECDSA) {
-		EC_KEY_set_method(k->ecdsa, helper->ec_meth);
+		EC_KEY *ecdsa = EVP_PKEY_get1_EC_KEY(k->pkey);
+		EC_KEY_set_method(ecdsa, helper->ec_meth);
 		if (helper->nec++ >= INT_MAX)
 			fatal_f("EC refcount error");
+		EVP_PKEY_set1_EC_KEY(k->pkey, ecdsa);
+		EC_KEY_free(ecdsa);
 	} else
 		fatal_f("unknown key type");
 	k->flags |= SSHKEY_FLAG_EXT;
@@ -428,23 +462,29 @@ pkcs11_make_cert(const struct sshkey *priv,
 	}
 	*certprivp = NULL;
 	if (priv->type == KEY_RSA) {
-		if ((helper = helper_by_rsa(priv->rsa)) == NULL ||
+		RSA *rsa = EVP_PKEY_get1_RSA(priv->pkey);
+		if ((helper = helper_by_rsa(rsa)) == NULL ||
 		    helper->fd == -1)
 			fatal_f("no helper for PKCS11 RSA key");
 		if ((r = sshkey_from_private(priv, &ret)) != 0)
 			fatal_fr(r, "copy key");
-		RSA_set_method(ret->rsa, helper->rsa_meth);
+		RSA_set_method(rsa, helper->rsa_meth);
 		if (helper->nrsa++ >= INT_MAX)
 			fatal_f("RSA refcount error");
+		EVP_PKEY_set1_RSA(priv->pkey, rsa);
+		RSA_free(rsa);
 	} else if (priv->type == KEY_ECDSA) {
-		if ((helper = helper_by_ec(priv->ecdsa)) == NULL ||
+		EC_KEY *ec = EVP_PKEY_get1_EC_KEY(priv->pkey);
+		if ((helper = helper_by_ec(ec)) == NULL ||
 		    helper->fd == -1)
 			fatal_f("no helper for PKCS11 EC key");
 		if ((r = sshkey_from_private(priv, &ret)) != 0)
 			fatal_fr(r, "copy key");
-		EC_KEY_set_method(ret->ecdsa, helper->ec_meth);
+		EC_KEY_set_method(ec, helper->ec_meth);
 		if (helper->nec++ >= INT_MAX)
 			fatal_f("EC refcount error");
+		EVP_PKEY_set1_EC_KEY(priv->pkey, ec);
+		EC_KEY_free(ec);
 	} else
 		fatal_f("unknown key type %s", sshkey_type(priv));
 

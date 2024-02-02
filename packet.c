@@ -2612,9 +2612,9 @@ sshpkt_put_stringb(struct ssh *ssh, const struct sshbuf *v)
 
 #ifdef WITH_OPENSSL
 int
-sshpkt_put_ec(struct ssh *ssh, const EC_POINT *v, const EC_GROUP *g)
+sshpkt_put_ec(struct ssh *ssh, EVP_PKEY *pkey)
 {
-	return sshbuf_put_ec(ssh->state->outgoing_packet, v, g);
+	return sshbuf_put_ec(ssh->state->outgoing_packet, pkey);
 }
 
 
@@ -2683,9 +2683,9 @@ sshpkt_getb_froms(struct ssh *ssh, struct sshbuf **valp)
 
 #ifdef WITH_OPENSSL
 int
-sshpkt_get_ec(struct ssh *ssh, EC_POINT *v, const EC_GROUP *g)
+sshpkt_get_ec(struct ssh *ssh, u_char **kp, size_t *lp)
 {
-	return sshbuf_get_ec(ssh->state->incoming_packet, v, g);
+	return sshbuf_get_string(ssh->state->incoming_packet, kp, lp);
 }
 
 int

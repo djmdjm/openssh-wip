@@ -36,6 +36,8 @@
 #include "ssherr.h"
 
 #ifdef WITH_OPENSSL
+#include <openssl/ec.h>
+#include <openssl/rsa.h>
 
 /* borrows code from sftp-server and ssh-agent */
 
@@ -195,26 +197,33 @@ process_sign(void)
 			int ret;
 
 			if (key->type == KEY_RSA) {
-				slen = RSA_size(key->rsa);
+				RSA *rsa = EVP_PKEY_get1_RSA(found->pkey);
+
+				slen = RSA_size(rsa);
 				signature = xmalloc(slen);
+				/* FIXME OpenSSL 3.0 */
 				ret = RSA_private_encrypt(dlen, data, signature,
-				    found->rsa, RSA_PKCS1_PADDING);
+				    rsa, RSA_PKCS1_PADDING);
 				if (ret != -1) {
 					slen = ret;
 					ok = 0;
 				}
+				RSA_free(rsa);
 			} else if (key->type == KEY_ECDSA) {
-				u_int xslen = ECDSA_size(key->ecdsa);
+				/* FIXME OpenSSL 3.0 */
+				EC_KEY *ecdsa = EVP_PKEY_get1_EC_KEY(found->pkey);
+				u_int xslen = ECDSA_size(ecdsa);
 
 				signature = xmalloc(xslen);
 				/* "The parameter type is ignored." */
 				ret = ECDSA_sign(-1, data, dlen, signature,
-				    &xslen, found->ecdsa);
+				    &xslen, ecdsa);
 				if (ret != 0)
 					ok = 0;
 				else
 					error_f("ECDSA_sign returned %d", ret);
 				slen = xslen;
+				EC_KEY_free(ecdsa);
 			} else
 				error_f("don't know how to sign with key "
 				    "type %d", (int)key->type);

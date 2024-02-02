@@ -33,12 +33,10 @@
 #include <openssl/bn.h>
 #include <openssl/dh.h>
 #include <openssl/ec.h>
-#include <openssl/ecdsa.h>
 #else /* OPENSSL */
 #define BIGNUM		void
 #define DH		void
-#define EC_KEY		void
-#define EC_GROUP	void
+#define EVP_PKEY	void
 #endif /* WITH_OPENSSL */
 
 #define KEX_COOKIE_LEN	16
@@ -168,8 +166,7 @@ struct kex {
 	/* kex specific state */
 	DH	*dh;			/* DH */
 	u_int	min, max, nbits;	/* GEX */
-	EC_KEY	*ec_client_key;		/* ECDH */
-	const EC_GROUP *ec_group;	/* ECDH */
+	EVP_PKEY *pkey;			/* ECDH */
 	u_char c25519_client_key[CURVE25519_SIZE]; /* 25519 + KEM */
 	u_char c25519_client_pubkey[CURVE25519_SIZE]; /* 25519 */
 	u_char sntrup761_client_key[crypto_kem_sntrup761_SECRETKEYBYTES]; /* KEM */

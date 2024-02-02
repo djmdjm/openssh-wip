@@ -718,7 +718,7 @@ kex_free(struct kex *kex)
 
 #ifdef WITH_OPENSSL
 	DH_free(kex->dh);
-	EC_KEY_free(kex->ec_client_key);
+	EVP_PKEY_free(kex->pkey);
 #endif
 	for (mode = 0; mode < MODE_MAX; mode++) {
 		kex_free_newkeys(kex->newkeys[mode]);
