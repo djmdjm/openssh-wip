@@ -208,6 +208,7 @@ void	opt_array_append(const char *file, const int line,
 void	opt_array_append2(const char *file, const int line,
 	    const char *directive, char ***array, int **iarray, u_int *lp,
 	    const char *s, int i);
+void	opt_array_free2(char **array, int **iarray, u_int l);
 
 struct timespec;
 void ptimeout_init(struct timespec *pt);

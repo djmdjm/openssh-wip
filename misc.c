@@ -2537,6 +2537,19 @@ opt_array_append(const char *file, const int line, const char *directive,
 	opt_array_append2(file, line, directive, array, NULL, lp, s, 0);
 }
 
+void
+opt_array_free2(char **array, int **iarray, u_int l)
+{
+	u_int i;
+
+	if (array == NULL || l == 0)
+		return;
+	for (i = 0; i < l; i++)
+		free(array[i]);
+	free(array);
+	free(iarray);
+}
+
 sshsig_t
 ssh_signal(int signum, sshsig_t handler)
 {
