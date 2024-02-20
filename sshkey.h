@@ -38,6 +38,9 @@
 #define BIGNUM		void
 #define RSA		void
 #define DSA		void
+#define EC_GROUP	void
+#define EC_KEY		void
+#define EC_POINT	void
 #define EVP_PKEY	void
 #define SSH_OPENSSL_VERSION "without OpenSSL"
 #endif /* WITH_OPENSSL */

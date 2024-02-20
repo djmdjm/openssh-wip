@@ -28,6 +28,7 @@
 #include <openssl/ecdsa.h>
 #else /* OPENSSL */
 #define BIGNUM		void
+#define EVP_PKEY	void
 #define EC_KEY		void
 #define EC_GROUP	void
 #define EC_POINT	void

@@ -27,7 +27,7 @@
 #include <openssl/ecdsa.h>
 #else /* OPENSSL */
 #define BIGNUM		void
-#define EC_KEY		void
+#define EVP_PKEY	void
 #endif /* WITH_OPENSSL */
 
 struct kex;
