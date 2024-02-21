@@ -78,6 +78,7 @@
 #include "authfd.h"
 #include "pathnames.h"
 #include "match.h"
+#include "kex.h"
 
 /* XXX remove once we're satisfied there's no lurking bugs */
 /* #define DEBUG_CHANNEL_POLL 1 */
@@ -919,6 +920,23 @@ channel_still_open(struct ssh *ssh)
 		}
 	}
 	return 0;
+}
+
+
+static u_int
+channel_count_open(struct ssh *ssh)
+{
+	u_int i, n;
+	Channel *c;
+
+	for (i = n = 0; i < ssh->chanctxt->channels_alloc; i++) {
+		if ((c = ssh->chanctxt->channels[i]) == NULL ||
+		    c->type != SSH_CHANNEL_OPEN ||
+		    c->flags & (CHAN_CLOSE_SENT|CHAN_CLOSE_RCVD))
+			continue;
+		n++;
+	}
+	return n;
 }
 
 /* Returns true if a channel with a TTY is open. */
@@ -2331,12 +2349,79 @@ channel_check_window(struct ssh *ssh, Channel *c)
 		    (r = sshpkt_send(ssh)) != 0) {
 			fatal_fr(r, "channel %i", c->self);
 		}
-		debug2("channel %d: window %d sent adjust %d", c->self,
+		debug3_f("channel %d: window %d sent adjust %d", c->self,
 		    c->local_window, c->local_consumed);
 		c->local_window += c->local_consumed;
 		c->local_consumed = 0;
 	}
 	return 1;
+}
+
+/*
+ * Try to update local_window_max when the TCP receive window grows,
+ * if the peer supports the channel-window-max@openssh.com extension.
+ * NB. must be called before channel_check_window(), as that clobbers
+ * c->local_consumed.
+ */
+static void
+channel_check_max_window(struct ssh *ssh, Channel *c)
+{
+	int r, tcp_rwin;
+	u_int new_window_max;
+
+	if ((ssh->kex->flags & KEX_HAS_CHANNEL_MAX_WINDOW) == 0)
+		return; /* no protocol extension support */
+	if (c->local_consumed == 0)
+		return; /* only modify window for active channels */
+	if (c->type != SSH_CHANNEL_OPEN ||
+	    (c->flags & (CHAN_CLOSE_SENT|CHAN_CLOSE_RCVD)) != 0)
+		return; /* channel not in open state */
+	if ((tcp_rwin = ssh_packet_get_tcp_rwin(ssh)) == -1)
+		return; /* no TCP window recorded */
+	if (c->local_window_max >= sshbuf_max_size(c->output))
+		return; /* Already at max */
+
+	/*
+	 * XXX the following rules are all heuristics with factors that
+	 * I just made up - djm
+	 * XXX this increases the SSH window to the TCP window in
+	 * one shot. Is this what we want? Alternately we could
+	 * increase by a fraction of the difference, so the SSH window
+	 * successively approximates the TCP window.
+	 * XXX there is only a naive fair-share the TCP window across
+	 * channel windows. It treats all channel identically (e.g. an
+	 * agent connection vs a shell) and doesn't try very hard to only
+	 * increase the window for channels that need it.
+	 * XXX maybe maintain a notion of "claimed TCP window" and
+	 * give it out only to channels that are active?
+	 * XXX regardless, a bit of oversubscription of the TCP window
+	 * is probably desirable as it's likely that not all channels will
+	 * be fully utilising their windows simultaneously.
+	 * XXX this never shrinks the window. This might be desirable for
+	 * idle channels if other are busy, but would be a fair bit of work.
+	 */
+	if (sshbuf_len(c->output) > c->local_window_max / 4)
+		return; /* Don't increase window if output is slow/filling */
+
+	/* Allow some oversubscription of the TCP window across channels */
+	new_window_max = (3 * (u_int)tcp_rwin) / channel_count_open(ssh);
+	if (new_window_max > (u_int)tcp_rwin)
+		new_window_max = (u_int)tcp_rwin;
+	if (new_window_max > sshbuf_max_size(c->output))
+		new_window_max = sshbuf_max_size(c->output);
+
+	if (new_window_max <= c->local_window_max)
+		return; /* don't shrink */
+
+	channel_request_start(ssh, c->self,
+	    "max-window@openssh.com", 0);
+	if ((r = sshpkt_put_u32(ssh, new_window_max)) != 0 ||
+	    (r = sshpkt_send(ssh)) != 0)
+		fatal_fr(r, "channel %i", c->self);
+	debug2_f("channel %d: sent max-window@openssh.com "
+	    "%d -> %d (+%d), peer TCP rwin %d", c->self, c->local_window_max,
+	    new_window_max, new_window_max - c->local_window_max, tcp_rwin);
+	c->local_window_max = new_window_max;
 }
 
 static void
@@ -2345,6 +2430,7 @@ channel_post_open(struct ssh *ssh, Channel *c)
 	channel_handle_rfd(ssh, c);
 	channel_handle_wfd(ssh, c);
 	channel_handle_efd(ssh, c);
+	channel_check_max_window(ssh, c);
 	channel_check_window(ssh, c);
 }
 
@@ -3542,7 +3628,7 @@ channel_input_open_confirmation(int type, u_int32_t seq, struct ssh *ssh)
 	}
 
 	c->have_remote_id = 1;
-	c->remote_window = remote_window;
+	c->remote_window = c->remote_window_max = remote_window;
 	c->remote_maxpacket = remote_maxpacket;
 	c->type = SSH_CHANNEL_OPEN;
 	if (c->open_confirm) {
@@ -3610,6 +3696,53 @@ channel_input_open_failure(int type, u_int32_t seq, struct ssh *ssh)
 }
 
 int
+channel_input_max_window(struct ssh *ssh, Channel *c)
+{
+	u_int old_window, new_max_window;
+	int r;
+
+	if (c->type != SSH_CHANNEL_OPEN) {
+		debug_f("channel %d: not open", c->self);
+		return SSH_ERR_INVALID_ARGUMENT;
+	}
+	if ((r = sshpkt_get_u32(ssh, &new_max_window)) != 0 ||
+	    (r = sshpkt_get_end(ssh)) != 0) {
+		error_fr(r, "channel %d: parse", c->self);
+		return r;
+	}
+	old_window = c->remote_window;
+	if (new_max_window > c->remote_window_max) {
+		/* Usual case: remote grows max window */
+		c->remote_window += new_max_window - c->remote_window_max;
+	} else if (new_max_window < c->remote_window_max) {
+		/*
+		 * Only allow shrinking the window if there is
+		 * sufficient capacity to do so.
+		 */
+		if (c->remote_window_max - new_max_window > c->remote_window) {
+			error_f("channel %d: remote requested invalid remote "
+			    "window size", c->self);
+			/* XXX what to do? close chan? set remote_window=0? */
+			/* XXX could gracefully ratchet window back */
+			/* XXX maybe better to just ban shrinking? */
+			return SSH_ERR_INVALID_ARGUMENT;
+		}
+		c->remote_window -= c->remote_window_max - new_max_window;
+	} else {
+		/* Same size shouldn't happen */
+		debug_f("channel %d: useless max-window update", c->self);
+	}
+	debug2_f("channel %d: new remote window max %d -> %d (%+d)",
+	    c->self, c->remote_window_max, new_max_window,
+	    new_max_window - c->remote_window_max);
+	debug3_f("channel %d: implicit window adjust %d -> %d (%+d)",
+	    c->self, old_window, c->remote_window,
+	    c->remote_window - old_window);
+	c->remote_window_max = new_max_window;
+	return 0;
+}
+
+int
 channel_input_window_adjust(int type, u_int32_t seq, struct ssh *ssh)
 {
 	int id = channel_parse_id(ssh, __func__, "window adjust");
@@ -3630,11 +3763,12 @@ channel_input_window_adjust(int type, u_int32_t seq, struct ssh *ssh)
 		error_fr(r, "parse adjust");
 		ssh_packet_disconnect(ssh, "Invalid window adjust message");
 	}
-	debug2("channel %d: rcvd adjust %u", c->self, adjust);
 	if ((new_rwin = c->remote_window + adjust) < c->remote_window) {
 		fatal("channel %d: adjust %u overflows remote window %u",
 		    c->self, adjust, c->remote_window);
 	}
+	debug3_f("channel %d: rcvd adjust %u window %u/%u", c->self, adjust,
+	    c->remote_window, c->remote_window_max);
 	c->remote_window = new_rwin;
 	return 0;
 }

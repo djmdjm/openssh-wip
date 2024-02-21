@@ -296,13 +296,16 @@ kex_compose_ext_info_server(struct ssh *ssh, struct sshbuf *m)
 	if (ssh->kex->server_sig_algs == NULL &&
 	    (ssh->kex->server_sig_algs = sshkey_alg_list(0, 1, 1, ',')) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_put_u32(m, 3)) != 0 ||
+	if ((r = sshbuf_put_u32(m, 4)) != 0 ||
 	    (r = sshbuf_put_cstring(m, "server-sig-algs")) != 0 ||
 	    (r = sshbuf_put_cstring(m, ssh->kex->server_sig_algs)) != 0 ||
 	    (r = sshbuf_put_cstring(m,
 	    "publickey-hostbound@openssh.com")) != 0 ||
 	    (r = sshbuf_put_cstring(m, "0")) != 0 ||
 	    (r = sshbuf_put_cstring(m, "ping@openssh.com")) != 0 ||
+	    (r = sshbuf_put_cstring(m, "0")) != 0 ||
+	    (r = sshbuf_put_cstring(m,
+	    "channel-max-window@openssh.com")) != 0 ||
 	    (r = sshbuf_put_cstring(m, "0")) != 0) {
 		error_fr(r, "compose");
 		return r;
@@ -315,8 +318,11 @@ kex_compose_ext_info_client(struct ssh *ssh, struct sshbuf *m)
 {
 	int r;
 
-	if ((r = sshbuf_put_u32(m, 1)) != 0 ||
+	if ((r = sshbuf_put_u32(m, 2)) != 0 ||
 	    (r = sshbuf_put_cstring(m, "ext-info-in-auth@openssh.com")) != 0 ||
+	    (r = sshbuf_put_cstring(m, "0")) != 0 ||
+	    (r = sshbuf_put_cstring(m,
+	    "channel-max-window@openssh.com")) != 0 ||
 	    (r = sshbuf_put_cstring(m, "0")) != 0) {
 		error_fr(r, "compose");
 		goto out;
@@ -446,6 +452,11 @@ kex_ext_info_client_parse(struct ssh *ssh, const char *name,
 		    "0", KEX_HAS_PING)) != 0) {
 			return r;
 		}
+	} else if (strcmp(name, "channel-max-window@openssh.com") == 0) {
+		if ((r = kex_ext_info_check_ver(ssh->kex, name, value, vlen,
+		    "0", KEX_HAS_CHANNEL_MAX_WINDOW)) != 0) {
+			return r;
+		}
 	} else
 		debug_f("%s (unrecognised)", name);
 
@@ -461,6 +472,11 @@ kex_ext_info_server_parse(struct ssh *ssh, const char *name,
 	if (strcmp(name, "ext-info-in-auth@openssh.com") == 0) {
 		if ((r = kex_ext_info_check_ver(ssh->kex, name, value, vlen,
 		    "0", KEX_HAS_EXT_INFO_IN_AUTH)) != 0) {
+			return r;
+		}
+	} else if (strcmp(name, "channel-max-window@openssh.com") == 0) {
+		if ((r = kex_ext_info_check_ver(ssh->kex, name, value, vlen,
+		    "0", KEX_HAS_CHANNEL_MAX_WINDOW)) != 0) {
 			return r;
 		}
 	} else
