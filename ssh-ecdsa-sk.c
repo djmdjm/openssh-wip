@@ -373,7 +373,8 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	switch(EVP_DigestVerify(md_ctx, sigb, len, sshbuf_ptr(original_signed), sshbuf_len(original_signed))) {
+	switch (EVP_DigestVerify(md_ctx, sigb, len,
+	    sshbuf_ptr(original_signed), sshbuf_len(original_signed))) {
 	case 1:
 		ret = 0;
 		break;

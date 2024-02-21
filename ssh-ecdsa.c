@@ -281,11 +281,9 @@ ssh_ecdsa_sign(struct sshkey *key,
 	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1)
 		return SSH_ERR_INTERNAL_ERROR;
 
-	ret = sshkey_calculate_signature(key->pkey, hash_alg, &sigb, &len, data,
-	    dlen);
-	if (ret < 0) {
+	if ((ret = sshkey_calculate_signature(key->pkey, hash_alg, &sigb, &len,
+	    data, dlen)) != 0)
 		goto out;
-	}
 
 	psig = sigb;
 	if (d2i_ECDSA_SIG(&esig, &psig, len) == NULL) {
@@ -397,7 +395,10 @@ ssh_ecdsa_verify(const struct sshkey *key,
 		goto out;
 	}
 
-	ret = sshkey_verify_signature(key->pkey, hash_alg, data, dlen, sigb, len);
+	if ((ret = sshkey_verify_signature(key->pkey, hash_alg, data, dlen,
+	    sigb, len)) != 0)
+		goto out;
+	/* success */
  out:
 	free(sigb);
 	sshbuf_free(sigbuf);

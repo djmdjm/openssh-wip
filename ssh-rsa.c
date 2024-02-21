@@ -282,8 +282,8 @@ ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
 	    (r = sshbuf_get_bignum2(b, &rsa_p)) != 0 ||
 	    (r = sshbuf_get_bignum2(b, &rsa_q)) != 0)
 		goto out;
-	if ((r = ssh_rsa_complete_crt_parameters(rsa_d, rsa_p, rsa_q, rsa_iqmp,
-					         &rsa_dmp1, &rsa_dmq1)) != 0)
+	if ((r = ssh_rsa_complete_crt_parameters(rsa_d, rsa_p, rsa_q,
+	    rsa_iqmp, &rsa_dmp1, &rsa_dmq1)) != 0)
 		goto out;
 	if (!RSA_set0_key(rsa, NULL, NULL, rsa_d)) {
 		r = SSH_ERR_LIBCRYPTO_ERROR;
