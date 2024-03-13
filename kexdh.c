@@ -91,7 +91,6 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 		goto out;
 	}
 
-	DH_get0_pqg(kex->dh, &p, &q, &g);
 	if ((pkey = EVP_PKEY_new()) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
@@ -107,9 +106,14 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 		goto out;
 	}
 
-	copy_p = BN_dup(p);
-	copy_q = BN_dup(q);
-	copy_g = BN_dup(g);
+	DH_get0_pqg(kex->dh, &p, &q, &g);
+	if ((copy_p = BN_dup(p)) == NULL ||
+	    (copy_q = BN_dup(q)) == NULL ||
+	    (copy_g = BN_dup(g)) == NULL) {
+		DH_free(dh_peer);
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
 	if (DH_set0_pqg(dh_peer, copy_p, copy_q, copy_g) != 1) {
 		BN_free(copy_p);
 		BN_free(copy_q);
@@ -120,7 +124,11 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 	}
 	copy_p = copy_q = copy_g = NULL;
 
-	copy_pub = BN_dup(dh_pub);
+	if ((copy_pub = BN_dup(dh_pub)) == NULL) {
+		DH_free(dh_peer);
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
 	if (DH_set0_key(dh_peer, copy_pub, NULL) != 1) {
 		BN_free(copy_pub);
 		DH_free(dh_peer);
