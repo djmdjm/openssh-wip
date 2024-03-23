@@ -320,10 +320,6 @@ int	 sshkey_private_serialize_maxsign(struct sshkey *key,
 
 void	 sshkey_sig_details_free(struct sshkey_sig_details *);
 
-#ifdef WITH_OPENSSL
-int	ssh_create_evp_dss(const struct sshkey *, EVP_PKEY **);
-#endif /* WITH_OPENSSL */
-
 #ifdef SSHKEY_INTERNAL
 int	sshkey_sk_fields_equal(const struct sshkey *a, const struct sshkey *b);
 void	sshkey_sk_cleanup(struct sshkey *k);

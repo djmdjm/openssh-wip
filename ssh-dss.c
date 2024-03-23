@@ -250,6 +250,22 @@ ssh_dss_deserialize_private(const char *ktype, struct sshbuf *b,
 }
 
 static int
+sshkey_dss_to_pkey(const struct sshkey *k, EVP_PKEY **pkey)
+{
+	EVP_PKEY *res;
+
+	*pkey = NULL;
+	if ((res = EVP_PKEY_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	if (EVP_PKEY_set1_DSA(res, k->dsa) == 0) {
+		EVP_PKEY_free(res);
+		return SSH_ERR_LIBCRYPTO_ERROR;
+	}
+	*pkey = res;
+	return 0;
+}
+
+static int
 ssh_dss_sign(struct sshkey *key,
     u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen,
@@ -275,14 +291,10 @@ ssh_dss_sign(struct sshkey *key,
 	    sshkey_type_plain(key->type) != KEY_DSA)
 		return SSH_ERR_INVALID_ARGUMENT;
 
-	if ((ret = ssh_create_evp_dss(key, &pkey)) != 0)
-		return ret;
-	ret = sshkey_pkey_sign_internal(pkey, SSH_DIGEST_SHA1, &sigb, &len,
-	    data, datalen);
-	EVP_PKEY_free(pkey);
-	if (ret < 0) {
+	if ((ret = sshkey_dss_to_pkey(key, &pkey)) != 0 ||
+	    (ret = sshkey_pkey_sign_internal(pkey, SSH_DIGEST_SHA1, &sigb, &len,
+	    data, datalen)) != 0)
 		goto out;
-	}
 
 	psig = sigb;
 	if ((sig = d2i_DSA_SIG(NULL, &psig, len)) == NULL) {
@@ -323,6 +335,7 @@ ssh_dss_sign(struct sshkey *key,
 		*lenp = len;
 	ret = 0;
  out:
+	EVP_PKEY_free(pkey);
 	free(sigb);
 	DSA_SIG_free(sig);
 	sshbuf_free(b);
@@ -404,13 +417,13 @@ ssh_dss_verify(const struct sshkey *key,
 		goto out;
 	}
 
-	if ((ret = ssh_create_evp_dss(key, &pkey)) != 0)
+	if ((ret = sshkey_dss_to_pkey(key, &pkey)) != 0 ||
+	    (ret = sshkey_verify_signature(pkey, SSH_DIGEST_SHA1, data, dlen,
+	    sigb, slen)) != 0)
 		goto out;
-	ret = sshkey_verify_signature(pkey, SSH_DIGEST_SHA1, data, dlen,
-	    sigb, slen);
-	EVP_PKEY_free(pkey);
 
  out:
+	EVP_PKEY_free(pkey);
 	free(sigb);
 	DSA_SIG_free(dsig);
 	BN_clear_free(sig_r);
@@ -420,21 +433,6 @@ ssh_dss_verify(const struct sshkey *key,
 	if (sigblob != NULL)
 		freezero(sigblob, len);
 	return ret;
-}
-
-int
-ssh_create_evp_dss(const struct sshkey *k, EVP_PKEY **pkey)
-{
-	EVP_PKEY *res = EVP_PKEY_new();
-	if (res == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-
-	if (EVP_PKEY_set1_DSA(res, k->dsa) == 0) {
-		EVP_PKEY_free(res);
-		return SSH_ERR_LIBCRYPTO_ERROR;
-	}
-	*pkey = res;
-	return 0;
 }
 
 static const struct sshkey_impl_funcs sshkey_dss_funcs = {
