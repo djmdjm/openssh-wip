@@ -94,6 +94,7 @@ sshbuf_get_eckey(struct sshbuf *buf, EC_KEY *v)
 	const u_char *d;
 	size_t len;
 
+/* XXX make this allocate the key */
 	if (pt == NULL) {
 		SSHBUF_DBG(("SSH_ERR_ALLOC_FAIL"));
 		return SSH_ERR_ALLOC_FAIL;
