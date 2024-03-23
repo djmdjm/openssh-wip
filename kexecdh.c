@@ -45,7 +45,7 @@ kex_ecdh_dec_key_group(struct kex *kex, const struct sshbuf *ec_blob,
     EVP_PKEY *pkey, struct sshbuf **shared_secretp);
 
 static EVP_PKEY *
-generate_ec_keys(int ec_nid)
+kex_ecdh_generate(int ec_nid)
 {
 	EVP_PKEY *pkey = NULL;
 	EVP_PKEY_CTX *ctx = NULL;
@@ -69,7 +69,7 @@ kex_ecdh_keypair(struct kex *kex)
 	struct sshbuf *buf = NULL;
 	int r;
 
-	if ((client_key = generate_ec_keys(kex->ec_nid)) == NULL) {
+	if ((client_key = kex_ecdh_generate(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
@@ -106,7 +106,7 @@ kex_ecdh_enc(struct kex *kex, const struct sshbuf *client_blob,
 	*server_blobp = NULL;
 	*shared_secretp = NULL;
 
-	if ((server_key = generate_ec_keys(kex->ec_nid)) == NULL) {
+	if ((server_key = kex_ecdh_generate(kex->ec_nid)) == NULL) {
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
