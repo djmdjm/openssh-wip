@@ -182,7 +182,6 @@ ssh_ecdsa_deserialize_public(const char *ktype, struct sshbuf *b,
 	}
 	if ((r = sshbuf_get_eckey(b, ec)) != 0)
 		goto out;
-// wahern: TODO: use EVP_PKEY_public_check instead?
 	if (sshkey_ec_validate_public(EC_KEY_get0_group(ec),
 	    EC_KEY_get0_public_key(ec)) != 0) {
 		r = SSH_ERR_KEY_INVALID_EC_VALUE;
@@ -239,7 +238,6 @@ ssh_ecdsa_deserialize_private(const char *ktype, struct sshbuf *b,
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-// wahern: TODO: use EVP_PKEY_private_check?
 	if ((r = sshkey_ec_validate_private(ec)) != 0)
 		goto out;
 	if (EVP_PKEY_set1_EC_KEY(key->pkey, ec) != 1) {

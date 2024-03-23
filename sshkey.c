@@ -2652,6 +2652,8 @@ sshkey_ec_validate_public(const EC_GROUP *group, const EC_POINT *public)
 	BIGNUM *order = NULL, *x = NULL, *y = NULL, *tmp = NULL;
 	int ret = SSH_ERR_KEY_INVALID_EC_VALUE;
 
+	/* XXX replace with EC_KEY_check_key or similar? */
+
 	/*
 	 * NB. This assumes OpenSSL has already verified that the public
 	 * point lies on the curve. This is done by EC_POINT_oct2point()
@@ -2758,6 +2760,8 @@ void
 sshkey_dump_ec_point(const EC_GROUP *group, const EC_POINT *point)
 {
 	BIGNUM *x = NULL, *y = NULL;
+
+	/* XXX maybe replace with pkey EVP_PKEY_print_public_fp() */
 
 	if (point == NULL) {
 		fputs("point=(NULL)\n", stderr);

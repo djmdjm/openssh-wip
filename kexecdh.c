@@ -173,14 +173,9 @@ kex_ecdh_dec_key_group(struct kex *kex, const struct sshbuf *ec_blob,
 
 #ifdef DEBUG_KEXECDH
 	fputs("public key:\n", stderr);
-// wahern: TODO
-//	EVP_PKEY_print_public_fp(stderr, peer_key, 0, NULL);
 	sshkey_dump_ec_point(EC_KEY_get0_group(ec),
 	    EC_KEY_get0_public_key(ec));
 #endif
-// wahern: TODO use EVP_PKEY_public_check instead? original patch simply
-// removed sshkey_ec_validate_public call in 1.1.1 case, but did call
-// EVP_PKEY_public_check in 3.x case
 	if (sshkey_ec_validate_public(EC_KEY_get0_group(ec),
 	    EC_KEY_get0_public_key(ec)) != 0) {
 		r = SSH_ERR_MESSAGE_INCOMPLETE;
