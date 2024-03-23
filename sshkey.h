@@ -261,7 +261,7 @@ int		 sshkey_names_valid2(const char *, int, int);
 char		*sshkey_alg_list(int, int, int, char);
 int		 sshkey_pkey_sign_internal(EVP_PKEY*, int, u_char **,
     int *, const u_char *, size_t);
-int		 sshkey_verify_signature(EVP_PKEY *, int, const u_char *,
+int		 sshkey_pkey_verify_internal(EVP_PKEY *, int, const u_char *,
     size_t, u_char *, int);
 
 int	 sshkey_from_blob(const u_char *, size_t, struct sshkey **);

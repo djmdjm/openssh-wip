@@ -393,8 +393,8 @@ ssh_ecdsa_verify(const struct sshkey *key,
 		goto out;
 	}
 
-	if ((ret = sshkey_verify_signature(key->pkey, hash_alg, data, dlen,
-	    sigb, len)) != 0)
+	if ((ret = sshkey_pkey_verify_internal(key->pkey, hash_alg,
+	    data, dlen, sigb, len)) != 0)
 		goto out;
 	/* success */
  out:

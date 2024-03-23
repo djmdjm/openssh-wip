@@ -577,7 +577,7 @@ openssh_RSA_verify(int hash_alg, const u_char *data, size_t datalen,
 		goto done;
 	}
 
-	ret = sshkey_verify_signature(pkey, hash_alg, data, datalen,
+	ret = sshkey_pkey_verify_internal(pkey, hash_alg, data, datalen,
 	    sigbuf, siglen);
 
 done:

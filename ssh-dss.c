@@ -418,8 +418,8 @@ ssh_dss_verify(const struct sshkey *key,
 	}
 
 	if ((ret = sshkey_dss_to_pkey(key, &pkey)) != 0 ||
-	    (ret = sshkey_verify_signature(pkey, SSH_DIGEST_SHA1, data, dlen,
-	    sigb, slen)) != 0)
+	    (ret = sshkey_pkey_verify_internal(pkey, SSH_DIGEST_SHA1,
+	    data, dlen, sigb, slen)) != 0)
 		goto out;
 
  out:

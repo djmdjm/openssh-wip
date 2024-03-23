@@ -507,7 +507,7 @@ error:
 }
 
 int
-sshkey_verify_signature(EVP_PKEY *pkey, int hash_alg, const u_char *data,
+sshkey_pkey_verify_internal(EVP_PKEY *pkey, int hash_alg, const u_char *data,
     size_t datalen, u_char *sigbuf, int siglen)
 {
 	EVP_MD_CTX *ctx = NULL;
