@@ -443,7 +443,7 @@ ssh_rsa_sign(struct sshkey *key,
 	if (EVP_PKEY_bits(key->pkey) < SSH_RSA_MINIMUM_MODULUS_SIZE)
 		return SSH_ERR_KEY_LENGTH;
 
-	ret = sshkey_calculate_signature(key->pkey, hash_alg, &sig, &len,
+	ret = sshkey_pkey_sign_internal(key->pkey, hash_alg, &sig, &len,
 	    data, datalen);
 	if (ret < 0) {
 		goto out;

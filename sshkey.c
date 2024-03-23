@@ -461,7 +461,7 @@ sshkey_type_certified(int type)
 
 #ifdef WITH_OPENSSL
 int
-sshkey_calculate_signature(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
+sshkey_pkey_sign_internal(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
     int *lenp, const u_char *data, size_t datalen)
 {
 	EVP_MD_CTX *ctx = NULL;

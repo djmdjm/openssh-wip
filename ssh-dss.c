@@ -277,7 +277,7 @@ ssh_dss_sign(struct sshkey *key,
 
 	if ((ret = ssh_create_evp_dss(key, &pkey)) != 0)
 		return ret;
-	ret = sshkey_calculate_signature(pkey, SSH_DIGEST_SHA1, &sigb, &len,
+	ret = sshkey_pkey_sign_internal(pkey, SSH_DIGEST_SHA1, &sigb, &len,
 	    data, datalen);
 	EVP_PKEY_free(pkey);
 	if (ret < 0) {

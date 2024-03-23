@@ -259,7 +259,7 @@ const char	*sshkey_ssh_name(const struct sshkey *);
 const char	*sshkey_ssh_name_plain(const struct sshkey *);
 int		 sshkey_names_valid2(const char *, int, int);
 char		*sshkey_alg_list(int, int, int, char);
-int		 sshkey_calculate_signature(EVP_PKEY*, int, u_char **,
+int		 sshkey_pkey_sign_internal(EVP_PKEY*, int, u_char **,
     int *, const u_char *, size_t);
 int		 sshkey_verify_signature(EVP_PKEY *, int, const u_char *,
     size_t, u_char *, int);

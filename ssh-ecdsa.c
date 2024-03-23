@@ -279,7 +279,7 @@ ssh_ecdsa_sign(struct sshkey *key,
 	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1)
 		return SSH_ERR_INTERNAL_ERROR;
 
-	if ((ret = sshkey_calculate_signature(key->pkey, hash_alg, &sigb, &len,
+	if ((ret = sshkey_pkey_sign_internal(key->pkey, hash_alg, &sigb, &len,
 	    data, dlen)) != 0)
 		goto out;
 
