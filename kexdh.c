@@ -68,14 +68,14 @@ int
 kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 {
 	BIGNUM *shared_secret = NULL;
-	const BIGNUM *p, *q, *g;
+	const BIGNUM *p, *g;
 	EVP_PKEY *pkey = NULL, *dh_pkey = NULL;
 	EVP_PKEY_CTX *ctx = NULL;
 	u_char *kbuf = NULL;
 	size_t klen = 0;
 	int r = 0;
 	DH *dh_peer = NULL;
-	BIGNUM *copy_p = NULL, *copy_q = NULL, *copy_g = NULL, *copy_pub = NULL;
+	BIGNUM *copy_p = NULL, *copy_g = NULL, *copy_pub = NULL;
 
 #ifdef DEBUG_KEXDH
 	fprintf(stderr, "dh_pub= ");
@@ -91,86 +91,60 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 		goto out;
 	}
 
-	if ((pkey = EVP_PKEY_new()) == NULL) {
+	if ((pkey = EVP_PKEY_new()) == NULL ||
+	    (dh_peer = DH_new()) == NULL) {
+		error_f("allocate pkey/dh_peer failed");
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
 
+	/* XXX make kex->dh a PKEY too */
 	if (EVP_PKEY_set1_DH(pkey, kex->dh) != 1) {
+		error_f("load local pkey failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
 
-	if ((dh_peer = DH_new()) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-
-	DH_get0_pqg(kex->dh, &p, &q, &g);
+	DH_get0_pqg(kex->dh, &p, NULL, &g);
 	if ((copy_p = BN_dup(p)) == NULL ||
-	    (copy_q = BN_dup(q)) == NULL ||
-	    (copy_g = BN_dup(g)) == NULL) {
-		DH_free(dh_peer);
+	    (copy_g = BN_dup(g)) == NULL ||
+	    DH_set0_pqg(dh_peer, copy_p, NULL, copy_g) != 1) {
+		error_f("copy pkey p/g failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	if (DH_set0_pqg(dh_peer, copy_p, copy_q, copy_g) != 1) {
-		BN_free(copy_p);
-		BN_free(copy_q);
-		BN_free(copy_g);
-		DH_free(dh_peer);
-		r = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-	copy_p = copy_q = copy_g = NULL;
+	copy_p = copy_g = NULL;
 
-	if ((copy_pub = BN_dup(dh_pub)) == NULL) {
-		DH_free(dh_peer);
-		r = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-	if (DH_set0_key(dh_peer, copy_pub, NULL) != 1) {
-		BN_free(copy_pub);
-		DH_free(dh_peer);
+	if ((copy_pub = BN_dup(dh_pub)) == NULL ||
+	    DH_set0_key(dh_peer, copy_pub, NULL) != 1) {
+		error_f("assemble peer pubkey failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
 	copy_pub = NULL;
 
-	if ((dh_pkey = EVP_PKEY_new()) == NULL) {
-		DH_free(dh_peer);
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-
-	if (EVP_PKEY_set1_DH(dh_pkey, dh_peer) != 1) {
-		DH_free(dh_peer);
+	if ((dh_pkey = EVP_PKEY_new()) == NULL ||
+	    EVP_PKEY_set1_DH(dh_pkey, dh_peer) != 1 ||
+	    (ctx = EVP_PKEY_CTX_new(pkey, NULL)) == NULL) {
+		error_f("setup peer pkey failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-	DH_free(dh_peer);
-
-	if ((ctx = EVP_PKEY_CTX_new(pkey, NULL)) == NULL) {
-		error_f("Could not init EVP_PKEY_CTX for dh");
-		ERR_print_errors_fp(stderr);
-		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
 	if (EVP_PKEY_derive_init(ctx) != 1 ||
 	    EVP_PKEY_derive_set_peer(ctx, dh_pkey) != 1 ||
 	    EVP_PKEY_derive(ctx, NULL, &klen) != 1) {
-		error_f("Could not get key size");
+		error_f("derive setup failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	if ((kbuf = malloc(klen)) == NULL ||
+	if ((kbuf = calloc(1, klen)) == NULL ||
 	    (shared_secret = BN_new()) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
 	if (EVP_PKEY_derive(ctx, kbuf, &klen) != 1 ||
 	    BN_bin2bn(kbuf, klen, shared_secret) == NULL) {
-		error_f("Could not derive key");
+		error_f("derive key failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
@@ -183,6 +157,10 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 	BN_clear_free(shared_secret);
 	EVP_PKEY_free(pkey);
 	EVP_PKEY_free(dh_pkey);
+	DH_free(dh_peer);
+	BN_free(copy_pub);
+	BN_free(copy_p);
+	BN_free(copy_g);
 	EVP_PKEY_CTX_free(ctx);
 	return r;
 }
