@@ -353,7 +353,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	sshbuf_dump(original_signed, stderr);
 #endif
 
-	/* Verify it */
+	/* Unlike ECDSA_do_verify(), pkey verification requies DER encoding */
 	if ((len = i2d_ECDSA_SIG(esig, NULL)) == 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
@@ -368,6 +368,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
+	/* Verify it */
 	if (EVP_DigestVerifyInit(md_ctx, NULL, EVP_sha256(), NULL,
 	    key->pkey) != 1) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;

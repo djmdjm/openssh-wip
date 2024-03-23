@@ -363,6 +363,11 @@ ssh_ecdsa_verify(const struct sshkey *key,
 		ret = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
+	if (sshbuf_len(sigbuf) != 0) {
+		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
+		goto out;
+	}
+
 	if ((esig = ECDSA_SIG_new()) == NULL) {
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
@@ -373,7 +378,7 @@ ssh_ecdsa_verify(const struct sshkey *key,
 	}
 	sig_r = sig_s = NULL; /* transferred */
 
-	/* Figure out the length */
+	/* Unlike ECDSA_do_verify(), pkey verification requies DER encoding */
 	if ((len = i2d_ECDSA_SIG(esig, NULL)) == 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
@@ -385,11 +390,6 @@ ssh_ecdsa_verify(const struct sshkey *key,
 	psig = sigb;
 	if ((len = i2d_ECDSA_SIG(esig, &psig)) == 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-
-	if (sshbuf_len(sigbuf) != 0) {
-		ret = SSH_ERR_UNEXPECTED_TRAILING_DATA;
 		goto out;
 	}
 

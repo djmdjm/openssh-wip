@@ -403,6 +403,7 @@ ssh_dss_verify(const struct sshkey *key,
 	}
 	sig_r = sig_s = NULL; /* transferred */
 
+	/* Unlike DSA_do_verify(), pkey verification requies DER encoding */
 	if ((slen = i2d_DSA_SIG(dsig, NULL)) == 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
