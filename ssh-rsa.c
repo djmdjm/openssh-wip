@@ -72,9 +72,7 @@ ssh_rsa_serialize_public(const struct sshkey *key, struct sshbuf *b,
 
 	if (key->pkey == NULL)
 		return SSH_ERR_INVALID_ARGUMENT;
-
-	rsa = EVP_PKEY_get0_RSA(key->pkey);
-	if (rsa == NULL)
+	if ((rsa = EVP_PKEY_get0_RSA(key->pkey)) == NULL)
 		return SSH_ERR_LIBCRYPTO_ERROR;
 
 	RSA_get0_key(rsa, &rsa_n, &rsa_e, NULL);
@@ -93,10 +91,8 @@ ssh_rsa_serialize_private(const struct sshkey *key, struct sshbuf *b,
 	const BIGNUM *rsa_n, *rsa_e, *rsa_d, *rsa_iqmp, *rsa_p, *rsa_q;
 	const RSA *rsa;
 
-	rsa = EVP_PKEY_get0_RSA(key->pkey);
-	if (rsa == NULL)
+	if ((rsa = EVP_PKEY_get0_RSA(key->pkey)) == NULL)
 		return SSH_ERR_LIBCRYPTO_ERROR;
-
 	RSA_get0_key(rsa, &rsa_n, &rsa_e, &rsa_d);
 	RSA_get0_factors(rsa, &rsa_p, &rsa_q);
 	RSA_get0_crt_params(rsa, NULL, NULL, &rsa_iqmp);
@@ -133,27 +129,22 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-
 	if (EVP_PKEY_keygen_init(ctx) <= 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-
 	if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) <= 0) {
 		ret = SSH_ERR_KEY_LENGTH;
 		goto out;
 	}
-
 	if (EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, f4) <= 0)
 		goto out;
 	f4 = NULL;
-
 	if (EVP_PKEY_keygen(ctx, &res) <= 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
 
-	/* This function is deprecated in OpenSSL 3.0 but OpenSSH doesn't worry about it*/
 	k->pkey = res;
 	if (k->pkey) {
 		ret = 0;
@@ -176,12 +167,8 @@ ssh_rsa_copy_public(const struct sshkey *from, struct sshkey *to)
 	const RSA *rsa_from;
 	RSA *rsa_to = NULL;
 
-	rsa_from = EVP_PKEY_get0_RSA(from->pkey);
-	if (rsa_from == NULL)
-		return SSH_ERR_LIBCRYPTO_ERROR;
-
-	rsa_to = RSA_new();
-	if (rsa_to == NULL)
+	if ((rsa_from = EVP_PKEY_get0_RSA(from->pkey)) == NULL ||
+	    (rsa_to = RSA_new()) == NULL)
 		return SSH_ERR_LIBCRYPTO_ERROR;
 
 	RSA_get0_key(rsa_from, &rsa_n, &rsa_e, NULL);
@@ -217,8 +204,7 @@ ssh_rsa_deserialize_public(const char *ktype, struct sshbuf *b,
 	BIGNUM *rsa_n = NULL, *rsa_e = NULL;
 	RSA *rsa = NULL;
 
-	rsa = RSA_new();
-	if (rsa == NULL)
+	if ((rsa = RSA_new()) == NULL)
 		return SSH_ERR_LIBCRYPTO_ERROR;
 
 	if (sshbuf_get_bignum2(b, &rsa_e) != 0 ||
@@ -259,11 +245,7 @@ ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
 	BIGNUM *rsa_dmp1 = NULL, *rsa_dmq1 = NULL;
 	RSA *rsa = NULL;
 
-	if (sshkey_is_cert(key))
-		rsa = EVP_PKEY_get1_RSA(key->pkey);
-	else
-		rsa = RSA_new();
-	if (rsa == NULL)
+	if ((rsa = RSA_new()) == NULL)
 		return SSH_ERR_LIBCRYPTO_ERROR;
 
 	/* Note: can't reuse ssh_rsa_deserialize_public: e, n vs. n, e */
