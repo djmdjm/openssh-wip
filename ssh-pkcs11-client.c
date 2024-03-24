@@ -247,22 +247,13 @@ rsa_encrypt(int flen, const u_char *from, u_char *to, RSA *rsa, int padding)
 	debug3_f("signing with PKCS11 provider %s", helper->path);
 	if (padding != RSA_PKCS1_PADDING)
 		goto fail;
-	key = sshkey_new(KEY_UNSPEC);
-	if (key == NULL) {
+	if ((key = sshkey_new(KEY_UNSPEC)) == NULL) {
 		error_f("sshkey_new failed");
 		goto fail;
 	}
-	key->pkey = EVP_PKEY_new();
-	if (key->pkey == NULL) {
-		error("EVP_PKEY_new failed");
-		sshkey_free(key);
-		key = NULL;
-		goto fail;
-	}
-	if (EVP_PKEY_set1_RSA(key->pkey, rsa) <= 0) {
-		error("EVP_PKEY_set1_RSA failed");
-		sshkey_free(key);
-		key = NULL;
+	if ((key->pkey = EVP_PKEY_new()) == NULL ||
+	   EVP_PKEY_set1_RSA(key->pkey, rsa) <= 0) {
+		error_f("pkey setup failed");
 		goto fail;
 	}
 
@@ -334,31 +325,19 @@ ecdsa_do_sign(const unsigned char *dgst, int dgst_len, const BIGNUM *inv,
 		fatal_f("no helper for PKCS11 key");
 	debug3_f("signing with PKCS11 provider %s", helper->path);
 
-	key = sshkey_new(KEY_UNSPEC);
-	if (key == NULL) {
+	if ((key = sshkey_new(KEY_UNSPEC)) == NULL) {
 		error_f("sshkey_new failed");
 		goto fail;
 	}
-	key->pkey = EVP_PKEY_new();
-	if (key->pkey == NULL) {
-		error("EVP_PKEY_new failed");
-		sshkey_free(key);
-		key = NULL;
-		goto fail;
-	}
-
-	if (EVP_PKEY_set1_EC_KEY(key->pkey, ec) <= 0) {
-		error("EVP_PKEY_set1_EC_KEY failed");
-		sshkey_free(key);
-		key = NULL;
+	if ((key->pkey = EVP_PKEY_new()) == NULL ||
+	    EVP_PKEY_set1_EC_KEY(key->pkey, ec) <= 0) {
+		error("pkey setup failed");
 		goto fail;
 	}
 
 	nid = sshkey_ecdsa_key_to_nid(key->pkey);
 	if (nid < 0) {
 		error("couldn't get curve nid");
-		sshkey_free(key);
-		key = NULL;
 		goto fail;
 	}
 
