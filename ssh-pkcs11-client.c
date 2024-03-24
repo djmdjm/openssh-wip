@@ -396,16 +396,21 @@ ecdsa_do_finish(EC_KEY *ec)
 static void
 wrap_key(struct helper *helper, struct sshkey *k)
 {
+	RSA *rsa = NULL;
+	EC_KEY *ecdsa = NULL;
+
 	debug3_f("wrap %s for provider %s", sshkey_type(k), helper->path);
 	if (k->type == KEY_RSA) {
-		RSA *rsa = EVP_PKEY_get1_RSA(k->pkey);
+		if ((rsa = EVP_PKEY_get1_RSA(k->pkey)) == NULL)
+			fatal_f("no RSA key");
 		RSA_set_method(rsa, helper->rsa_meth);
 		if (helper->nrsa++ >= INT_MAX)
 			fatal_f("RSA refcount error");
 		EVP_PKEY_set1_RSA(k->pkey, rsa);
 		RSA_free(rsa);
 	} else if (k->type == KEY_ECDSA) {
-		EC_KEY *ecdsa = EVP_PKEY_get1_EC_KEY(k->pkey);
+		if ((ecdsa = EVP_PKEY_get1_EC_KEY(k->pkey)) == NULL)
+			fatal_f("no ECDSA key");
 		EC_KEY_set_method(ecdsa, helper->ec_meth);
 		if (helper->nec++ >= INT_MAX)
 			fatal_f("EC refcount error");
