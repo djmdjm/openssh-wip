@@ -217,7 +217,6 @@ sshsk_ecdsa_assemble(struct sk_enroll_response *resp, struct sshkey **keyp)
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
-// wahern: TODO: use EVP_PKEY_public_check
 	if (sshkey_ec_validate_public(EC_KEY_get0_group(ecdsa), q) != 0) {
 		error("Authenticator returned invalid ECDSA key");
 		r = SSH_ERR_KEY_INVALID_EC_VALUE;

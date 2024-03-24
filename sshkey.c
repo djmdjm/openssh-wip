@@ -1443,11 +1443,10 @@ int
 sshkey_ecdsa_key_to_nid(EVP_PKEY *pkey)
 {
 	int nid;
-	EC_KEY *ec = EVP_PKEY_get1_EC_KEY(pkey);
+	EC_KEY *ec;
 
-	if (ec == NULL)
+	if ((ec = EVP_PKEY_get1_EC_KEY(pkey)) == NULL)
 		return -1;
-
 	nid = sshkey_ec_key_to_nid(ec);
 	EC_KEY_free(ec);
 	return nid;
@@ -3478,6 +3477,7 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 	struct sshkey *prv = NULL;
 	BIO *bio = NULL;
 	int r;
+	RSA *rsa = NULL;
 
 	if (keyp != NULL)
 		*keyp = NULL;
@@ -3507,8 +3507,6 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 	}
 	if (EVP_PKEY_base_id(pk) == EVP_PKEY_RSA &&
 	    (type == KEY_UNSPEC || type == KEY_RSA)) {
-		RSA *rsa = NULL;
-
 		if ((prv = sshkey_new(KEY_UNSPEC)) == NULL) {
 			r = SSH_ERR_ALLOC_FAIL;
 			goto out;
@@ -3516,17 +3514,18 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 		prv->pkey = pk;
 		pk = NULL;
 		prv->type = KEY_RSA;
-		rsa = EVP_PKEY_get1_RSA(prv->pkey);
-#ifdef DEBUG_PK
-		RSA_print_fp(stderr, rsa, 8);
-#endif
-		if (RSA_blinding_on(rsa, NULL) != 1) {
-			RSA_free(rsa);
+		if ((rsa = EVP_PKEY_get1_RSA(prv->pkey)) == NULL) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
 		}
-		EVP_PKEY_set1_RSA(prv->pkey, rsa);
-		RSA_free(rsa);
+#ifdef DEBUG_PK
+		RSA_print_fp(stderr, rsa, 8);
+#endif
+		if (RSA_blinding_on(rsa, NULL) != 1 ||
+		    !EVP_PKEY_set1_RSA(prv->pkey, rsa)) {
+			r = SSH_ERR_LIBCRYPTO_ERROR;
+			goto out;
+		}
 		if ((r = sshkey_check_rsa_length(prv, 0)) != 0)
 			goto out;
 #ifdef WITH_DSA
@@ -3617,6 +3616,7 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 		prv = NULL;
 	}
  out:
+	RSA_free(rsa);
 	BIO_free(bio);
 	EVP_PKEY_free(pk);
 	sshkey_free(prv);
