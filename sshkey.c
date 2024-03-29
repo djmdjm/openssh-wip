@@ -460,6 +460,22 @@ sshkey_type_certified(int type)
 }
 
 #ifdef WITH_OPENSSL
+static const EVP_MD *
+ssh_digest_to_md(int digest_type)
+{
+	switch (digest_type) {
+	case SSH_DIGEST_SHA1:
+		return EVP_sha1();
+	case SSH_DIGEST_SHA256:
+		return EVP_sha256();
+	case SSH_DIGEST_SHA384:
+		return EVP_sha384();
+	case SSH_DIGEST_SHA512:
+		return EVP_sha512();
+	}
+	return NULL;
+}
+
 int
 sshkey_pkey_digest_sign(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
     int *lenp, const u_char *data, size_t datalen)
