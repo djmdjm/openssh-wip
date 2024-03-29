@@ -469,23 +469,21 @@ sshkey_pkey_sign_internal(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
 	int ret, slen;
 	size_t len;
 
-	if (sigp == NULL || lenp == NULL) {
-		return SSH_ERR_INVALID_ARGUMENT;
-	}
+	*sigp = NULL;
+	*lenp = 0;
 
 	slen = EVP_PKEY_size(pkey);
 	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
 		return SSH_ERR_INVALID_ARGUMENT;
 
-	len = slen;
-	if ((sig = malloc(slen)) == NULL) {
+	if ((sig = malloc(slen)) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	}
 
 	if ((ctx = EVP_MD_CTX_new()) == NULL) {
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto error;
 	}
+	len = slen;
 	if (EVP_DigestSignInit(ctx, NULL, ssh_digest_to_md(hash_alg),
 	        NULL, pkey) != 1 ||
 	    EVP_DigestSignUpdate(ctx, data, datalen) != 1 ||
@@ -511,11 +509,10 @@ sshkey_pkey_verify_internal(EVP_PKEY *pkey, int hash_alg, const u_char *data,
     size_t datalen, u_char *sigbuf, int siglen)
 {
 	EVP_MD_CTX *ctx = NULL;
-	int ret;
+	int ret = SSH_ERR_INTERNAL_ERROR;
 
-	if ((ctx = EVP_MD_CTX_new()) == NULL) {
+	if ((ctx = EVP_MD_CTX_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	}
 	if (EVP_DigestVerifyInit(ctx, NULL, ssh_digest_to_md(hash_alg),
 	    NULL, pkey) != 1 ||
 	    EVP_DigestVerifyUpdate(ctx, data, datalen) != 1) {
