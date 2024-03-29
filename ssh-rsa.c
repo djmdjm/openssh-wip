@@ -29,8 +29,6 @@
 #include "digest.h"
 #include "log.h"
 
-static int openssh_RSA_verify(int, const u_char *, size_t, u_char *, size_t, EVP_PKEY *);
-
 static u_int
 ssh_rsa_size(const struct sshkey *k)
 {
@@ -488,7 +486,7 @@ ssh_rsa_verify(const struct sshkey *key,
 {
 	char *sigtype = NULL;
 	int hash_alg, want_alg, ret = SSH_ERR_INTERNAL_ERROR;
-	size_t len = 0, diff, modlen;
+	size_t len = 0, diff, modlen, rsasize;
 	struct sshbuf *b = NULL;
 	u_char digest[SSH_DIGEST_MAX_LENGTH], *osigblob, *sigblob = NULL;
 
@@ -549,35 +547,20 @@ ssh_rsa_verify(const struct sshkey *key,
 		len = modlen;
 	}
 
-	ret = openssh_RSA_verify(hash_alg, data, dlen, sigblob, len,
-				 key->pkey);
+	rsasize = EVP_PKEY_size(key->pkey);
+	if (rsasize <= 0 || rsasize > SSHBUF_MAX_BIGNUM ||
+	    len == 0 || len > rsasize) {
+		ret = SSH_ERR_INVALID_ARGUMENT;
+		goto out;
+	}
+	ret = sshkey_pkey_verify_internal(key->pkey, hash_alg, data, dlen,
+	    sigblob, len);
 
  out:
 	freezero(sigblob, len);
 	free(sigtype);
 	sshbuf_free(b);
 	explicit_bzero(digest, sizeof(digest));
-	return ret;
-}
-
-static int
-openssh_RSA_verify(int hash_alg, const u_char *data, size_t datalen,
-    u_char *sigbuf, size_t siglen, EVP_PKEY *pkey)
-{
-	size_t rsasize = 0;
-	int ret;
-
-	rsasize = EVP_PKEY_size(pkey);
-	if (rsasize <= 0 || rsasize > SSHBUF_MAX_BIGNUM ||
-	    siglen == 0 || siglen > rsasize) {
-		ret = SSH_ERR_INVALID_ARGUMENT;
-		goto done;
-	}
-
-	ret = sshkey_pkey_verify_internal(pkey, hash_alg, data, datalen,
-	    sigbuf, siglen);
-
-done:
 	return ret;
 }
 
