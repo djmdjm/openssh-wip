@@ -438,7 +438,7 @@ ssh_rsa_sign(struct sshkey *key,
 	if (EVP_PKEY_bits(key->pkey) < SSH_RSA_MINIMUM_MODULUS_SIZE)
 		return SSH_ERR_KEY_LENGTH;
 
-	ret = sshkey_pkey_sign_internal(key->pkey, hash_alg, &sig, &len,
+	ret = sshkey_pkey_digest_sign(key->pkey, hash_alg, &sig, &len,
 	    data, datalen);
 	if (ret < 0) {
 		goto out;
@@ -553,7 +553,7 @@ ssh_rsa_verify(const struct sshkey *key,
 		ret = SSH_ERR_INVALID_ARGUMENT;
 		goto out;
 	}
-	ret = sshkey_pkey_verify_internal(key->pkey, hash_alg, data, dlen,
+	ret = sshkey_pkey_digest_verify(key->pkey, hash_alg, data, dlen,
 	    sigblob, len);
 
  out:

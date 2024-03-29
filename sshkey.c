@@ -461,7 +461,7 @@ sshkey_type_certified(int type)
 
 #ifdef WITH_OPENSSL
 int
-sshkey_pkey_sign_internal(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
+sshkey_pkey_digest_sign(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
     int *lenp, const u_char *data, size_t datalen)
 {
 	EVP_MD_CTX *ctx = NULL;
@@ -505,7 +505,7 @@ error:
 }
 
 int
-sshkey_pkey_verify_internal(EVP_PKEY *pkey, int hash_alg, const u_char *data,
+sshkey_pkey_digest_verify(EVP_PKEY *pkey, int hash_alg, const u_char *data,
     size_t datalen, u_char *sigbuf, int siglen)
 {
 	EVP_MD_CTX *ctx = NULL;

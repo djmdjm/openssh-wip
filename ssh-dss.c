@@ -292,7 +292,7 @@ ssh_dss_sign(struct sshkey *key,
 		return SSH_ERR_INVALID_ARGUMENT;
 
 	if ((ret = sshkey_dss_to_pkey(key, &pkey)) != 0 ||
-	    (ret = sshkey_pkey_sign_internal(pkey, SSH_DIGEST_SHA1, &sigb, &len,
+	    (ret = sshkey_pkey_digest_sign(pkey, SSH_DIGEST_SHA1, &sigb, &len,
 	    data, datalen)) != 0)
 		goto out;
 
@@ -419,7 +419,7 @@ ssh_dss_verify(const struct sshkey *key,
 	}
 
 	if ((ret = sshkey_dss_to_pkey(key, &pkey)) != 0 ||
-	    (ret = sshkey_pkey_verify_internal(pkey, SSH_DIGEST_SHA1,
+	    (ret = sshkey_pkey_digest_verify(pkey, SSH_DIGEST_SHA1,
 	    data, dlen, sigb, slen)) != 0)
 		goto out;
 
