@@ -108,7 +108,6 @@ input_kex_dh_gex_group(int type, u_int32_t seq, struct ssh *ssh)
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	p = g = NULL; /* belong to kex->dh now */
 
 	/* generate and send 'e', client DH public key */
 	if ((r = dh_gen_key(kex->pkey, kex->we_need * 8)) != 0)

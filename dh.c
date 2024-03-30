@@ -364,13 +364,22 @@ dh_new_group_asc(const char *gen, const char *modulus)
 EVP_PKEY *
 dh_new_group(BIGNUM *gen, BIGNUM *modulus)
 {
+	BIGNUM *copy_gen = NULL, *copy_modulus = NULL;
 	DH *dh = NULL;
 	EVP_PKEY *pkey = NULL;
 
 	if ((dh = DH_new()) == NULL ||
 	    (pkey = EVP_PKEY_new()) == NULL ||
-	    !DH_set0_pqg(dh, modulus, NULL, gen) ||
-	    EVP_PKEY_set1_DH(pkey, dh) != 1) {
+	    (copy_gen = BN_dup(gen)) == NULL ||
+	    (copy_modulus = BN_dup(modulus)) == NULL ||
+	    !DH_set0_pqg(dh, copy_modulus, NULL, copy_gen))
+		goto fail;
+	copy_modulus = copy_gen = NULL; /* transferred */
+
+	if (EVP_PKEY_set1_DH(pkey, dh) != 1) {
+ fail:
+		BN_free(copy_gen);
+		BN_free(copy_modulus);
 		DH_free(dh);
 		EVP_PKEY_free(pkey);
 		return NULL;
