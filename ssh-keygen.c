@@ -590,14 +590,6 @@ do_convert_private_ssh2(struct sshbuf *b)
 		if (EVP_PKEY_set1_RSA(key->pkey, rsa) != 1)
 			fatal_f("EVP_PKEY_set1_RSA failed");
 		RSA_free(rsa);
-		BN_clear_free(rsa_n);
-		BN_clear_free(rsa_e);
-		BN_clear_free(rsa_d);
-		BN_clear_free(rsa_p);
-		BN_clear_free(rsa_q);
-		BN_clear_free(rsa_dmp1);
-		BN_clear_free(rsa_dmq1);
-		BN_clear_free(rsa_iqmp);
 		alg = "rsa-sha2-256";
 		break;
 	}

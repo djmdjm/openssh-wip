@@ -64,8 +64,6 @@ kex_dh_keygen(struct kex *kex)
 	return (dh_gen_key(kex->pkey, kex->we_need * 8));
 }
 
-#define DEBUG_KEXDH 1
-
 int
 kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 {
