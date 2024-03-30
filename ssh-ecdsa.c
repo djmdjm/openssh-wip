@@ -330,7 +330,7 @@ ssh_ecdsa_verify(const struct sshkey *key,
 	int ret = SSH_ERR_INTERNAL_ERROR;
 	struct sshbuf *b = NULL, *sigbuf = NULL;
 	char *ktype = NULL;
-	unsigned char *sigb = NULL, *psig = NULL;
+	unsigned char *sigb = NULL;
 
 	if (key == NULL || key->pkey == NULL ||
 	    sshkey_type_plain(key->type) != KEY_ECDSA ||
@@ -378,17 +378,8 @@ ssh_ecdsa_verify(const struct sshkey *key,
 	}
 	sig_r = sig_s = NULL; /* transferred */
 
-	/* Unlike ECDSA_do_verify(), pkey verification requies DER encoding */
-	if ((len = i2d_ECDSA_SIG(esig, NULL)) == 0) {
-		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-	if ((sigb = malloc(len)) == NULL) {
-		ret = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	psig = sigb;
-	if ((len = i2d_ECDSA_SIG(esig, &psig)) == 0) {
+	sigb = NULL;
+	if ((len = i2d_ECDSA_SIG(esig, &sigb)) <= 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}

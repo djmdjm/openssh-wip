@@ -223,7 +223,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	u_char sig_flags;
 	u_char msghash[32], apphash[32];
 	u_int sig_counter;
-	u_char *sigb = NULL, *psig = NULL;
+	u_char *sigb = NULL;
 	int is_webauthn = 0, ret = SSH_ERR_INTERNAL_ERROR, len;
 	struct sshbuf *b = NULL, *sigbuf = NULL, *original_signed = NULL;
 	struct sshbuf *webauthn_wrapper = NULL, *webauthn_exts = NULL;
@@ -353,18 +353,13 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	sshbuf_dump(original_signed, stderr);
 #endif
 
-	/* Unlike ECDSA_do_verify(), pkey verification requies DER encoding */
-	if ((len = i2d_ECDSA_SIG(esig, NULL)) == 0) {
-		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-	if ((sigb = malloc(len)) == NULL ||
-	    (md_ctx = EVP_MD_CTX_new()) == NULL) {
+	if ((md_ctx = EVP_MD_CTX_new()) == NULL) {
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	psig = sigb;
-	if ((len = i2d_ECDSA_SIG(esig, &psig)) == 0) {
+
+	sigb = NULL;
+	if ((len = i2d_ECDSA_SIG(esig, &sigb)) <= 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}

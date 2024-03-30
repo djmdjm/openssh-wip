@@ -352,11 +352,11 @@ ssh_dss_verify(const struct sshkey *key,
 	DSA_SIG *dsig = NULL;
 	BIGNUM *sig_r = NULL, *sig_s = NULL;
 	u_char *sigblob = NULL;
-	size_t len, slen;
-	int ret = SSH_ERR_INTERNAL_ERROR;
+	size_t len;
+	int slen, ret = SSH_ERR_INTERNAL_ERROR;
 	struct sshbuf *b = NULL;
 	char *ktype = NULL;
-	u_char *sigb = NULL, *psig = NULL;
+	u_char *sigb = NULL;
 
 	if (key == NULL || key->dsa == NULL ||
 	    sshkey_type_plain(key->type) != KEY_DSA ||
@@ -403,24 +403,15 @@ ssh_dss_verify(const struct sshkey *key,
 	}
 	sig_r = sig_s = NULL; /* transferred */
 
-	/* Unlike DSA_do_verify(), pkey verification requies DER encoding */
-	if ((slen = i2d_DSA_SIG(dsig, NULL)) == 0) {
-		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-	if ((sigb = malloc(slen)) == NULL) {
-		ret = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	psig = sigb;
-	if ((slen = i2d_DSA_SIG(dsig, &psig)) == 0) {
+	sigb = NULL;
+	if ((slen = i2d_DSA_SIG(dsig, &sigb)) <= 0) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
 
 	if ((ret = sshkey_dss_to_pkey(key, &pkey)) != 0 ||
 	    (ret = sshkey_pkey_digest_verify(pkey, SSH_DIGEST_SHA1,
-	    data, dlen, sigb, slen)) != 0)
+	    data, dlen, sigb, (u_int)slen)) != 0)
 		goto out;
 
  out:
