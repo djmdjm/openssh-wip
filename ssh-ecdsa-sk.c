@@ -402,7 +402,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	BN_clear_free(sig_r);
 	BN_clear_free(sig_s);
 	free(ktype);
-	free(sigb);
+	OPENSSL_free(sigb); /* NB. must use OPENSSL_free() for BoringSSL */
 	EVP_MD_CTX_free(md_ctx);
 	return ret;
 }

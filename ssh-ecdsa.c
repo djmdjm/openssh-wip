@@ -389,7 +389,7 @@ ssh_ecdsa_verify(const struct sshkey *key,
 		goto out;
 	/* success */
  out:
-	free(sigb);
+	OPENSSL_free(sigb); /* NB. must use OPENSSL_free() for BoringSSL */
 	sshbuf_free(sigbuf);
 	sshbuf_free(b);
 	ECDSA_SIG_free(esig);
