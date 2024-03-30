@@ -287,18 +287,18 @@ dh_gen_key(EVP_PKEY *pkey, int need)
 	DH *dh = NULL;
 	int r = SSH_ERR_INTERNAL_ERROR;
 
-	if (need <= 0)
+	if (need < 0)
 		return SSH_ERR_INVALID_ARGUMENT;
-	if (need < 256)
-		need = 256;
 	if ((dh = EVP_PKEY_get1_DH(pkey)) == NULL) {
 		r = SSH_ERR_INVALID_ARGUMENT;
 		goto out;
 	}
 	DH_get0_pqg(dh, &dh_p, NULL, NULL);
 
+	if (need < 256)
+		need = 256;
 	if (dh_p == NULL || (pbits = BN_num_bits(dh_p)) <= 0 ||
-	    need > INT_MAX / 2 || pbits <= 2 * need) {
+	    need > INT_MAX / 2 || 2 * need > pbits) {
 		r = SSH_ERR_INVALID_ARGUMENT;
 		goto out;
 	}
