@@ -233,16 +233,6 @@ ssh_rsa_deserialize_public(const char *ktype, struct sshbuf *b,
 	return ret;
 }
 
-static void
-ossl_error(const char *msg)
-{
-	unsigned long    e;
-
-	error_f("%s", msg);
-	while ((e = ERR_get_error()) != 0)
-		error_f("libcrypto error: %s", ERR_error_string(e, NULL));
-}
-
 static int
 ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
     struct sshkey *key)
@@ -279,13 +269,11 @@ ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
 	    rsa_iqmp, &rsa_dmp1, &rsa_dmq1)) != 0)
 		goto out;
 	if (!RSA_set0_key(rsa, NULL, NULL, rsa_d)) {
-		ossl_error("XXX");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
 	rsa_d = NULL; /* transferred */
 	if (!RSA_set0_factors(rsa, rsa_p, rsa_q)) {
-		ossl_error("XXX");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
