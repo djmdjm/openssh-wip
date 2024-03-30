@@ -162,7 +162,7 @@ kex_dh_keypair(struct kex *kex)
 	const BIGNUM *pub_key;
 	struct sshbuf *buf = NULL;
 	int r;
-	DH *dh;
+	const DH *dh;
 
 	if ((r = kex_dh_keygen(kex)) != 0)
 		return r;

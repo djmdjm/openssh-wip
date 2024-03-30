@@ -234,7 +234,7 @@ dh_pub_is_valid(EVP_PKEY *pkey, const BIGNUM *dh_pub)
 	int bits_set = 0;
 	BIGNUM *tmp;
 	const BIGNUM *dh_p;
-	DH *dh;
+	const DH *dh;
 
 	if ((dh = EVP_PKEY_get0_DH(pkey)) == NULL) {
 		logit_f("missing DH value");

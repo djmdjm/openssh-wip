@@ -1052,8 +1052,8 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	X509_free(x509);
 	RSA_free(rsa);
 	EC_KEY_free(ec);
-	free(subject);
 	if (!success) {
+		free(subject);
 		sshkey_free(key);
 		return -1;
 	}
