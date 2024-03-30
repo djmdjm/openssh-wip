@@ -164,9 +164,8 @@ struct kex {
 	    u_char **, size_t *, const u_char *, size_t, const char *);
 	int	(*kex[KEX_MAX])(struct ssh *);
 	/* kex specific state */
-	DH	*dh;			/* DH */
 	u_int	min, max, nbits;	/* GEX */
-	EVP_PKEY *pkey;			/* ECDH */
+	EVP_PKEY *pkey;			/* DH / ECDH */
 	u_char c25519_client_key[CURVE25519_SIZE]; /* 25519 + KEM */
 	u_char c25519_client_pubkey[CURVE25519_SIZE]; /* 25519 */
 	u_char sntrup761_client_key[crypto_kem_sntrup761_SECRETKEYBYTES]; /* KEM */

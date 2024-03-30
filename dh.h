@@ -34,17 +34,17 @@ struct dhgroup {
 	BIGNUM *p;
 };
 
-DH	*choose_dh(int, int, int);
-DH	*dh_new_group_asc(const char *, const char *);
-DH	*dh_new_group(BIGNUM *, BIGNUM *);
-DH	*dh_new_group1(void);
-DH	*dh_new_group14(void);
-DH	*dh_new_group16(void);
-DH	*dh_new_group18(void);
-DH	*dh_new_group_fallback(int);
+EVP_PKEY	*choose_dh(int, int, int);
+EVP_PKEY	*dh_new_group_asc(const char *, const char *);
+EVP_PKEY	*dh_new_group(BIGNUM *, BIGNUM *);
+EVP_PKEY	*dh_new_group1(void);
+EVP_PKEY	*dh_new_group14(void);
+EVP_PKEY	*dh_new_group16(void);
+EVP_PKEY	*dh_new_group18(void);
+EVP_PKEY	*dh_new_group_fallback(int);
 
-int	 dh_gen_key(DH *, int);
-int	 dh_pub_is_valid(const DH *, const BIGNUM *);
+int	 dh_gen_key(EVP_PKEY *, int);
+int	 dh_pub_is_valid(EVP_PKEY *, const BIGNUM *);
 
 u_int	 dh_estimate(int);
 void	 dh_set_moduli_file(const char *);

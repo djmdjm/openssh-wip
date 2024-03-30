@@ -91,14 +91,13 @@ input_kex_dh_gex_request(int type, u_int32_t seq, struct ssh *ssh)
 	}
 
 	/* Contact privileged parent */
-	kex->dh = mm_choose_dh(min, nbits, max);
-	if (kex->dh == NULL) {
+	if ((kex->pkey = mm_choose_dh(min, nbits, max)) == NULL) {
 		(void)sshpkt_disconnect(ssh, "no matching DH grp found");
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
 	debug("SSH2_MSG_KEX_DH_GEX_GROUP sent");
-	DH_get0_pqg(kex->dh, &dh_p, NULL, &dh_g);
+	DH_get0_pqg(EVP_PKEY_get0_DH(kex->pkey), &dh_p, NULL, &dh_g);
 	if ((r = sshpkt_start(ssh, SSH2_MSG_KEX_DH_GEX_GROUP)) != 0 ||
 	    (r = sshpkt_put_bignum2(ssh, dh_p)) != 0 ||
 	    (r = sshpkt_put_bignum2(ssh, dh_g)) != 0 ||
@@ -106,7 +105,7 @@ input_kex_dh_gex_request(int type, u_int32_t seq, struct ssh *ssh)
 		goto out;
 
 	/* Compute our exchange value in parallel with the client */
-	if ((r = dh_gen_key(kex->dh, kex->we_need * 8)) != 0)
+	if ((r = dh_gen_key(kex->pkey, kex->we_need * 8)) != 0)
 		goto out;
 
 	debug("expecting SSH2_MSG_KEX_DH_GEX_INIT");
@@ -155,8 +154,8 @@ input_kex_dh_gex_init(int type, u_int32_t seq, struct ssh *ssh)
 		goto out;
 
 	/* calc H */
-	DH_get0_key(kex->dh, &pub_key, NULL);
-	DH_get0_pqg(kex->dh, &dh_p, NULL, &dh_g);
+	DH_get0_key(EVP_PKEY_get0_DH(kex->pkey), &pub_key, NULL);
+	DH_get0_pqg(EVP_PKEY_get0_DH(kex->pkey), &dh_p, NULL, &dh_g);
 	hashlen = sizeof(hash);
 	if ((r = kexgex_hash(
 	    kex->hash_alg,
@@ -198,8 +197,8 @@ input_kex_dh_gex_init(int type, u_int32_t seq, struct ssh *ssh)
 	/* success */
  out:
 	explicit_bzero(hash, sizeof(hash));
-	DH_free(kex->dh);
-	kex->dh = NULL;
+	EVP_PKEY_free(kex->pkey);
+	kex->pkey = NULL;
 	BN_clear_free(dh_client_pub);
 	sshbuf_free(shared_secret);
 	sshbuf_free(server_host_key_blob);

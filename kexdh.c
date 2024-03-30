@@ -44,32 +44,34 @@ kex_dh_keygen(struct kex *kex)
 {
 	switch (kex->kex_type) {
 	case KEX_DH_GRP1_SHA1:
-		kex->dh = dh_new_group1();
+		kex->pkey = dh_new_group1();
 		break;
 	case KEX_DH_GRP14_SHA1:
 	case KEX_DH_GRP14_SHA256:
-		kex->dh = dh_new_group14();
+		kex->pkey = dh_new_group14();
 		break;
 	case KEX_DH_GRP16_SHA512:
-		kex->dh = dh_new_group16();
+		kex->pkey = dh_new_group16();
 		break;
 	case KEX_DH_GRP18_SHA512:
-		kex->dh = dh_new_group18();
+		kex->pkey = dh_new_group18();
 		break;
 	default:
 		return SSH_ERR_INVALID_ARGUMENT;
 	}
-	if (kex->dh == NULL)
+	if (kex->pkey == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	return (dh_gen_key(kex->dh, kex->we_need * 8));
+	return (dh_gen_key(kex->pkey, kex->we_need * 8));
 }
+
+#define DEBUG_KEXDH 1
 
 int
 kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 {
 	BIGNUM *shared_secret = NULL;
 	const BIGNUM *p, *g;
-	EVP_PKEY *pkey = NULL, *dh_pkey = NULL;
+	EVP_PKEY *dh_pkey = NULL;
 	EVP_PKEY_CTX *ctx = NULL;
 	u_char *kbuf = NULL;
 	size_t klen = 0;
@@ -82,30 +84,22 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 	BN_print_fp(stderr, dh_pub);
 	fprintf(stderr, "\n");
 	debug("bits %d", BN_num_bits(dh_pub));
-	DHparams_print_fp(stderr, kex->dh);
+	DHparams_print_fp(stderr, EVP_PKEY_get0_DH(kex->pkey));
 	fprintf(stderr, "\n");
 #endif
 
-	if (!dh_pub_is_valid(kex->dh, dh_pub)) {
+	if (!dh_pub_is_valid(kex->pkey, dh_pub)) {
 		r = SSH_ERR_MESSAGE_INCOMPLETE;
 		goto out;
 	}
 
-	if ((pkey = EVP_PKEY_new()) == NULL ||
-	    (dh_peer = DH_new()) == NULL) {
+	if ((dh_peer = DH_new()) == NULL) {
 		error_f("allocate pkey/dh_peer failed");
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
 
-	/* XXX make kex->dh a PKEY too */
-	if (EVP_PKEY_set1_DH(pkey, kex->dh) != 1) {
-		error_f("load local pkey failed");
-		r = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-
-	DH_get0_pqg(kex->dh, &p, NULL, &g);
+	DH_get0_pqg(EVP_PKEY_get0_DH(kex->pkey), &p, NULL, &g);
 	if ((copy_p = BN_dup(p)) == NULL ||
 	    (copy_g = BN_dup(g)) == NULL ||
 	    DH_set0_pqg(dh_peer, copy_p, NULL, copy_g) != 1) {
@@ -125,7 +119,7 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
 
 	if ((dh_pkey = EVP_PKEY_new()) == NULL ||
 	    EVP_PKEY_set1_DH(dh_pkey, dh_peer) != 1 ||
-	    (ctx = EVP_PKEY_CTX_new(pkey, NULL)) == NULL) {
+	    (ctx = EVP_PKEY_CTX_new(kex->pkey, NULL)) == NULL) {
 		error_f("setup peer pkey failed");
 		r = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
@@ -155,7 +149,6 @@ kex_dh_compute_key(struct kex *kex, BIGNUM *dh_pub, struct sshbuf *out)
  out:
 	freezero(kbuf, klen);
 	BN_clear_free(shared_secret);
-	EVP_PKEY_free(pkey);
 	EVP_PKEY_free(dh_pkey);
 	DH_free(dh_peer);
 	BN_free(copy_pub);
@@ -171,17 +164,20 @@ kex_dh_keypair(struct kex *kex)
 	const BIGNUM *pub_key;
 	struct sshbuf *buf = NULL;
 	int r;
+	DH *dh;
 
 	if ((r = kex_dh_keygen(kex)) != 0)
 		return r;
-	DH_get0_key(kex->dh, &pub_key, NULL);
+	if ((dh = EVP_PKEY_get0_DH(kex->pkey)) == NULL)
+		return SSH_ERR_INTERNAL_ERROR;
+	DH_get0_key(EVP_PKEY_get0_DH(kex->pkey), &pub_key, NULL);
 	if ((buf = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	if ((r = sshbuf_put_bignum2(buf, pub_key)) != 0 ||
 	    (r = sshbuf_get_u32(buf, NULL)) != 0)
 		goto out;
 #ifdef DEBUG_KEXDH
-	DHparams_print_fp(stderr, kex->dh);
+	DHparams_print_fp(stderr, EVP_PKEY_get0_DH(kex->pkey));
 	fprintf(stderr, "pub= ");
 	BN_print_fp(stderr, pub_key);
 	fprintf(stderr, "\n");
@@ -206,7 +202,7 @@ kex_dh_enc(struct kex *kex, const struct sshbuf *client_blob,
 
 	if ((r = kex_dh_keygen(kex)) != 0)
 		goto out;
-	DH_get0_key(kex->dh, &pub_key, NULL);
+	DH_get0_key(EVP_PKEY_get0_DH(kex->pkey), &pub_key, NULL);
 	if ((server_blob = sshbuf_new()) == NULL) {
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
@@ -219,8 +215,8 @@ kex_dh_enc(struct kex *kex, const struct sshbuf *client_blob,
 	*server_blobp = server_blob;
 	server_blob = NULL;
  out:
-	DH_free(kex->dh);
-	kex->dh = NULL;
+	EVP_PKEY_free(kex->pkey);
+	kex->pkey = NULL;
 	sshbuf_free(server_blob);
 	return r;
 }
@@ -249,8 +245,8 @@ kex_dh_dec(struct kex *kex, const struct sshbuf *dh_blob,
 	buf = NULL;
  out:
 	BN_free(dh_pub);
-	DH_free(kex->dh);
-	kex->dh = NULL;
+	EVP_PKEY_free(kex->pkey);
+	kex->pkey = NULL;
 	sshbuf_free(buf);
 	return r;
 }
