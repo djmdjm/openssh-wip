@@ -119,7 +119,7 @@ input_kex_dh_gex_group(int type, u_int32_t seq, struct ssh *ssh)
 		goto out;
 	debug("SSH2_MSG_KEX_DH_GEX_INIT sent");
 #ifdef DEBUG_KEXDH
-	// DHparams_print_fp(stderr, kex->dh);
+	DHparams_print_fp(stderr, EVP_PKEY_get0_DH(kex->pkey));
 	fprintf(stderr, "pub= ");
 	BN_print_fp(stderr, pub_key);
 	fprintf(stderr, "\n");
