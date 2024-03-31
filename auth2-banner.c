@@ -1,4 +1,4 @@
-/* $OpenBSD: auth2-passwd.c,v 1.21 2022/05/27 04:29:40 dtucker Exp $ */
+/* $OpenBSD: auth2.c,v 1.166 2023/03/08 04:43:12 guenther Exp $ */
 /*
  * Copyright (c) 2000 Markus Friedl.  All rights reserved.
  *
@@ -24,54 +24,68 @@
  */
 
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
 
-#include <stdlib.h>
-#include <string.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <pwd.h>
 #include <stdarg.h>
-#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <time.h>
 
+#include "stdlib.h"
+#include "atomicio.h"
+#include "xmalloc.h"
+#include "ssh2.h"
 #include "packet.h"
-#include "ssherr.h"
 #include "log.h"
+#include "sshbuf.h"
+#include "misc.h"
+#include "servconf.h"
 #include "sshkey.h"
 #include "hostfile.h"
 #include "auth.h"
+#include "dispatch.h"
+#include "pathnames.h"
 #ifdef GSSAPI
 #include "ssh-gss.h"
 #endif
-#include "monitor_wrap.h"
-#include "misc.h"
-#include "servconf.h"
+#include "ssherr.h"
 
 /* import */
 extern ServerOptions options;
-extern struct authmethod_cfg methodcfg_passwd;
 
-static int
-userauth_passwd(struct ssh *ssh, const char *method)
+char *
+auth2_read_banner(void)
 {
-	char *password = NULL;
-	int authenticated = 0, r;
-	u_char change;
-	size_t len = 0;
+	struct stat st;
+	char *banner = NULL;
+	size_t len, n;
+	int fd;
 
-	if ((r = sshpkt_get_u8(ssh, &change)) != 0 ||
-	    (r = sshpkt_get_cstring(ssh, &password, &len)) != 0 ||
-	    (change && (r = sshpkt_get_cstring(ssh, NULL, NULL)) != 0) ||
-	    (r = sshpkt_get_end(ssh)) != 0) {
-		freezero(password, len);
-		fatal_fr(r, "parse packet");
+	if ((fd = open(options.banner, O_RDONLY)) == -1)
+		return (NULL);
+	if (fstat(fd, &st) == -1) {
+		close(fd);
+		return (NULL);
+	}
+	if (st.st_size <= 0 || st.st_size > 1*1024*1024) {
+		close(fd);
+		return (NULL);
 	}
 
-	if (change)
-		logit("password change not supported");
-	else if (mm_auth_password(ssh, password) == 1)
-		authenticated = 1;
-	freezero(password, len);
-	return authenticated;
-}
+	len = (size_t)st.st_size;		/* truncate */
+	banner = xmalloc(len + 1);
+	n = atomicio(read, fd, banner, len);
+	close(fd);
 
-Authmethod method_passwd = {
-	&methodcfg_passwd,
-	userauth_passwd,
-};
+	if (n != len) {
+		free(banner);
+		return (NULL);
+	}
+	banner[n] = '\0';
+
+	return (banner);
+}

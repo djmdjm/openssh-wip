@@ -1,16 +1,31 @@
-#	$OpenBSD: Makefile,v 1.109 2024/02/10 11:28:52 naddy Exp $
+#	$OpenBSD: Makefile,v 1.108 2023/01/18 20:56:36 deraadt Exp $
 
 .PATH:		${.CURDIR}/..
 
-SRCS=	sshd.c servconf.c sshpty.c srclimit.c groupaccess.c auth2-methods.c
-SRCS+=	dns.c fatal.c compat.c utf8.c authfd.c canohost.c kex-names.c
+SRCS=	sshd-monitor.c monitor.c monitor_msg.c monitor_fdpass.c
+# auth shared
+SRCS+=  auth2-methods.c
+SRCS+=	auth-log.c auth-options.c auth2.c
+# auth monitor-only
+SRCS+=	auth.c \
+	auth-passwd.c \
+	auth-rhosts.c \
+	auth-bsdauth-monitor.c \
+	auth2-banner.c \
+	auth2-kbdint-monitor.c \
+	auth2-hostbased-monitor.c \
+	auth2-pubkey-monitor.c \
+	auth2-pubkeyfile.c
+SRCS+=	sshpty.c sshlogin.c servconf.c groupaccess.c dh.c
+SRCS+=	authfd.c compat.c dns.c fatal.c hostfile.c readpass.c utf8.c uidswap.c
 SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} \
-	${SRCS_MAC} ${SRCS_UTL} ${SRCS_SK_CLIENT}
+	${SRCS_KRL} ${SRCS_PKT} ${SRCS_UTL} ${SRCS_PKCS11} \
+	${SRCS_SK_CLIENT}
 
-PROG=	sshd
+PROG=	sshd-monitor
+BINDIR=	/usr/libexec
 BINMODE=511
-BINDIR=	/usr/sbin
-MAN=	sshd.8 sshd_config.5
+NOMAN=	1
 
 .include <bsd.own.mk> # for KERBEROS and AFS
 
@@ -18,7 +33,7 @@ KERBEROS5=no
 
 .if (${KERBEROS5:L} == "yes")
 CFLAGS+=-DKRB5 -I${DESTDIR}/usr/include/kerberosV -DGSSAPI
-SRCS+=  auth2-gss.c gss-serv.c gss-serv-krb5.c
+SRCS+=  auth-krb5.c auth2-gss.c gss-serv.c gss-serv-krb5.c
 .endif
 
 .include <bsd.prog.mk>
@@ -44,8 +59,6 @@ DPADD+=	${LIBZ}
 
 # The random relink kit, used on OpenBSD by /etc/rc
 RELINK_TAR=${PROG}.tar
-
-CLEANFILES+= Makefile.relink sshd.tar
 
 Makefile.relink: ${.CURDIR}/../Makefile.inc ${.CURDIR}/Makefile
 	# XXX assume a concatenation of these is OK

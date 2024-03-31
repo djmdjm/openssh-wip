@@ -85,7 +85,7 @@ enum kex_modes {
 };
 
 enum kex_exchange {
-	KEX_DH_GRP1_SHA1,
+	KEX_DH_GRP1_SHA1 = 1,
 	KEX_DH_GRP14_SHA1,
 	KEX_DH_GRP14_SHA256,
 	KEX_DH_GRP16_SHA512,
@@ -176,9 +176,14 @@ struct kex {
 	struct sshbuf *client_pub;
 };
 
+int	 kex_name_valid(const char *);
+u_int	 kex_type_from_name(const char *);
+int	 kex_hash_from_name(const char *);
+int	 kex_nid_from_name(const char *);
 int	 kex_names_valid(const char *);
 char	*kex_alg_list(char);
 char	*kex_names_cat(const char *, const char *);
+int	 kex_has_any_alg(const char *, const char *);
 int	 kex_assemble_names(char **, const char *, const char *);
 void	 kex_proposal_populate_entries(struct ssh *, char *prop[PROPOSAL_MAX],
     const char *, const char *, const char *, const char *, const char *);

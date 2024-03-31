@@ -27,11 +27,6 @@
 #define	PERMIT_NO_PASSWD	2
 #define	PERMIT_YES		3
 
-/* use_privsep */
-#define PRIVSEP_OFF		0
-#define PRIVSEP_ON		1
-#define PRIVSEP_NOSANDBOX	2
-
 /* PermitOpen */
 #define PERMITOPEN_ANY		0
 #define PERMITOPEN_NONE		-2
@@ -231,6 +226,10 @@ typedef struct {
 	u_int	num_channel_timeouts;
 
 	int	unused_connection_timeout;
+
+	char   *sshd_monitor_path;
+	char   *sshd_privsep_preauth_path;
+	char   *sshd_privsep_postauth_path;
 }       ServerOptions;
 
 /* Information about the incoming connection as used by Match */
@@ -268,6 +267,7 @@ TAILQ_HEAD(include_list, include_item);
 		M_CP_STROPT(banner); \
 		M_CP_STROPT(trusted_user_ca_keys); \
 		M_CP_STROPT(revoked_keys_file); \
+		M_CP_STROPT(adm_forced_command); \
 		M_CP_STROPT(authorized_keys_command); \
 		M_CP_STROPT(authorized_keys_command_user); \
 		M_CP_STROPT(authorized_principals_file); \
@@ -278,6 +278,7 @@ TAILQ_HEAD(include_list, include_item);
 		M_CP_STROPT(ca_sign_algorithms); \
 		M_CP_STROPT(routing_domain); \
 		M_CP_STROPT(permit_user_env_allowlist); \
+		M_CP_STROPT(chroot_directory); \
 		M_CP_STRARRAYOPT(authorized_keys_files, num_authkeys_files); \
 		M_CP_STRARRAYOPT(allow_users, num_allow_users); \
 		M_CP_STRARRAYOPT(deny_users, num_deny_users); \
@@ -295,18 +296,16 @@ TAILQ_HEAD(include_list, include_item);
 		M_CP_STRARRAYOPT(subsystem_args, num_subsystems); \
 	} while (0)
 
-struct connection_info *get_connection_info(struct ssh *, int, int);
 void	 initialize_server_options(ServerOptions *);
 void	 fill_default_server_options(ServerOptions *);
 int	 process_server_config_line(ServerOptions *, char *, const char *, int,
 	    int *, struct connection_info *, struct include_list *includes);
-void	 process_permitopen(struct ssh *ssh, ServerOptions *options);
-void	 process_channel_timeouts(struct ssh *ssh, ServerOptions *);
 void	 load_server_config(const char *, struct sshbuf *);
 void	 parse_server_config(ServerOptions *, const char *, struct sshbuf *,
 	    struct include_list *includes, struct connection_info *, int);
 void	 parse_server_match_config(ServerOptions *,
 	    struct include_list *includes, struct connection_info *);
+int	 parse_channel_timeout(const char *, char **, u_int *);
 int	 parse_server_match_testspec(struct connection_info *, char *);
 int	 server_match_spec_complete(struct connection_info *);
 void	 servconf_merge_subsystems(ServerOptions *, ServerOptions *);

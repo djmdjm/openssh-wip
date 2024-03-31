@@ -89,7 +89,9 @@ static Gssctxt *gsscontext = NULL;
 /* Imports */
 extern ServerOptions options;
 extern u_int utmp_len;
+extern struct sshbuf *cfg;
 extern struct sshbuf *loginmsg;
+extern struct include_list includes;
 extern struct sshauthopt *auth_opts; /* XXX move to permanent ssh->authctxt? */
 
 /* State exported from the child */
@@ -110,8 +112,10 @@ int mm_answer_keyverify(struct ssh *, int, struct sshbuf *);
 int mm_answer_pty(struct ssh *, int, struct sshbuf *);
 int mm_answer_pty_cleanup(struct ssh *, int, struct sshbuf *);
 int mm_answer_term(struct ssh *, int, struct sshbuf *);
+int mm_answer_child_exit(struct ssh *, int, struct sshbuf *);
 int mm_answer_sesskey(struct ssh *, int, struct sshbuf *);
 int mm_answer_sessid(struct ssh *, int, struct sshbuf *);
+int mm_answer_state(struct ssh *, int, struct sshbuf *);
 
 #ifdef GSSAPI
 int mm_answer_gss_setup_ctx(struct ssh *, int, struct sshbuf *);
@@ -119,6 +123,15 @@ int mm_answer_gss_accept_ctx(struct ssh *, int, struct sshbuf *);
 int mm_answer_gss_userok(struct ssh *, int, struct sshbuf *);
 int mm_answer_gss_checkmic(struct ssh *, int, struct sshbuf *);
 #endif
+
+struct mon_pty {
+	TAILQ_ENTRY(mon_pty)	 mp_entry;
+	int			 mp_fd;
+	char			*mp_name;
+};
+TAILQ_HEAD(mon_ptys, mon_pty);
+static struct mon_ptys mon_ptys = TAILQ_HEAD_INITIALIZER(mon_ptys);
+static int num_ptys = 0;
 
 static Authctxt *authctxt;
 
@@ -134,6 +147,10 @@ static char *auth_submethod = NULL;
 static u_int session_id2_len = 0;
 static u_char *session_id2 = NULL;
 static pid_t monitor_child_pid;
+
+/* session child tracking */
+static sig_atomic_t received_sigchld = 0;
+static u_int nchildren = 0, *pids = NULL, *statuses = NULL;
 
 struct mon_table {
 	enum monitor_reqtype type;
@@ -155,6 +172,7 @@ static int monitor_read(struct ssh *, struct monitor *, struct mon_table *,
 static int monitor_read_log(struct monitor *);
 
 struct mon_table mon_dispatch_proto20[] = {
+    {MONITOR_REQ_STATE, MON_ONCE, mm_answer_state},
 #ifdef WITH_OPENSSL
     {MONITOR_REQ_MODULI, MON_ONCE, mm_answer_moduli},
 #endif
@@ -177,6 +195,7 @@ struct mon_table mon_dispatch_proto20[] = {
 };
 
 struct mon_table mon_dispatch_postauth20[] = {
+    {MONITOR_REQ_STATE, MON_ONCE, mm_answer_state},
 #ifdef WITH_OPENSSL
     {MONITOR_REQ_MODULI, 0, mm_answer_moduli},
 #endif
@@ -184,6 +203,7 @@ struct mon_table mon_dispatch_postauth20[] = {
     {MONITOR_REQ_PTY, 0, mm_answer_pty},
     {MONITOR_REQ_PTYCLEANUP, 0, mm_answer_pty_cleanup},
     {MONITOR_REQ_TERM, 0, mm_answer_term},
+    {MONITOR_REQ_CHILD_EXIT, 0, mm_answer_child_exit},
     {0, 0, NULL}
 };
 
@@ -236,7 +256,8 @@ monitor_child_preauth(struct ssh *ssh, struct monitor *pmonitor)
 	ssh->authctxt = authctxt;
 
 	mon_dispatch = mon_dispatch_proto20;
-	/* Permit requests for moduli and signatures */
+	/* Permit requests for state, moduli and signatures */
+	monitor_permit(mon_dispatch, MONITOR_REQ_STATE, 1);
 	monitor_permit(mon_dispatch, MONITOR_REQ_MODULI, 1);
 	monitor_permit(mon_dispatch, MONITOR_REQ_SIGN, 1);
 
@@ -292,7 +313,7 @@ monitor_child_preauth(struct ssh *ssh, struct monitor *pmonitor)
 		fatal_f("authentication method name unknown");
 
 	debug_f("user %s authenticated by privileged process", authctxt->user);
-	ssh->authctxt = NULL;
+	//ssh->authctxt = NULL;
 	ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
 
 	mm_get_keystate(ssh, pmonitor);
@@ -320,6 +341,12 @@ monitor_child_handler(int sig)
 	kill(monitor_child_pid, sig);
 }
 
+static void
+monitor_child_sigchld(int sig)
+{
+	received_sigchld = 1;
+}
+
 void
 monitor_child_postauth(struct ssh *ssh, struct monitor *pmonitor)
 {
@@ -330,10 +357,12 @@ monitor_child_postauth(struct ssh *ssh, struct monitor *pmonitor)
 	ssh_signal(SIGHUP, &monitor_child_handler);
 	ssh_signal(SIGTERM, &monitor_child_handler);
 	ssh_signal(SIGINT, &monitor_child_handler);
+	ssh_signal(SIGCHLD, &monitor_child_sigchld);
 
 	mon_dispatch = mon_dispatch_postauth20;
 
 	/* Permit requests for moduli and signatures */
+	monitor_permit(mon_dispatch, MONITOR_REQ_STATE, 1);
 	monitor_permit(mon_dispatch, MONITOR_REQ_MODULI, 1);
 	monitor_permit(mon_dispatch, MONITOR_REQ_SIGN, 1);
 	monitor_permit(mon_dispatch, MONITOR_REQ_TERM, 1);
@@ -391,12 +420,46 @@ monitor_read_log(struct monitor *pmonitor)
 	/* Log it */
 	if (log_level_name(level) == NULL)
 		fatal_f("invalid log level %u (corrupted message?)", level);
-	sshlogdirect(level, forced, "%s [preauth]", msg);
+	sshlogdirect(level, forced, "%s [%s]", msg,
+	    mon_dispatch == mon_dispatch_postauth20 ? "postauth" : "preauth");
 
 	sshbuf_free(logmsg);
 	free(msg);
 
 	return 0;
+}
+
+static void
+reap_children(void)
+{
+	pid_t pid;
+	int inform = 0, st;
+
+	for (;;) {
+		if ((pid = waitpid(-1, &st, WNOHANG)) < 0) {
+			if (errno == EINTR)
+				continue;
+			fatal_f("waitpid: %s", strerror(errno));
+		}
+		if (pid == 0)
+			break;
+		debug3_f("child %u terminated %s %u%s", (u_int)pid,
+			WIFEXITED(st) ? "with exit status" : "on signal",
+			WIFEXITED(st) ? WEXITSTATUS(st) : WTERMSIG(st),
+			WCOREDUMP(st) ? " (core dumped)" : "");
+		/* XXX check the pid against the PIDs of active sessions */
+		pids = xrecallocarray(pids, nchildren, nchildren + 1,
+		    sizeof(*pids));
+		statuses = xrecallocarray(statuses, nchildren, nchildren + 1,
+		    sizeof(*statuses));
+		pids[nchildren] = (u_int)pid;
+		statuses[nchildren] = (u_int)st;
+		inform = 1;
+	}
+	/* inform child */
+	if (inform)
+		kill(monitor_child_pid, SIGUSR1);
+	received_sigchld = 0;
 }
 
 static int
@@ -407,14 +470,21 @@ monitor_read(struct ssh *ssh, struct monitor *pmonitor, struct mon_table *ent,
 	int r, ret;
 	u_char type;
 	struct pollfd pfd[2];
+	sigset_t nsigset, osigset;
 
+	sigemptyset(&nsigset);
+	sigaddset(&nsigset, SIGCHLD);
 	for (;;) {
+		sigprocmask(SIG_BLOCK, &nsigset, &osigset);
+		if (received_sigchld)
+			reap_children();
+
 		memset(&pfd, 0, sizeof(pfd));
 		pfd[0].fd = pmonitor->m_sendfd;
 		pfd[0].events = POLLIN;
 		pfd[1].fd = pmonitor->m_log_recvfd;
 		pfd[1].events = pfd[1].fd == -1 ? 0 : POLLIN;
-		if (poll(pfd, pfd[1].fd == -1 ? 1 : 2, -1) == -1) {
+		if (ppoll(pfd, pfd[1].fd == -1 ? 1 : 2, NULL, &osigset) == -1) {
 			if (errno == EINTR || errno == EAGAIN)
 				continue;
 			fatal_f("poll: %s", strerror(errno));
@@ -497,6 +567,110 @@ monitor_reset_key_state(void)
 	hostbased_chost = NULL;
 }
 
+static void
+monitor_clear_keystate(struct ssh *ssh)
+{
+	ssh_clear_newkeys(ssh, MODE_IN);
+	ssh_clear_newkeys(ssh, MODE_OUT);
+	sshbuf_free(child_state);
+	child_state = NULL;
+}
+
+int
+mm_answer_state(struct ssh *ssh, int sock, struct sshbuf *m)
+{
+	struct sshbuf *inc = NULL, *hostkeys = NULL;
+	struct sshbuf *opts = NULL, *confdata = NULL;
+	struct include_item *item = NULL;
+	char *pw_name = NULL;
+	size_t pw_len = 0;
+	int postauth;
+	int r;
+
+	sshbuf_reset(m);
+
+	debug_f("config len %zu", sshbuf_len(cfg));
+
+	if ((m = sshbuf_new()) == NULL ||
+	    (inc = sshbuf_new()) == NULL ||
+	    (opts = sshbuf_new()) == NULL ||
+	    (confdata = sshbuf_new()) == NULL)
+		fatal_f("sshbuf_new failed");
+
+	/* XXX unneccessary? */
+	/* pack includes into a string */
+	TAILQ_FOREACH(item, &includes, entry) {
+		if ((r = sshbuf_put_cstring(inc, item->selector)) != 0 ||
+		    (r = sshbuf_put_cstring(inc, item->filename)) != 0 ||
+		    (r = sshbuf_put_stringb(inc, item->contents)) != 0)
+			fatal_fr(r, "compose includes");
+	}
+
+	hostkeys = pack_hostkeys();
+
+	/*
+	 * Protocol from monitor to unpriv privsep process:
+	 *	string	configuration
+	 *	uint64	timing_secret	XXX move delays to monitor and remove
+	 *	string	host_keys[] {
+	 *		string public_key
+	 *		string certificate
+	 *	}
+	 *	string  server_banner
+	 *	string  client_banner
+	 *	string	included_files[] {
+	 *		string	selector
+	 *		string	filename
+	 *		string	contents
+	 *	}
+	 *	string	configuration_data (postauth)
+	 *	string  keystate (postauth)
+	 *	string  authenticated_user (postauth)
+	 *	string  session_info (postauth)
+	 *	string  authopts (postauth)
+	 */
+	if ((r = sshbuf_put_stringb(m, cfg)) != 0 ||
+	    (r = sshbuf_put_u64(m, options.timing_secret)) != 0 ||
+	    (r = sshbuf_put_stringb(m, hostkeys)) != 0 ||
+	    (r = sshbuf_put_stringb(m, ssh->kex->server_version)) != 0 ||
+	    (r = sshbuf_put_stringb(m, ssh->kex->client_version)) != 0 ||
+	    (r = sshbuf_put_stringb(m, inc)) != 0)
+		fatal_fr(r, "compose config");
+
+	postauth = (authctxt && authctxt->pw && authctxt->authenticated);
+	if (postauth) {
+		if (auth_opts != NULL &&
+		    (r = sshauthopt_serialise(auth_opts, opts, 0)) != 0)
+			fatal_fr(r, "sshauthopt_serialise failed");
+
+		mm_encode_server_options(confdata);
+
+		/* authenticated user */
+		if ((pw_name = authctxt->pw->pw_name) != NULL)
+			pw_len = strlen(pw_name);
+
+		debug3_f("send user len %zu", pw_len);
+		if ((r = sshbuf_put_stringb(m, confdata)) != 0 ||
+		    (r = sshbuf_put_stringb(m, child_state)) != 0 ||
+		    (r = sshbuf_put_string(m, pw_name, pw_len)) != 0 ||
+		    (r = sshbuf_put_stringb(m, authctxt->session_info)) != 0 ||
+		    (r = sshbuf_put_stringb(m, opts)) != 0)
+			fatal_fr(r, "compose config postauth");
+
+		monitor_clear_keystate(ssh);
+	}
+
+	sshbuf_free(inc);
+	sshbuf_free(opts);
+	sshbuf_free(confdata);
+
+	mm_request_send(sock, MONITOR_ANS_STATE, m);
+
+	debug3_f("done");
+
+	return (0);
+}
+
 #ifdef WITH_OPENSSL
 int
 mm_answer_moduli(struct ssh *ssh, int sock, struct sshbuf *m)
@@ -542,24 +716,27 @@ int
 mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 {
 	extern int auth_sock;			/* XXX move to state struct? */
-	struct sshkey *key;
+	struct sshkey *pubkey, *key;
 	struct sshbuf *sigbuf = NULL;
 	u_char *p = NULL, *signature = NULL;
 	char *alg = NULL;
-	size_t datlen, siglen, alglen;
-	int r, is_proof = 0;
-	u_int keyid, compat;
+	size_t datlen, siglen;
+	int r, is_proof = 0, keyid;
+	u_int compat;
 	const char proof_req[] = "hostkeys-prove-00@openssh.com";
 
 	debug3_f("entering");
 
-	if ((r = sshbuf_get_u32(m, &keyid)) != 0 ||
+	if ((r = sshkey_froms(m, &pubkey)) != 0 ||
 	    (r = sshbuf_get_string(m, &p, &datlen)) != 0 ||
-	    (r = sshbuf_get_cstring(m, &alg, &alglen)) != 0 ||
+	    (r = sshbuf_get_cstring(m, &alg, NULL)) != 0 ||
 	    (r = sshbuf_get_u32(m, &compat)) != 0)
 		fatal_fr(r, "parse");
-	if (keyid > INT_MAX)
-		fatal_f("invalid key ID");
+
+	if ((keyid = get_hostkey_index(pubkey, 1, ssh)) == -1)
+		fatal_f("unknown hostkey");
+	debug_f("hostkey %s index %d", sshkey_ssh_name(pubkey), keyid);
+	sshkey_free(pubkey);
 
 	/*
 	 * Supported KEX types use SHA1 (20 bytes), SHA256 (32 bytes),
@@ -641,13 +818,39 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 			fatal_fr(r, "assemble %s", #id); \
 	} while (0)
 
+void
+mm_encode_server_options(struct sshbuf *m)
+{
+	int r;
+	u_int i;
+
+	/* XXX this leaks raw pointers to the unpriv child processes */
+	if ((r = sshbuf_put_string(m, &options, sizeof(options))) != 0)
+		fatal_fr(r, "assemble options");
+
+#define M_CP_STROPT(x) do { \
+		if (options.x != NULL && \
+		    (r = sshbuf_put_cstring(m, options.x)) != 0) \
+			fatal_fr(r, "assemble %s", #x); \
+	} while (0)
+#define M_CP_STRARRAYOPT(x, nx) do { \
+		for (i = 0; i < options.nx; i++) { \
+			if ((r = sshbuf_put_cstring(m, options.x[i])) != 0) \
+				fatal_fr(r, "assemble %s", #x); \
+		} \
+	} while (0)
+	/* See comment in servconf.h */
+	COPY_MATCH_STRING_OPTS();
+#undef M_CP_STROPT
+#undef M_CP_STRARRAYOPT
+}
+
 /* Retrieves the password entry and also checks if the user is permitted */
 int
 mm_answer_pwnamallow(struct ssh *ssh, int sock, struct sshbuf *m)
 {
 	struct passwd *pwent;
 	int r, allowed = 0;
-	u_int i;
 
 	debug3_f("entering");
 
@@ -692,24 +895,9 @@ mm_answer_pwnamallow(struct ssh *ssh, int sock, struct sshbuf *m)
  out:
 	ssh_packet_set_log_preamble(ssh, "%suser %s",
 	    authctxt->valid ? "authenticating" : "invalid ", authctxt->user);
-	if ((r = sshbuf_put_string(m, &options, sizeof(options))) != 0)
-		fatal_fr(r, "assemble options");
 
-#define M_CP_STROPT(x) do { \
-		if (options.x != NULL && \
-		    (r = sshbuf_put_cstring(m, options.x)) != 0) \
-			fatal_fr(r, "assemble %s", #x); \
-	} while (0)
-#define M_CP_STRARRAYOPT(x, nx) do { \
-		for (i = 0; i < options.nx; i++) { \
-			if ((r = sshbuf_put_cstring(m, options.x[i])) != 0) \
-				fatal_fr(r, "assemble %s", #x); \
-		} \
-	} while (0)
-	/* See comment in servconf.h */
-	COPY_MATCH_STRING_OPTS();
-#undef M_CP_STROPT
-#undef M_CP_STRARRAYOPT
+	/* Send active options to unpriv */
+	mm_encode_server_options(m);
 
 	/* Create valid auth method lists */
 	if (auth2_setup_methods_lists(authctxt) != 0) {
@@ -1255,8 +1443,10 @@ mm_answer_keyverify(struct ssh *ssh, int sock, struct sshbuf *m)
 }
 
 static void
-mm_record_login(struct ssh *ssh, Session *s, struct passwd *pw)
+mm_record_login(struct ssh *ssh, const char *ttyname, struct passwd *pw)
 {
+	extern struct monitor *pmonitor;
+	const char *remote;
 	socklen_t fromlen;
 	struct sockaddr_storage from;
 
@@ -1273,53 +1463,84 @@ mm_record_login(struct ssh *ssh, Session *s, struct passwd *pw)
 			cleanup_exit(255);
 		}
 	}
+
+	remote = "";
+	if (utmp_len > 0)
+		remote = auth_get_canonical_hostname(ssh, options.use_dns);
+	if (utmp_len == 0 || strlen(remote) > utmp_len)
+		remote = ssh_remote_ipaddr(ssh);
+
 	/* Record that there was a login on that tty from the remote host. */
-	record_login(s->pid, s->tty, pw->pw_name, pw->pw_uid,
-	    session_get_remote_name_or_ip(ssh, utmp_len, options.use_dns),
+	record_login(pmonitor->m_pid, ttyname, pw->pw_name, pw->pw_uid, remote,
 	    (struct sockaddr *)&from, fromlen);
 }
 
 static void
-mm_session_close(Session *s)
+mm_pty_remove_and_free(struct mon_pty *mp)
 {
-	debug3_f("session %d pid %ld", s->self, (long)s->pid);
-	if (s->ttyfd != -1) {
-		debug3_f("tty %s ptyfd %d", s->tty, s->ptyfd);
-		session_pty_cleanup2(s);
-	}
-	session_unused(s->self);
+	extern struct monitor *pmonitor;
+
+	record_logout(pmonitor->m_pid, mp->mp_name);
+
+	/* Release the pseudo-tty. */
+	if (getuid() == 0)
+		pty_release(mp->mp_name);
+
+	/*
+	 * Close the server side of the socket pairs.  We must do this after
+	 * the pty cleanup, so that another process doesn't get this pty
+	 * while we're still cleaning up.
+	 */
+	if (mp->mp_fd != -1 && close(mp->mp_fd) == -1)
+		error("close(mp->mp_fd/%d): %s", mp->mp_fd, strerror(errno));
+
+	TAILQ_REMOVE(&mon_ptys, mp, mp_entry);
+	free(mp->mp_name);
+	free(mp);
+	num_ptys--;
+}
+
+static void
+mm_pty_remove_all(void)
+{
+	struct mon_pty *mp;
+
+	while ((mp = TAILQ_FIRST(&mon_ptys)) != NULL)
+		mm_pty_remove_and_free(mp);
 }
 
 int
 mm_answer_pty(struct ssh *ssh, int sock, struct sshbuf *m)
 {
-	extern struct monitor *pmonitor;
-	Session *s;
-	int r, res, fd0;
+	struct mon_pty *mp;
+	char ttyname[64];
+	int r, fd0, ptyfd, ttyfd;
 
 	debug3_f("entering");
 
-	sshbuf_reset(m);
-	s = session_new();
-	if (s == NULL)
+	if (num_ptys >= options.max_sessions)
 		goto error;
-	s->authctxt = authctxt;
-	s->pw = authctxt->pw;
-	s->pid = pmonitor->m_pid;
-	res = pty_allocate(&s->ptyfd, &s->ttyfd, s->tty, sizeof(s->tty));
-	if (res == 0)
+	if (pty_allocate(&ptyfd, &ttyfd, ttyname, sizeof(ttyname)) == 0)
 		goto error;
-	pty_setowner(authctxt->pw, s->tty);
 
+	mp = xcalloc(1, sizeof(*mp));
+	mp->mp_fd = -1;
+	mp->mp_name = xstrdup(ttyname);
+	TAILQ_INSERT_TAIL(&mon_ptys, mp, mp_entry);
+	num_ptys++;
+
+	pty_setowner(authctxt->pw, ttyname);
+
+	sshbuf_reset(m);
 	if ((r = sshbuf_put_u32(m, 1)) != 0 ||
-	    (r = sshbuf_put_cstring(m, s->tty)) != 0)
+	    (r = sshbuf_put_cstring(m, ttyname)) != 0)
 		fatal_fr(r, "assemble");
 
 	/* We need to trick ttyslot */
-	if (dup2(s->ttyfd, 0) == -1)
+	if (dup2(ttyfd, 0) == -1)
 		fatal_f("dup2");
 
-	mm_record_login(ssh, s, authctxt->pw);
+	mm_record_login(ssh, ttyname, authctxt->pw);
 
 	/* Now we can close the file descriptor again */
 	close(0);
@@ -1331,8 +1552,8 @@ mm_answer_pty(struct ssh *ssh, int sock, struct sshbuf *m)
 
 	mm_request_send(sock, MONITOR_ANS_PTY, m);
 
-	if (mm_send_fd(sock, s->ptyfd) == -1 ||
-	    mm_send_fd(sock, s->ttyfd) == -1)
+	if (mm_send_fd(sock, ptyfd) == -1 ||
+	    mm_send_fd(sock, ttyfd) == -1)
 		fatal_f("send fds failed");
 
 	/* make sure nothing uses fd 0 */
@@ -1342,18 +1563,15 @@ mm_answer_pty(struct ssh *ssh, int sock, struct sshbuf *m)
 		error_f("fd0 %d != 0", fd0);
 
 	/* slave side of pty is not needed */
-	close(s->ttyfd);
-	s->ttyfd = s->ptyfd;
-	/* no need to dup() because nobody closes ptyfd */
-	s->ptymaster = s->ptyfd;
+	close(ttyfd);
 
-	debug3_f("tty %s ptyfd %d", s->tty, s->ttyfd);
+	mp->mp_fd = ptyfd;	/* entry complete */
+
+	debug3_f("tty %s ptyfd %d", mp->mp_name, mp->mp_fd);
 
 	return (0);
 
  error:
-	if (s != NULL)
-		mm_session_close(s);
 	if ((r = sshbuf_put_u32(m, 0)) != 0)
 		fatal_fr(r, "assemble 0");
 	mm_request_send(sock, MONITOR_ANS_PTY, m);
@@ -1363,7 +1581,7 @@ mm_answer_pty(struct ssh *ssh, int sock, struct sshbuf *m)
 int
 mm_answer_pty_cleanup(struct ssh *ssh, int sock, struct sshbuf *m)
 {
-	Session *s;
+	struct mon_pty *mp;
 	char *tty;
 	int r;
 
@@ -1371,8 +1589,14 @@ mm_answer_pty_cleanup(struct ssh *ssh, int sock, struct sshbuf *m)
 
 	if ((r = sshbuf_get_cstring(m, &tty, NULL)) != 0)
 		fatal_fr(r, "parse tty");
-	if ((s = session_by_tty(tty)) != NULL)
-		mm_session_close(s);
+
+	TAILQ_FOREACH(mp, &mon_ptys, mp_entry) {
+		if (strcmp(mp->mp_name, tty) == 0) {
+			mm_pty_remove_and_free(mp);
+			break;
+		}
+	}
+
 	sshbuf_reset(m);
 	free(tty);
 	return (0);
@@ -1387,7 +1611,8 @@ mm_answer_term(struct ssh *ssh, int sock, struct sshbuf *req)
 	debug3_f("tearing down sessions");
 
 	/* The child is terminating */
-	session_destroy_all(ssh, &mm_session_close);
+
+	mm_pty_remove_all();
 
 	while (waitpid(pmonitor->m_pid, &status, 0) == -1)
 		if (errno != EINTR)
@@ -1399,52 +1624,23 @@ mm_answer_term(struct ssh *ssh, int sock, struct sshbuf *req)
 	exit(res);
 }
 
-void
-monitor_clear_keystate(struct ssh *ssh, struct monitor *pmonitor)
+int
+mm_answer_child_exit(struct ssh *ssh, int sock, struct sshbuf *m)
 {
-	ssh_clear_newkeys(ssh, MODE_IN);
-	ssh_clear_newkeys(ssh, MODE_OUT);
-	sshbuf_free(child_state);
-	child_state = NULL;
-}
-
-void
-monitor_apply_keystate(struct ssh *ssh, struct monitor *pmonitor)
-{
-	struct kex *kex;
 	int r;
+	u_int i;
 
-	debug3_f("packet_set_state");
-	if ((r = ssh_packet_set_state(ssh, child_state)) != 0)
-		fatal_fr(r, "packet_set_state");
-	sshbuf_free(child_state);
-	child_state = NULL;
-	if ((kex = ssh->kex) == NULL)
-		fatal_f("internal error: ssh->kex == NULL");
-	if (session_id2_len != sshbuf_len(ssh->kex->session_id)) {
-		fatal_f("incorrect session id length %zu (expected %u)",
-		    sshbuf_len(ssh->kex->session_id), session_id2_len);
+	debug3_f("enter; %u children pending", nchildren);
+	sshbuf_reset(m);
+
+	for (i = 0; i < nchildren; i++) {
+		if ((r = sshbuf_put_u32(m, pids[i])) != 0 ||
+		    (r = sshbuf_put_u32(m, statuses[i])) != 0)
+			fatal_fr(r, "compose");
 	}
-	if (memcmp(sshbuf_ptr(ssh->kex->session_id), session_id2,
-	    session_id2_len) != 0)
-		fatal_f("session ID mismatch");
-	/* XXX set callbacks */
-#ifdef WITH_OPENSSL
-	kex->kex[KEX_DH_GRP1_SHA1] = kex_gen_server;
-	kex->kex[KEX_DH_GRP14_SHA1] = kex_gen_server;
-	kex->kex[KEX_DH_GRP14_SHA256] = kex_gen_server;
-	kex->kex[KEX_DH_GRP16_SHA512] = kex_gen_server;
-	kex->kex[KEX_DH_GRP18_SHA512] = kex_gen_server;
-	kex->kex[KEX_DH_GEX_SHA1] = kexgex_server;
-	kex->kex[KEX_DH_GEX_SHA256] = kexgex_server;
-	kex->kex[KEX_ECDH_SHA2] = kex_gen_server;
-#endif
-	kex->kex[KEX_C25519_SHA256] = kex_gen_server;
-	kex->kex[KEX_KEM_SNTRUP761X25519_SHA512] = kex_gen_server;
-	kex->load_host_public_key=&get_hostkey_public_by_type;
-	kex->load_host_private_key=&get_hostkey_private_by_type;
-	kex->host_key_index=&get_hostkey_index;
-	kex->sign = sshd_hostkey_sign;
+
+	mm_request_send(sock, MONITOR_ANS_CHILD_EXIT, m);
+	return 0;
 }
 
 /* This function requires careful sanity checking */
@@ -1517,7 +1713,7 @@ monitor_init(void)
 void
 monitor_reinit(struct monitor *mon)
 {
-	monitor_openfds(mon, 0);
+	monitor_openfds(mon, 1);	/* X */
 }
 
 #ifdef GSSAPI
@@ -1647,3 +1843,34 @@ mm_answer_gss_userok(struct ssh *ssh, int sock, struct sshbuf *m)
 }
 #endif /* GSSAPI */
 
+void
+do_cleanup(struct ssh *ssh, Authctxt *authctxt_arg)
+{
+	static int called = 0;
+
+	debug("do_cleanup");
+
+	/* avoid double cleanup */
+	if (called)
+		return;
+	called = 1;
+
+	if (authctxt_arg == NULL || !authctxt_arg->authenticated)
+		return;
+#ifdef KRB5
+	if (options.kerberos_ticket_cleanup &&
+	    authctxt_arg->krb5_ctx)
+		krb5_cleanup_proc(authctxt_arg);
+#endif
+
+#ifdef GSSAPI
+	if (options.gss_cleanup_creds)
+		ssh_gssapi_cleanup_creds();
+#endif
+
+	/*
+	 * Cleanup ptys/utmp only if privsep is disabled,
+	 * or if running in monitor.
+	 */
+	mm_pty_remove_all();
+}

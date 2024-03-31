@@ -28,9 +28,6 @@
 #ifndef _MM_WRAP_H_
 #define _MM_WRAP_H_
 
-extern int use_privsep;
-#define PRIVSEP(x)	(use_privsep ? mm_##x : x)
-
 enum mm_keytype { MM_NOKEY, MM_HOSTKEY, MM_USERKEY };
 
 struct ssh;
@@ -60,6 +57,9 @@ int mm_hostbased_key_allowed(struct ssh *, struct passwd *, const char *,
     const char *, struct sshkey *);
 int mm_sshkey_verify(const struct sshkey *, const u_char *, size_t,
     const u_char *, size_t, const char *, u_int, struct sshkey_sig_details **);
+void mm_ssh_poll_child_exit(u_int *, u_int **, u_int **);
+
+void mm_decode_activate_server_options(struct ssh *ssh, struct sshbuf *m);
 
 #ifdef GSSAPI
 OM_uint32 mm_ssh_gssapi_server_ctx(Gssctxt **, gss_OID);
@@ -80,8 +80,20 @@ int mm_newkeys_to_blob(int, u_char **, u_int *);
 
 void mm_send_keystate(struct ssh *, struct monitor*);
 
+/* state */
+struct include_list;
+void mm_get_state(struct ssh *, struct include_list *, struct sshbuf *,
+    struct sshbuf **, uint64_t *, struct sshbuf **, struct sshbuf **,
+    u_char **, struct sshbuf **, struct sshbuf **);
+
 /* bsdauth */
 int mm_bsdauth_query(void *, char **, char **, u_int *, char ***, u_int **);
 int mm_bsdauth_respond(void *, u_int, char **);
+
+/* config / channels glue */
+void	 server_process_permitopen(struct ssh *);
+void	 server_process_channel_timeouts(struct ssh *ssh);
+struct connection_info *
+	 server_get_connection_info(struct ssh *, int, int);
 
 #endif /* _MM_WRAP_H_ */

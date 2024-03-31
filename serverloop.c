@@ -73,6 +73,7 @@
 #include "dispatch.h"
 #include "auth-options.h"
 #include "serverloop.h"
+#include "monitor_wrap.h"
 #include "ssherr.h"
 
 extern ServerOptions options;
@@ -80,14 +81,10 @@ extern ServerOptions options;
 /* XXX */
 extern Authctxt *the_authctxt;
 extern struct sshauthopt *auth_opts;
-extern int use_privsep;
 
 static int no_more_sessions = 0; /* Disallow further sessions. */
 
 static volatile sig_atomic_t child_terminated = 0;	/* The child has terminated. */
-
-/* Cleanup on signals (!use_privsep case only) */
-static volatile sig_atomic_t received_sigterm = 0;
 
 /* prototypes */
 static void server_init_dispatch(struct ssh *);
@@ -95,27 +92,10 @@ static void server_init_dispatch(struct ssh *);
 /* requested tunnel forwarding interface(s), shared with session.c */
 char *tun_fwd_ifnames = NULL;
 
-/* returns 1 if bind to specified port by specified user is permitted */
-static int
-bind_permitted(int port, uid_t uid)
-{
-	if (use_privsep)
-		return 1; /* allow system to decide */
-	if (port < IPPORT_RESERVED && uid != 0)
-		return 0;
-	return 1;
-}
-
 static void
 sigchld_handler(int sig)
 {
 	child_terminated = 1;
-}
-
-static void
-sigterm_handler(int sig)
-{
-	received_sigterm = sig;
 }
 
 static void
@@ -319,19 +299,29 @@ collect_children(struct ssh *ssh)
 {
 	pid_t pid;
 	int status;
+	u_int i, nchildren, *statuses = NULL, *pids = NULL;
 
-	if (child_terminated) {
-		debug("Received SIGCHLD.");
-		while ((pid = waitpid(-1, &status, WNOHANG)) > 0 ||
-		    (pid == -1 && errno == EINTR))
-			if (pid > 0)
-				session_close_by_pid(ssh, pid, status);
-		child_terminated = 0;
-	}
+	if (!child_terminated)
+		return;
+	debug("Received SIGCHLD.");
+
+	/* XXX remove */
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0 ||
+	    (pid == -1 && errno == EINTR))
+		if (pid > 0)
+			session_close_by_pid(ssh, pid, status);
+
+	mm_ssh_poll_child_exit(&nchildren, &pids, &statuses);
+	for (i = 0; i < nchildren; i++)
+		session_close_by_pid(ssh, (pid_t)pids[i], (int)statuses[i]);
+
+	child_terminated = 0;
+	free(statuses);
+	free(pids);
 }
 
 void
-server_loop2(struct ssh *ssh, Authctxt *authctxt)
+server_loop2(struct ssh *ssh)
 {
 	struct pollfd *pfd = NULL;
 	u_int npfd_alloc = 0, npfd_active = 0;
@@ -344,15 +334,10 @@ server_loop2(struct ssh *ssh, Authctxt *authctxt)
 	if (sigemptyset(&bsigset) == -1 || sigaddset(&bsigset, SIGCHLD) == -1)
 		error_f("bsigset setup: %s", strerror(errno));
 	ssh_signal(SIGCHLD, sigchld_handler);
+	ssh_signal(SIGUSR1, sigchld_handler);
 	child_terminated = 0;
 	connection_in = ssh_packet_get_connection_in(ssh);
 	connection_out = ssh_packet_get_connection_out(ssh);
-
-	if (!use_privsep) {
-		ssh_signal(SIGTERM, sigterm_handler);
-		ssh_signal(SIGINT, sigterm_handler);
-		ssh_signal(SIGQUIT, sigterm_handler);
-	}
 
 	server_init_dispatch(ssh);
 
@@ -377,12 +362,6 @@ server_loop2(struct ssh *ssh, Authctxt *authctxt)
 		if (sigprocmask(SIG_UNBLOCK, &bsigset, &osigset) == -1)
 			error_f("osigset sigprocmask: %s", strerror(errno));
 
-		if (received_sigterm) {
-			logit("Exiting on signal %d", (int)received_sigterm);
-			/* Clean up sessions, utmp, etc. */
-			cleanup_exit(255);
-		}
-
 		channel_after_poll(ssh, pfd, npfd_active);
 		if (conn_in_ready &&
 		    process_input(ssh, connection_in) < 0)
@@ -400,7 +379,7 @@ server_loop2(struct ssh *ssh, Authctxt *authctxt)
 	channel_free_all(ssh);
 
 	/* free remaining sessions, e.g. remove wtmp entries */
-	session_destroy_all(ssh, NULL);
+	session_destroy_all(ssh);
 }
 
 static int
@@ -492,7 +471,7 @@ server_request_direct_streamlocal(struct ssh *ssh)
 	/* XXX fine grained permissions */
 	if ((options.allow_streamlocal_forwarding & FORWARD_LOCAL) != 0 &&
 	    auth_opts->permit_port_forwarding_flag &&
-	    !options.disable_forwarding && (pw->pw_uid == 0 || use_privsep)) {
+	    !options.disable_forwarding) {
 		c = channel_connect_to_path(ssh, target,
 		    "direct-streamlocal@openssh.com", "direct-streamlocal");
 	} else {
@@ -781,9 +760,7 @@ server_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 		    (options.allow_tcp_forwarding & FORWARD_REMOTE) == 0 ||
 		    !auth_opts->permit_port_forwarding_flag ||
 		    options.disable_forwarding ||
-		    (!want_reply && fwd.listen_port == 0) ||
-		    (fwd.listen_port != 0 &&
-		    !bind_permitted(fwd.listen_port, pw->pw_uid))) {
+		    (!want_reply && fwd.listen_port == 0)) {
 			success = 0;
 			ssh_packet_send_debug(ssh, "Server has disabled port forwarding.");
 		} else {
@@ -816,8 +793,7 @@ server_input_global_request(int type, u_int32_t seq, struct ssh *ssh)
 		/* check permissions */
 		if ((options.allow_streamlocal_forwarding & FORWARD_REMOTE) == 0
 		    || !auth_opts->permit_port_forwarding_flag ||
-		    options.disable_forwarding ||
-		    (pw->pw_uid != 0 && !use_privsep)) {
+		    options.disable_forwarding) {
 			success = 0;
 			ssh_packet_send_debug(ssh, "Server has disabled "
 			    "streamlocal forwarding.");
