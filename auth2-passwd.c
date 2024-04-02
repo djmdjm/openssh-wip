@@ -45,6 +45,7 @@
 
 /* import */
 extern ServerOptions options;
+extern struct authmethod_cfg methodcfg_passwd;
 
 static int
 userauth_passwd(struct ssh *ssh, const char *method)
@@ -64,15 +65,13 @@ userauth_passwd(struct ssh *ssh, const char *method)
 
 	if (change)
 		logit("password change not supported");
-	else if (PRIVSEP(auth_password(ssh, password)) == 1)
+	else if (mm_auth_password(ssh, password) == 1)
 		authenticated = 1;
 	freezero(password, len);
 	return authenticated;
 }
 
 Authmethod method_passwd = {
-	"password",
-	NULL,
+	&methodcfg_passwd,
 	userauth_passwd,
-	&options.password_authentication
 };

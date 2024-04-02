@@ -1,16 +1,23 @@
-#	$OpenBSD: Makefile,v 1.109 2024/02/10 11:28:52 naddy Exp $
+#	$OpenBSD: Makefile,v 1.108 2023/01/18 20:56:36 deraadt Exp $
 
 .PATH:		${.CURDIR}/..
 
-SRCS=	sshd.c servconf.c sshpty.c srclimit.c groupaccess.c auth2-methods.c
-SRCS+=	dns.c fatal.c compat.c utf8.c authfd.c canohost.c kex-names.c
-SRCS+=	${SRCS_BASE} ${SRCS_KEY} ${SRCS_KEYP} ${SRCS_KRL} \
-	${SRCS_MAC} ${SRCS_UTL} ${SRCS_SK_CLIENT}
+SRCS=	sshd-monitor.c auth2-methods.c \
+	auth-rhosts.c auth-passwd.c sshpty.c sshlogin.c servconf.c \
+	serverloop.c auth.c auth2.c auth-options.c session.c auth2-chall.c \
+	groupaccess.c auth-bsdauth.c auth2-hostbased.c auth2-kbdint.c \
+	auth2-none.c auth2-passwd.c auth2-pubkey.c auth2-pubkeyfile.c \
+	monitor.c monitor_wrap.c \
+	sftp-server.c sftp-common.c sftp-realpath.c sandbox-pledge.c srclimit.c
+SRCS+=	authfd.c compat.c dns.c fatal.c hostfile.c readpass.c utf8.c uidswap.c
+SRCS+=	${SRCS_BASE} ${SRCS_KEX} ${SRCS_KEXS} ${SRCS_KEY} ${SRCS_KEYP} \
+	${SRCS_KRL} ${SRCS_PROT} ${SRCS_PKT} ${SRCS_UTL} ${SRCS_PKCS11} \
+	${SRCS_SK_CLIENT}
 
-PROG=	sshd
+PROG=	sshd-monitor
+BINDIR=	/usr/libexec
 BINMODE=511
-BINDIR=	/usr/sbin
-MAN=	sshd.8 sshd_config.5
+NOMAN=	1
 
 .include <bsd.own.mk> # for KERBEROS and AFS
 
@@ -44,8 +51,6 @@ DPADD+=	${LIBZ}
 
 # The random relink kit, used on OpenBSD by /etc/rc
 RELINK_TAR=${PROG}.tar
-
-CLEANFILES+= Makefile.relink sshd.tar
 
 Makefile.relink: ${.CURDIR}/../Makefile.inc ${.CURDIR}/Makefile
 	# XXX assume a concatenation of these is OK

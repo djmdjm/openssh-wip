@@ -21,6 +21,12 @@
 #include <stdio.h>
 #include <signal.h>
 
+/* special-case port number meaning allow any port */
+#define FWD_PERMIT_ANY_PORT	0
+
+/* special-case wildcard meaning allow any host */
+#define FWD_PERMIT_ANY_HOST	"*"
+
 /* Data structure for representing a forwarding request. */
 struct Forward {
 	char	 *listen_host;		/* Host (address) to listen on. */
@@ -34,6 +40,8 @@ struct Forward {
 };
 
 int forward_equals(const struct Forward *, const struct Forward *);
+int permitopen_port(const char *p);
+
 int daemonized(void);
 
 /* Common server and client forwarding options. */
