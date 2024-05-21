@@ -72,6 +72,7 @@
 #include "version.h"
 #include "ssherr.h"
 #include "sk-api.h"
+#include "addr.h"
 #include "srclimit.h"
 
 /* Re-exec fds */
@@ -162,6 +163,8 @@ struct early_child {
 	int flags;		/* Indicates child closed listener */
 	char *id;		/* human readable connection identifier */
 	pid_t pid;
+	struct xaddr addr;
+	int have_addr;
 	int status, have_status;
 };
 static struct early_child *children;
@@ -212,6 +215,9 @@ child_register(int pipefd, int sockfd)
 	int i, lport, rport;
 	char *laddr = NULL, *raddr = NULL;
 	struct early_child *child = NULL;
+	struct sockaddr_storage addr;
+	socklen_t addrlen = sizeof(addr);
+	struct sockaddr *sa = (struct sockaddr *)&addr;
 
 	for (i = 0; i < options.max_startups; i++) {
 		if (children[i].pipefd != -1 || children[i].pid > 0)
@@ -225,6 +231,11 @@ child_register(int pipefd, int sockfd)
 	}
 	child->pipefd = pipefd;
 	child->flags = 1;
+	/* record peer address, if available */
+	if (getpeername(sockfd, sa, &addrlen) == 0 &&
+	   addr_sa_to_xaddr(sa, addrlen, &child->addr) == 0)
+		child->have_addr = 1;
+	/* format peer address string for logs */
 	if ((lport = get_local_port(sockfd)) == 0 ||
 	    (rport = get_peer_port(sockfd)) == 0) {
 		/* Not a TCP socket */
@@ -301,6 +312,7 @@ static void
 child_reap(struct early_child *child)
 {
 	LogLevel level = SYSLOG_LEVEL_DEBUG1;
+	int was_crash = 0, was_auth_timeout = 0;
 
 	/* Log exit information */
 	if (WIFSIGNALED(child->status)) {
@@ -308,12 +320,13 @@ child_reap(struct early_child *child)
 		 * Increase logging for signals potentially associated
 		 * with serious conditions.
 		 */
-		if (signal_is_crash(WTERMSIG(child->status)))
+		if ((was_crash = signal_is_crash(WTERMSIG(child->status))))
 			level = SYSLOG_LEVEL_ERROR;
 		do_log2(level, "preauth child %ld for %s killed by signal %d%s",
 		    (long)child->pid, child->id, WTERMSIG(child->status),
 		    child->flags ? " (early)" : "");
 	} else if (!WIFEXITED(child->status)) {
+		was_crash = 1;
 		error("preauth child %ld for %s terminated abnormally%s",
 		    (long)child->pid, child->id,
 		    child->flags ? " (early)" : "");
@@ -321,6 +334,7 @@ child_reap(struct early_child *child)
 		/* Normal exit. We care about the status */
 		switch (WEXITSTATUS(child->status)) {
 		case EXIT_LOGIN_GRACE:
+			was_auth_timeout = 1;
 			logit("Timeout before authentication for %s, "
 			    "pid = %ld%s", child->id, (long)child->pid,
 			    child->flags ? " (early)" : "");
@@ -337,9 +351,24 @@ child_reap(struct early_child *child)
 		}
 	}
 	/*
-	 * XXX we could use abnormal terminations to throttle
-	 * connections from particular connection sources via srclimit.
+	 * XXX would be nice to have more subtlety here.
+	 *  - Different penalties
+	 *      a) authmaxtries exceeded (penalise brute force)
+	 *      b) login grace exceeded (penalise DoS)
+	 *      c) monitor crash (penalise exploit attempt)
+	 *      d) unpriv preauth crash (penalise exploit attempt)
+	 *  - Unpriv auth exit status/WIFSIGNALLED is not available because
+	 *    the "mm_request_receive: monitor fd closed" fatal kills the
+	 *    monitor before waitpid() can occur. It would be good to use the
+	 *    unpriv exit status to detect authmaxtries violations and crashes.
+	 *
+	 * For now, just penalise (b) and (c), since that is what we have
+	 * readily available.
 	 */
+	if (child->have_addr && (was_crash || was_auth_timeout)) {
+		srclimit_penalise(&child->addr, was_crash, was_auth_timeout);
+	}
+
 	child->pid = -1;
 	child->have_status = 0;
 	if (child->pipefd == -1)
@@ -491,7 +520,7 @@ should_drop_connection(int startups)
 }
 
 /*
- * Check whether connection should be accepted by MaxStartups.
+ * Check whether connection should be accepted by MaxStartups or for penalty.
  * Returns 0 if the connection is accepted. If the connection is refused,
  * returns 1 and attempts to send notification to client.
  * Logs when the MaxStartups condition is entered or exited, and periodically
@@ -501,11 +530,16 @@ static int
 drop_connection(int sock, int startups, int notify_pipe)
 {
 	char *laddr, *raddr;
-	const char msg[] = "Exceeded MaxStartups\r\n";
+	const char *reason = NULL, msg[] = "Not allowed at this time\r\n";
 	static time_t last_drop, first_drop;
 	static u_int ndropped;
 	LogLevel drop_level = SYSLOG_LEVEL_VERBOSE;
 	time_t now;
+
+	if (!srclimit_penalty_check_allow(sock, &reason)) {
+		drop_level = SYSLOG_LEVEL_INFO;
+		goto handle;
+	}
 
 	now = monotime();
 	if (!should_drop_connection(startups) &&
@@ -536,12 +570,16 @@ drop_connection(int sock, int startups, int notify_pipe)
 	}
 	last_drop = now;
 	ndropped++;
+	reason = "past Maxstartups";
 
+ handle:
 	laddr = get_local_ipaddr(sock);
 	raddr = get_peer_ipaddr(sock);
-	do_log2(drop_level, "drop connection #%d from [%s]:%d on [%s]:%d "
-	    "past MaxStartups", startups, raddr, get_peer_port(sock),
-	    laddr, get_local_port(sock));
+	do_log2(drop_level, "drop connection #%d from [%s]:%d on [%s]:%d %s",
+	    startups,
+	    raddr, get_peer_port(sock),
+	    laddr, get_local_port(sock),
+	    reason);
 	free(laddr);
 	free(raddr);
 	/* best-effort notification to client */
@@ -745,7 +783,9 @@ server_listen(void)
 
 	/* Initialise per-source limit tracking. */
 	srclimit_init(options.max_startups, options.per_source_max_startups,
-	    options.per_source_masklen_ipv4, options.per_source_masklen_ipv6);
+	    options.per_source_masklen_ipv4, options.per_source_masklen_ipv6,
+	    options.per_source_penalty_crash, options.per_source_penalty_grace,
+	    options.per_source_penalty_max);
 
 	for (i = 0; i < options.num_listen_addrs; i++) {
 		listen_on_addrs(&options.listen_addrs[i]);

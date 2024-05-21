@@ -13,6 +13,11 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-void	srclimit_init(int, int, int, int);
+struct xaddr;
+
+void	srclimit_init(int, int, int, int, int, int, int);
 int	srclimit_check_allow(int, int);
 void	srclimit_done(int);
+
+void	srclimit_penalise(struct xaddr *, int, int);
+int	srclimit_penalty_check_allow(int, const char **);
