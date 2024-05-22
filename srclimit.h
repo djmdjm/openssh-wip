@@ -15,9 +15,14 @@
  */
 struct xaddr;
 
-void	srclimit_init(int, int, int, int, int, int, int);
+void	srclimit_init(int, int, int, int, int, int, int, int, int);
 int	srclimit_check_allow(int, int);
 void	srclimit_done(int);
 
-void	srclimit_penalise(struct xaddr *, int, int);
+#define SRCLIMIT_PENALTY_NONE		0
+#define SRCLIMIT_PENALTY_CRASH		1
+#define SRCLIMIT_PENALTY_AUTHFAIL	2
+#define SRCLIMIT_PENALTY_GRACE_EXCEEDED	3
+
+void	srclimit_penalise(struct xaddr *, int);
 int	srclimit_penalty_check_allow(int, const char **);

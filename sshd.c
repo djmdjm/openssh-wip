@@ -312,7 +312,7 @@ static void
 child_reap(struct early_child *child)
 {
 	LogLevel level = SYSLOG_LEVEL_DEBUG1;
-	int was_crash = 0, was_auth_timeout = 0;
+	int was_crash, penalty_type = SRCLIMIT_PENALTY_NONE;
 
 	/* Log exit information */
 	if (WIFSIGNALED(child->status)) {
@@ -325,21 +325,25 @@ child_reap(struct early_child *child)
 		do_log2(level, "preauth child %ld for %s killed by signal %d%s",
 		    (long)child->pid, child->id, WTERMSIG(child->status),
 		    child->flags ? " (early)" : "");
+		if (was_crash)
+			penalty_type = SRCLIMIT_PENALTY_CRASH;
 	} else if (!WIFEXITED(child->status)) {
-		was_crash = 1;
+		penalty_type = SRCLIMIT_PENALTY_CRASH;
 		error("preauth child %ld for %s terminated abnormally%s",
 		    (long)child->pid, child->id,
 		    child->flags ? " (early)" : "");
 	} else {
+		penalty_type = SRCLIMIT_PENALTY_AUTHFAIL;
 		/* Normal exit. We care about the status */
 		switch (WEXITSTATUS(child->status)) {
 		case EXIT_LOGIN_GRACE:
-			was_auth_timeout = 1;
+			penalty_type = SRCLIMIT_PENALTY_GRACE_EXCEEDED;
 			logit("Timeout before authentication for %s, "
 			    "pid = %ld%s", child->id, (long)child->pid,
 			    child->flags ? " (early)" : "");
 			break;
 		case 0:
+			penalty_type = SRCLIMIT_PENALTY_NONE;
 			level = SYSLOG_LEVEL_DEBUG3;
 			/* FALLTHROUGH */
 		default:
@@ -353,21 +357,24 @@ child_reap(struct early_child *child)
 	/*
 	 * XXX would be nice to have more subtlety here.
 	 *  - Different penalties
-	 *      a) authmaxtries exceeded (penalise brute force)
+	 *      a) authentication failures without success (e.g. brute force)
 	 *      b) login grace exceeded (penalise DoS)
 	 *      c) monitor crash (penalise exploit attempt)
 	 *      d) unpriv preauth crash (penalise exploit attempt)
 	 *  - Unpriv auth exit status/WIFSIGNALLED is not available because
 	 *    the "mm_request_receive: monitor fd closed" fatal kills the
 	 *    monitor before waitpid() can occur. It would be good to use the
-	 *    unpriv exit status to detect authmaxtries violations and crashes.
+	 *    unpriv exit status to detect crashes.
 	 *
-	 * For now, just penalise (b) and (c), since that is what we have
-	 * readily available.
+	 * For now, just penalise (a), (b) and (c), since that is what we have
+	 * readily available. The authentication failures detection cannot
+	 * discern between failed authentication and other connection problems
+	 * until we have the unpriv exist status plumbed through (and the unpriv
+	 * child modified to use a different exit status when auth has been
+	 * attempted), but it's a start.
 	 */
-	if (child->have_addr && (was_crash || was_auth_timeout)) {
-		srclimit_penalise(&child->addr, was_crash, was_auth_timeout);
-	}
+	if (child->have_addr)
+		srclimit_penalise(&child->addr, penalty_type);
 
 	child->pid = -1;
 	child->have_status = 0;
@@ -782,10 +789,15 @@ server_listen(void)
 	u_int i;
 
 	/* Initialise per-source limit tracking. */
-	srclimit_init(options.max_startups, options.per_source_max_startups,
-	    options.per_source_masklen_ipv4, options.per_source_masklen_ipv6,
-	    options.per_source_penalty_crash, options.per_source_penalty_grace,
-	    options.per_source_penalty_max);
+	srclimit_init(options.max_startups,
+	    options.per_source_max_startups,
+	    options.per_source_masklen_ipv4,
+	    options.per_source_masklen_ipv6,
+	    options.per_source_penalty_crash,
+	    options.per_source_penalty_authfail,
+	    options.per_source_penalty_grace,
+	    options.per_source_penalty_max,
+	    options.per_source_penalty_min);
 
 	for (i = 0; i < options.num_listen_addrs; i++) {
 		listen_on_addrs(&options.listen_addrs[i]);

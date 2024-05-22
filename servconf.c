@@ -147,7 +147,9 @@ initialize_server_options(ServerOptions *options)
 	options->per_source_masklen_ipv6 = -1;
 	options->per_source_penalty_crash = -1;
 	options->per_source_penalty_grace = -1;
+	options->per_source_penalty_authfail = -1;
 	options->per_source_penalty_max = -1;
+	options->per_source_penalty_min = -1;
 	options->max_authtries = -1;
 	options->max_sessions = -1;
 	options->banner = NULL;
@@ -381,11 +383,15 @@ fill_default_server_options(ServerOptions *options)
 	if (options->per_source_masklen_ipv6 == -1)
 		options->per_source_masklen_ipv6 = 128;
 	if (options->per_source_penalty_crash == -1)
-		options->per_source_penalty_crash = 60;
+		options->per_source_penalty_crash = 90;
 	if (options->per_source_penalty_grace == -1)
-		options->per_source_penalty_grace = 15;
+		options->per_source_penalty_grace = 20;
+	if (options->per_source_penalty_authfail == -1)
+		options->per_source_penalty_authfail = 5;
+	if (options->per_source_penalty_min == -1)
+		options->per_source_penalty_min = 15;
 	if (options->per_source_penalty_max == -1)
-		options->per_source_penalty_max = 300;
+		options->per_source_penalty_max = 600;
 	if (options->max_authtries == -1)
 		options->max_authtries = DEFAULT_AUTH_FAIL_MAX;
 	if (options->max_sessions == -1)
@@ -1905,12 +1911,18 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			if (strncmp(arg, "crash:", 6) == 0) {
 				p = arg + 6;
 				intptr = &options->per_source_penalty_crash;
+			} else if (strncmp(arg, "authfail:", 9) == 0) {
+				p = arg + 9;
+				intptr = &options->per_source_penalty_authfail;
 			} else if (strncmp(arg, "grace-exceeded:", 15) == 0) {
 				p = arg + 15;
 				intptr = &options->per_source_penalty_grace;
 			} else if (strncmp(arg, "max:", 4) == 0) {
 				p = arg + 4;
 				intptr = &options->per_source_penalty_max;
+			} else if (strncmp(arg, "min:", 4) == 0) {
+				p = arg + 4;
+				intptr = &options->per_source_penalty_min;
 			} else {
 				fatal("%s line %d: unsupported %s penalty %s",
 				    filename, linenum, keyword, arg);
@@ -3140,7 +3152,8 @@ dump_config(ServerOptions *o)
 		printf(" verify-required");
 	printf("\n");
 
-	printf("persourcepenalties crash:%d grace-exceeded:%d max:%d\n",
-	    o->per_source_penalty_crash, o->per_source_penalty_grace,
-	    o->per_source_penalty_max);
+	printf("persourcepenalties crash:%d authfail:%d grace-exceeded:%d "
+	    "max:%d min:%d\n", o->per_source_penalty_crash,
+	    o->per_source_penalty_authfail, o->per_source_penalty_grace,
+	    o->per_source_penalty_max, o->per_source_penalty_min);
 }
