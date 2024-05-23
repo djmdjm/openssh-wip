@@ -100,7 +100,8 @@ srclimit_init(int max, int persource, int ipv4len, int ipv6len,
 	ipv6_masklen = ipv6len;
 	max_persource = persource;
 	penalty_cfg = *penalty_conf;
-	penalty_exempt = xstrdup(penalty_exempt_conf);
+	penalty_exempt = penalty_exempt_conf == NULL ?
+	    NULL : xstrdup(penalty_exempt_conf);
 	if (max_persource == INT_MAX)	/* no limit */
 		return;
 	debug("%s: max connections %d, per source %d, masks %d,%d", __func__,
