@@ -35,3 +35,4 @@ void	srclimit_done(int);
 
 void	srclimit_penalise(struct xaddr *, int);
 int	srclimit_penalty_check_allow(int, const char **);
+void	srclimit_penalty_info(void);

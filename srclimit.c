@@ -382,3 +382,25 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	existing->reason = penalty->reason;
 	free(penalty);
 }
+
+void
+srclimit_penalty_info(void)
+{
+	struct penalty *p = NULL;
+	int bits;
+	char s[NI_MAXHOST + 4];
+	time_t now;
+
+	now = monotime();
+	logit("%zu active penalties", npenalties);
+	RB_FOREACH(p, penalties, &penalties) {
+		bits = p->addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
+		addr_masklen_ntop(&p->addr, bits, s, sizeof(s));
+		if (p->expiry < now)
+			logit("client %s %s (expired)", s, p->reason);
+		else {
+			logit("client %s %s (%llu secs left)", s, p->reason,
+			   (long long)(p->expiry - now));
+		}
+	}
+}

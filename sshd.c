@@ -436,6 +436,7 @@ show_info(void)
 		    (long)children[i].pid, children[i].id,
 		    children[i].flags ? " (early)" : "");
 	}
+	srclimit_penalty_info();
 }
 
 /*
