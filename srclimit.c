@@ -340,8 +340,6 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	if (srclimit_mask_addr(addr, bits, &masked) != 0)
 		return;
 	addr_masklen_ntop(addr, bits, addrnetmask, sizeof(addrnetmask));
-	debug3_f("%s: penalty of %d seconds for %s",
-	    addrnetmask, penalty_secs, reason);
 
 	now = monotime();
 	expire_penalties(now);
@@ -358,6 +356,11 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	penalty->reason = reason;
 	if ((existing = RB_INSERT(penalties, &penalties, penalty)) == NULL) {
 		/* penalty didn't previously exist */
+		if (penalty_secs > penalty_cfg.penalty_min)
+			penalty->active = 1;
+		debug3_f("%s: new %s penalty of %d seconds for %s",
+		    addrnetmask, penalty->active ? "active" : "deferred",
+		    penalty_secs, reason);
 		if (++npenalties > (size_t)penalty_cfg.max_sources)
 			srclimit_remove_penalty(); /* permissive */
 		return;
