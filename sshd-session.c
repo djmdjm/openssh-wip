@@ -100,9 +100,6 @@
 #define REEXEC_CONFIG_PASS_FD		(STDERR_FILENO + 3)
 #define REEXEC_MIN_FREE_FD		(STDERR_FILENO + 4)
 
-/* meaningful exit values */
-#define EXIT_LOGIN_GRACE	3	/* login grace period exceeded */
-
 extern char *__progname;
 
 /* Server configuration options. */
@@ -1339,6 +1336,8 @@ do_ssh2_kex(struct ssh *ssh)
 void
 cleanup_exit(int i)
 {
+	extern int auth_attempted; /* monitor.c */
+
 	if (the_active_state != NULL && the_authctxt != NULL) {
 		do_cleanup(the_active_state, the_authctxt);
 		if (privsep_is_preauth &&
@@ -1351,5 +1350,8 @@ cleanup_exit(int i)
 			}
 		}
 	}
+	/* Override default fatal exit value when auth was attempted */
+	if (i == 255 && auth_attempted)
+		_exit(EXIT_AUTH_ATTEMPTED);
 	_exit(i);
 }

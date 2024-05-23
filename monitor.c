@@ -132,6 +132,7 @@ static char *auth_submethod = NULL;
 static u_int session_id2_len = 0;
 static u_char *session_id2 = NULL;
 static pid_t monitor_child_pid;
+int auth_attempted = 0;
 
 struct mon_table {
 	enum monitor_reqtype type;
@@ -247,6 +248,10 @@ monitor_child_preauth(struct ssh *ssh, struct monitor *pmonitor)
 
 		authenticated = (monitor_read(ssh, pmonitor,
 		    mon_dispatch, &ent) == 1);
+
+		/* Record that auth was attempted to set exit status later */
+		if ((ent->flags & MON_AUTH) != 0)
+			auth_attempted = 1;
 
 		/* Special handling for multiple required authentications */
 		if (options.num_auth_methods != 0) {

@@ -81,9 +81,6 @@
 #define REEXEC_CONFIG_PASS_FD		(STDERR_FILENO + 3)
 #define REEXEC_MIN_FREE_FD		(STDERR_FILENO + 4)
 
-/* Exit values from forked children */
-#define EXIT_LOGIN_GRACE	3	/* login grace period exceeded */
-
 extern char *__progname;
 
 /* Server configuration options. */
@@ -322,32 +319,46 @@ child_reap(struct early_child *child)
 		 */
 		if ((was_crash = signal_is_crash(WTERMSIG(child->status))))
 			level = SYSLOG_LEVEL_ERROR;
-		do_log2(level, "preauth child %ld for %s killed by signal %d%s",
-		    (long)child->pid, child->id, WTERMSIG(child->status),
-		    child->flags ? " (early)" : "");
+		do_log2(level, "session process %ld for %s killed by "
+		    "signal %d%s", (long)child->pid, child->id,
+		    WTERMSIG(child->status), child->flags ? " (early)" : "");
 		if (was_crash)
 			penalty_type = SRCLIMIT_PENALTY_CRASH;
 	} else if (!WIFEXITED(child->status)) {
 		penalty_type = SRCLIMIT_PENALTY_CRASH;
-		error("preauth child %ld for %s terminated abnormally%s",
+		error("session process %ld for %s terminated abnormally%s",
 		    (long)child->pid, child->id,
 		    child->flags ? " (early)" : "");
 	} else {
-		penalty_type = SRCLIMIT_PENALTY_AUTHFAIL;
 		/* Normal exit. We care about the status */
 		switch (WEXITSTATUS(child->status)) {
+		case 0:
+			debug3_f("preauth child %ld for %s completed "
+			    "normally %s", (long)child->pid, child->id,
+			    child->flags ? " (early)" : "");
+			break;
 		case EXIT_LOGIN_GRACE:
 			penalty_type = SRCLIMIT_PENALTY_GRACE_EXCEEDED;
 			logit("Timeout before authentication for %s, "
 			    "pid = %ld%s", child->id, (long)child->pid,
 			    child->flags ? " (early)" : "");
 			break;
-		case 0:
-			penalty_type = SRCLIMIT_PENALTY_NONE;
-			level = SYSLOG_LEVEL_DEBUG3;
-			/* FALLTHROUGH */
+		case EXIT_CHILD_CRASH:
+			penalty_type = SRCLIMIT_PENALTY_CRASH;
+			logit("Session process %ld unpriv child crash for %s%s",
+			    (long)child->pid, child->id,
+			    child->flags ? " (early)" : "");
+			break;
+		case EXIT_AUTH_ATTEMPTED:
+			penalty_type = SRCLIMIT_PENALTY_AUTHFAIL;
+			debug_f("preauth child %ld for %s exited "
+			    "after unsuccessful auth attempt %s",
+			    (long)child->pid, child->id,
+			    child->flags ? " (early)" : "");
+			break;
 		default:
-			do_log2(level, "preauth child %ld for %s exited "
+			/* XXX small penalty for other fatal exits? */
+			debug_f("preauth child %ld for %s exited "
 			    "with status %d%s", (long)child->pid, child->id,
 			    WEXITSTATUS(child->status),
 			    child->flags ? " (early)" : "");
