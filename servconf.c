@@ -151,6 +151,7 @@ initialize_server_options(ServerOptions *options)
 	options->per_source_penalty.overflow_mode = -1;
 	options->per_source_penalty.penalty_crash = -1;
 	options->per_source_penalty.penalty_authfail = -1;
+	options->per_source_penalty.penalty_noauth = -1;
 	options->per_source_penalty.penalty_grace = -1;
 	options->per_source_penalty.penalty_max = -1;
 	options->per_source_penalty.penalty_min = -1;
@@ -398,6 +399,8 @@ fill_default_server_options(ServerOptions *options)
 		options->per_source_penalty.penalty_grace = 20;
 	if (options->per_source_penalty.penalty_authfail == -1)
 		options->per_source_penalty.penalty_authfail = 5;
+	if (options->per_source_penalty.penalty_noauth == -1)
+		options->per_source_penalty.penalty_noauth = 1;
 	if (options->per_source_penalty.penalty_min == -1)
 		options->per_source_penalty.penalty_min = 15;
 	if (options->per_source_penalty.penalty_max == -1)
@@ -1955,6 +1958,9 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			} else if (strncmp(arg, "authfail:", 9) == 0) {
 				p = arg + 9;
 				intptr = &options->per_source_penalty.penalty_authfail;
+			} else if (strncmp(arg, "noauth:", 7) == 0) {
+				p = arg + 7;
+				intptr = &options->per_source_penalty.penalty_noauth;
 			} else if (strncmp(arg, "grace-exceeded:", 15) == 0) {
 				p = arg + 15;
 				intptr = &options->per_source_penalty.penalty_grace;
@@ -3210,10 +3216,11 @@ dump_config(ServerOptions *o)
 	printf("\n");
 
 	if (o->per_source_penalty.enabled) {
-		printf("persourcepenalties crash:%d authfail:%d "
+		printf("persourcepenalties crash:%d authfail:%d noauth:%d "
 		    "grace-exceeded:%d max:%d min:%d max-sources:%d "
 		    "overflow:%s\n", o->per_source_penalty.penalty_crash,
 		    o->per_source_penalty.penalty_authfail,
+		    o->per_source_penalty.penalty_noauth,
 		    o->per_source_penalty.penalty_grace,
 		    o->per_source_penalty.penalty_max,
 		    o->per_source_penalty.penalty_min,

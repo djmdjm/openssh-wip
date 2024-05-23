@@ -357,7 +357,7 @@ child_reap(struct early_child *child)
 			    child->flags ? " (early)" : "");
 			break;
 		default:
-			/* XXX small penalty for other fatal exits? */
+			penalty_type = SRCLIMIT_PENALTY_NOAUTH;
 			debug_f("preauth child %ld for %s exited "
 			    "with status %d%s", (long)child->pid, child->id,
 			    WEXITSTATUS(child->status),

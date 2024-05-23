@@ -225,16 +225,24 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 	struct penalty find, *penalty;
 	time_t now;
 	int bits;
+	char addr_s[NI_MAXHOST];
 
 	if (!penalty_cfg.enabled)
 		return 1;
+	if (srclimit_peer_addr(sock, &addr) != 0)
+		return 1;
+	if (penalty_exempt != NULL) {
+		if (addr_ntop(&addr, addr_s, sizeof(addr_s)) != 0)
+			return 1; /* shouldn't happen */
+		if (addr_match_list(addr_s, penalty_exempt) == 1) {
+			return 1;
+		}
+	}
 	if (npenalties > (size_t)penalty_cfg.max_sources &&
 	    penalty_cfg.overflow_mode == PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL) {
 		*reason = "too many penalised addresses";
 		return 0;
 	}
-	if (srclimit_peer_addr(sock, &addr) != 0)
-		return 1;
 	bits = addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
 	memset(&find, 0, sizeof(find));
 	if (srclimit_mask_addr(&addr, bits, &find.addr) != 0)
@@ -316,6 +324,10 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	case SRCLIMIT_PENALTY_AUTHFAIL:
 		penalty_secs = penalty_cfg.penalty_authfail;
 		reason = "penalty: failed authentication";
+		break;
+	case SRCLIMIT_PENALTY_NOAUTH:
+		penalty_secs = penalty_cfg.penalty_noauth;
+		reason = "penalty: connections without attempting authentication";
 		break;
 	case SRCLIMIT_PENALTY_GRACE_EXCEEDED:
 		penalty_secs = penalty_cfg.penalty_crash;

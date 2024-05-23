@@ -1583,6 +1583,12 @@ Specifies how long to refuse clients that cause a crash of
 .It Cm authfail:duration
 Specifies how long to refuse clients that disconnect after making one or more
 unsuccessful authentication attempts.
+.It Cm noauth:duration
+Specifies how long to refuse clients that disconnect without attempting
+authentication.
+This timeout should be used cautiously otherwise it may penalise legitimate
+scanning tools such as
+.Xr ssh-keyscan 1 .
 .It Cm grace-exceeded:duration
 Specifies how long to refuse clients that fail to authenticate after
 .Cm LoginGraceTime .
@@ -1600,7 +1606,9 @@ Controls how the server behaves when
 is exceeded.
 There are two operating modes:
 .Cm deny-all ,
-which denies all incoming connections until a penalty expires, and
+which denies all incoming connections other than those exempted via
+.Cm PerSourcePenaltyExemptList
+until a penalty expires, and
 .Cm permissive ,
 which allows new connections by removing existing penalties early.
 .El
