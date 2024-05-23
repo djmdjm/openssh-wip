@@ -264,34 +264,34 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 static void
 srclimit_remove_penalty(void)
 {
-	size_t i, n;
+	size_t n;
 	struct penalty *p = NULL;
 	int bits;
-	char addrnetmask[NI_MAXHOST + 4];
+	char s[NI_MAXHOST + 4];
 
-	if (npenalties == 0)
-		return;
 	/*
-	 * Delete a random penalty entry from the list. Called when
+	 * Delete random penalty entries from the list. Called when
 	 * too many entries are being tracked to avoid memory DoS on
 	 * sshd.
 	 * XXX maybe it should remove the penalty soonest to expire instead?
 	 */
-	if ((p = RB_MIN(penalties, &penalties)) == NULL)
-		return; /* Shouldn't happen */
-	n = arc4random_uniform(npenalties);
-	/* XXX ineffecient; should be able to pick an element in log(n) */
-	for (i = 0; i < n; i++) {
-		if ((p = RB_NEXT(penalties, &npenalties, p)) == NULL)
-			return; /* Shouldn't happen */
+	while (npenalties > (size_t)penalty_cfg.max_sources) {
+		n = arc4random_uniform(npenalties);
+		/* XXX inefficient; should be able to pick element in log(n) */
+		RB_FOREACH(p, penalties, &penalties) {
+			if (n == 0)
+				break;
+			n--;
+		}
+		if (p == NULL)
+			return; /* shouldn't happen */
+		bits = p->addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
+		addr_masklen_ntop(&p->addr, bits, s, sizeof(s));
+		debug3_f("overflow, remove %zu/%zu: %s", n, npenalties, s);
+		RB_REMOVE(penalties, &penalties, p);
+		free(p);
+		npenalties--;
 	}
-	bits = p->addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
-	addr_masklen_ntop(&p->addr, bits, addrnetmask, sizeof(addrnetmask));
-	debug3_f("overflow, remove entry %zu/%zu: %s", n, npenalties,
-	    addrnetmask);
-	RB_REMOVE(penalties, &penalties, p);
-	free(p);
-	npenalties--;
 }
 
 void
