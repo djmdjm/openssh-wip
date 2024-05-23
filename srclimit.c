@@ -346,7 +346,7 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	expire_penalties(now);
 	if (npenalties > (size_t)penalty_cfg.max_sources &&
 	    penalty_cfg.overflow_mode == PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL) {
-		debug_f("penalty table full, cannot penalise %s for %s",
+		verbose_f("penalty table full, cannot penalise %s for %s",
 		    addrnetmask, reason);
 		return;
 	}
@@ -359,7 +359,7 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 		/* penalty didn't previously exist */
 		if (penalty_secs > penalty_cfg.penalty_min)
 			penalty->active = 1;
-		debug3_f("%s: new %s penalty of %d seconds for %s",
+		verbose_f("%s: new %s penalty of %d seconds for %s",
 		    addrnetmask, penalty->active ? "active" : "deferred",
 		    penalty_secs, reason);
 		if (++npenalties > (size_t)penalty_cfg.max_sources)
@@ -367,7 +367,7 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 		return;
 	}
 	/* An entry already existed. Accumulate penalty up to maximum */
-	debug3_f("%s penalty for %s already exists, %lld seconds remaining",
+	debug_f("%s penalty for %s already exists, %lld seconds remaining",
 	    existing->active ? "active" : "inactive",
 	    addrnetmask, (long long)(existing->expiry - now));
 	existing->expiry += penalty_secs;
@@ -375,8 +375,8 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 		existing->expiry = now + penalty_cfg.penalty_max;
 	if (existing->expiry - now > penalty_cfg.penalty_min &&
 	    !existing->active) {
-		debug3_f("penalty for %s above minimum %d, activating",
-		    addrnetmask, penalty_cfg.penalty_min);
+		verbose_f("%s: activating penalty of %lld seconds for %s",
+		    addrnetmask, (long long)(existing->expiry - now), reason);
 		existing->active = 1;
 	}
 	existing->reason = penalty->reason;
