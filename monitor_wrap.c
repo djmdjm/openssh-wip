@@ -149,9 +149,11 @@ mm_reap(void)
 		fatal_f("waitpid: %s", strerror(errno));
 	}
 	if (WIFEXITED(status)) {
-		if (WEXITSTATUS(status) != 0)
-			fatal_f("preauth child exited with status %d",
+		if (WEXITSTATUS(status) != 0) {
+			debug_f("preauth child exited with status %d",
 			    WEXITSTATUS(status));
+			cleanup_exit(255);
+		}
 	} else if (WIFSIGNALED(status)) {
 		error_f("preauth child terminated by signal %d",
 		    WTERMSIG(status));
