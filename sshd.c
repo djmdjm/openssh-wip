@@ -804,11 +804,7 @@ server_listen(void)
 	    options.per_source_max_startups,
 	    options.per_source_masklen_ipv4,
 	    options.per_source_masklen_ipv6,
-	    options.per_source_penalty_crash,
-	    options.per_source_penalty_authfail,
-	    options.per_source_penalty_grace,
-	    options.per_source_penalty_max,
-	    options.per_source_penalty_min);
+	    &options.per_source_penalty);
 
 	for (i = 0; i < options.num_listen_addrs; i++) {
 		listen_on_addrs(&options.listen_addrs[i]);

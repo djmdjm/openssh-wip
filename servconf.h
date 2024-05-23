@@ -65,6 +65,19 @@ struct listenaddr {
 	struct addrinfo *addrs;
 };
 
+#define PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL	1
+#define PER_SOURCE_PENALTY_OVERFLOW_RANDOM_DROP	2
+struct per_source_penalty {
+	int	enabled;
+	int	max_sources;
+	int	overflow_mode;
+	int	penalty_crash;
+	int	penalty_grace;
+	int	penalty_authfail;
+	int	penalty_max;
+	int	penalty_min;
+};
+
 typedef struct {
 	u_int	num_ports;
 	u_int	ports_from_cmdline;
@@ -172,11 +185,7 @@ typedef struct {
 	int	per_source_max_startups;
 	int	per_source_masklen_ipv4;
 	int	per_source_masklen_ipv6;
-	int	per_source_penalty_crash;
-	int	per_source_penalty_authfail;
-	int	per_source_penalty_grace;
-	int	per_source_penalty_max;
-	int	per_source_penalty_min;
+	struct per_source_penalty per_source_penalty;
 	int	max_authtries;
 	int	max_sessions;
 	char   *banner;			/* SSH-2 banner message */

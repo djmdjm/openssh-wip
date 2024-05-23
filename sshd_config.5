@@ -1559,7 +1559,7 @@ The default is
 .Cm 32:128 ,
 which means each address is considered individually.
 .It Cm PerSourcePenalties
-Specifies penalties for various conditions that may represent attacks on
+Controls penalties for various conditions that may represent attacks on
 .Xr sshd 8 .
 If a penalty is enforced against a client then its source address and any
 others in the
@@ -1569,26 +1569,41 @@ Multiple penalties from the same source from concurrent connections will
 accumulate up to a maximum.
 Conversely, penalties are not applied until a minimum threshold time has been
 accumulated.
-Penalty values are specified by keyword and duration, e.g.
-.Qq crash:30s .
-The available penalty keywords are:
-.Cm crash
-for condition where the
-.Xr sshd 8
-session terminated abnormally (default: 90 seconds penalty),
-.Cm authfail
-when a connection terminated without successfully completing authentication
-(default: 5 seconds penalty),
-.Cm grace-exceeded
-for conditions where
-.Cm LoginGraceTime
-was exceeded before authentication completed (default: 20 seconds penalty),
-.Cm max
-specifies the maximum penalty time that can be accumulated for a source
-(default: 10 minutes) and
-.Cm min
-specifies the minimum penalty that must be accrued by a source address
-before enforcement (default: 15 seconds).
+Penalties are off by default but may be enabled using default settings using the
+.Cm yes
+keyword or by specifying one or more of the keywords below.
+.Pp
+Penalties are controlled using the following keywords, all of which accept
+arguments, e.g.
+.Qq crash:2m .
+.Bl -tag -width Ds
+.It Cm crash:duration
+Specifies how long to refuse clients that cause a crash of
+.Xr sshd 8 .
+.It Cm authfail:duration
+Specifies how long to refuse clients that disconnect after making one or more
+unsuccessful authentication attempts.
+.It Cm grace-exceeded:duration
+Specifies how long to refuse clients that fail to authenticate after
+.Cm LoginGraceTime .
+.It Cm max:duration
+Specifies the maximum time a particular source address range will be refused
+access for.
+Repeated penalties will accumulate up to this maximum.
+.It Cm min:duration
+Specifies the minimum penalty that must accrue before enforcement begins.
+.It Cm max-sources:number
+Specifies the maximum number of penalise client address ranges to track.
+.It Cm overflow:mode
+Controls how the server behaves when
+.Cm max-sources
+is exceeded.
+There are two operating modes:
+.Cm deny-all ,
+which denies all incoming connections until a penalty expires, and
+.Cm permissive ,
+which allows new connections by removing existing penalties early.
+.El
 .It Cm PidFile
 Specifies the file that contains the process ID of the
 SSH daemon, or

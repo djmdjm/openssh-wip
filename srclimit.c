@@ -31,10 +31,10 @@
 #include "misc.h"
 #include "srclimit.h"
 #include "xmalloc.h"
+#include "servconf.h"
 
 static int max_children, max_persource, ipv4_masklen, ipv6_masklen;
-static int penalty_crash, penalty_authfail, penalty_auth_timeout;
-static int penalty_max, penalty_min;
+static struct per_source_penalty penalty_cfg;
 
 /* Per connection state, used to enforce unauthenticated connection limit. */
 static struct child_info {
@@ -57,6 +57,7 @@ struct penalty {
 static int penalty_addr_cmp(struct penalty *a, struct penalty *b);
 RB_HEAD(penalties, penalty) penalties;
 RB_GENERATE_STATIC(penalties, penalty, tree_entry, penalty_addr_cmp)
+static size_t npenalties;
 
 static int
 srclimit_mask_addr(const struct xaddr *addr, int bits, struct xaddr *masked)
@@ -88,8 +89,7 @@ srclimit_peer_addr(int sock, struct xaddr *addr)
 
 void
 srclimit_init(int max, int persource, int ipv4len, int ipv6len,
-    int crash_penalty, int authfail_penalty, int auth_timeout_penalty,
-    int max_penalty, int min_penalty)
+    struct per_source_penalty *penalty_conf)
 {
 	int i;
 
@@ -97,11 +97,7 @@ srclimit_init(int max, int persource, int ipv4len, int ipv6len,
 	ipv4_masklen = ipv4len;
 	ipv6_masklen = ipv6len;
 	max_persource = persource;
-	penalty_crash = crash_penalty;
-	penalty_authfail = authfail_penalty;
-	penalty_auth_timeout = auth_timeout_penalty;
-	penalty_max = max_penalty;
-	penalty_min = min_penalty;
+	penalty_cfg = *penalty_conf;
 	if (max_persource == INT_MAX)	/* no limit */
 		return;
 	debug("%s: max connections %d, per source %d, masks %d,%d", __func__,
@@ -201,6 +197,8 @@ expire_penalties(time_t now)
 			continue;
 		RB_REMOVE(penalties, &penalties, penalty);
 		free(penalty);
+		if (npenalties-- == 0)
+			fatal_f("internal error: npenalties underflow");
 	}
 }
 
@@ -225,7 +223,13 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 	time_t now;
 	int bits;
 
-
+	if (!penalty_cfg.enabled)
+		return 1;
+	if (npenalties > (size_t)penalty_cfg.max_sources &&
+	    penalty_cfg.overflow_mode == PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL) {
+		*reason = "too many penalised addresses";
+		return 0;
+	}
 	if (srclimit_peer_addr(sock, &addr) != 0)
 		return 1;
 	bits = addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
@@ -245,6 +249,39 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 	return 0;
 }
 
+static void
+srclimit_remove_penalty(void)
+{
+	size_t i, n;
+	struct penalty *p = NULL;
+	int bits;
+	char addrnetmask[NI_MAXHOST + 4];
+
+	if (npenalties == 0)
+		return;
+	/*
+	 * Delete a random penalty entry from the list. Called when
+	 * too many entries are being tracked to avoid memory DoS on
+	 * sshd.
+	 * XXX maybe it should remove the penalty soonest to expire instead?
+	 */
+	if ((p = RB_MIN(penalties, &penalties)) == NULL)
+		return; /* Shouldn't happen */
+	n = arc4random_uniform(npenalties);
+	/* XXX ineffecient; should be able to pick an element in log(n) */
+	for (i = 0; i < n; i++) {
+		if ((p = RB_NEXT(penalties, &npenalties, p)) == NULL)
+			return; /* Shouldn't happen */
+	}
+	bits = p->addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
+	addr_masklen_ntop(&p->addr, bits, addrnetmask, sizeof(addrnetmask));
+	debug3_f("overflow, remove entry %zu/%zu: %s", n, npenalties,
+	    addrnetmask);
+	RB_REMOVE(penalties, &penalties, p);
+	free(p);
+	npenalties--;
+}
+
 void
 srclimit_penalise(struct xaddr *addr, int penalty_type)
 {
@@ -255,19 +292,22 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	char addrnetmask[NI_MAXHOST + 4];
 	const char *reason = NULL;
 
+	if (!penalty_cfg.enabled)
+		return;
+
 	switch (penalty_type) {
 	case SRCLIMIT_PENALTY_NONE:
 		return;
 	case SRCLIMIT_PENALTY_CRASH:
-		penalty_secs = penalty_crash;
+		penalty_secs = penalty_cfg.penalty_crash;
 		reason = "penalty: caused crash";
 		break;
 	case SRCLIMIT_PENALTY_AUTHFAIL:
-		penalty_secs = penalty_authfail;
+		penalty_secs = penalty_cfg.penalty_authfail;
 		reason = "penalty: failed authentication";
 		break;
 	case SRCLIMIT_PENALTY_GRACE_EXCEEDED:
-		penalty_secs = penalty_crash;
+		penalty_secs = penalty_cfg.penalty_crash;
 		reason = "penalty: exceeded LoginGraceTime";
 		break;
 	default:
@@ -282,25 +322,36 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 
 	now = monotime();
 	expire_penalties(now);
+	if (npenalties > (size_t)penalty_cfg.max_sources &&
+	    penalty_cfg.overflow_mode == PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL) {
+		debug_f("penalty table full, cannot penalise %s for %s",
+		    addrnetmask, reason);
+		return;
+	}
+
 	penalty = xcalloc(1, sizeof(*penalty));
 	penalty->addr = masked;
 	penalty->expiry = now + penalty_secs;
 	penalty->reason = reason;
-	if ((existing = RB_INSERT(penalties, &penalties, penalty)) != NULL) {
-		/* An entry already existed. Accumulate penalty up to maximum */
-		debug3_f("%s penalty for %s already pending with "
-		    "%lld seconds remaining",
-		    existing->active ? "active" : "inactive",
-		    addrnetmask, (long long)(existing->expiry - now));
-		existing->expiry += penalty_secs;
-		if (existing->expiry - now > penalty_max)
-			existing->expiry = now + penalty_max;
-		if (existing->expiry - now > penalty_min && !existing->active) {
-			debug3_f("penalty for %s above minimum %d, activating",
-			    addrnetmask, penalty_min);
-			existing->active = 1;
-		}
-		existing->reason = penalty->reason;
-		free(penalty);
+	if ((existing = RB_INSERT(penalties, &penalties, penalty)) == NULL) {
+		/* penalty didn't previously exist */
+		if (++npenalties > (size_t)penalty_cfg.max_sources)
+			srclimit_remove_penalty(); /* permissive */
+		return;
 	}
+	/* An entry already existed. Accumulate penalty up to maximum */
+	debug3_f("%s penalty for %s already exists, %lld seconds remaining",
+	    existing->active ? "active" : "inactive",
+	    addrnetmask, (long long)(existing->expiry - now));
+	existing->expiry += penalty_secs;
+	if (existing->expiry - now > penalty_cfg.penalty_max)
+		existing->expiry = now + penalty_cfg.penalty_max;
+	if (existing->expiry - now > penalty_cfg.penalty_min &&
+	    !existing->active) {
+		debug3_f("penalty for %s above minimum %d, activating",
+		    addrnetmask, penalty_cfg.penalty_min);
+		existing->active = 1;
+	}
+	existing->reason = penalty->reason;
+	free(penalty);
 }

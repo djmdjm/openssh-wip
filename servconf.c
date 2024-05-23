@@ -145,11 +145,14 @@ initialize_server_options(ServerOptions *options)
 	options->per_source_max_startups = -1;
 	options->per_source_masklen_ipv4 = -1;
 	options->per_source_masklen_ipv6 = -1;
-	options->per_source_penalty_crash = -1;
-	options->per_source_penalty_grace = -1;
-	options->per_source_penalty_authfail = -1;
-	options->per_source_penalty_max = -1;
-	options->per_source_penalty_min = -1;
+	options->per_source_penalty.enabled = -1;
+	options->per_source_penalty.max_sources = -1;
+	options->per_source_penalty.overflow_mode = -1;
+	options->per_source_penalty.penalty_crash = -1;
+	options->per_source_penalty.penalty_authfail = -1;
+	options->per_source_penalty.penalty_grace = -1;
+	options->per_source_penalty.penalty_max = -1;
+	options->per_source_penalty.penalty_min = -1;
 	options->max_authtries = -1;
 	options->max_sessions = -1;
 	options->banner = NULL;
@@ -382,16 +385,22 @@ fill_default_server_options(ServerOptions *options)
 		options->per_source_masklen_ipv4 = 32;
 	if (options->per_source_masklen_ipv6 == -1)
 		options->per_source_masklen_ipv6 = 128;
-	if (options->per_source_penalty_crash == -1)
-		options->per_source_penalty_crash = 90;
-	if (options->per_source_penalty_grace == -1)
-		options->per_source_penalty_grace = 20;
-	if (options->per_source_penalty_authfail == -1)
-		options->per_source_penalty_authfail = 5;
-	if (options->per_source_penalty_min == -1)
-		options->per_source_penalty_min = 15;
-	if (options->per_source_penalty_max == -1)
-		options->per_source_penalty_max = 600;
+	if (options->per_source_penalty.enabled == -1)
+		options->per_source_penalty.enabled = 0;
+	if (options->per_source_penalty.max_sources == -1)
+		options->per_source_penalty.max_sources = 65536;
+	if (options->per_source_penalty.overflow_mode == -1)
+		options->per_source_penalty.overflow_mode = PER_SOURCE_PENALTY_OVERFLOW_RANDOM_DROP;
+	if (options->per_source_penalty.penalty_crash == -1)
+		options->per_source_penalty.penalty_crash = 90;
+	if (options->per_source_penalty.penalty_grace == -1)
+		options->per_source_penalty.penalty_grace = 20;
+	if (options->per_source_penalty.penalty_authfail == -1)
+		options->per_source_penalty.penalty_authfail = 5;
+	if (options->per_source_penalty.penalty_min == -1)
+		options->per_source_penalty.penalty_min = 15;
+	if (options->per_source_penalty.penalty_max == -1)
+		options->per_source_penalty.penalty_max = 600;
 	if (options->max_authtries == -1)
 		options->max_authtries = DEFAULT_AUTH_FAIL_MAX;
 	if (options->max_sessions == -1)
@@ -1908,31 +1917,60 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 	case sPerSourcePenalties:
 		while ((arg = argv_next(&ac, &av)) != NULL) {
 			found = 1;
-			if (strncmp(arg, "crash:", 6) == 0) {
+			value = -1;
+			p = NULL;
+			/* Allow no/yes only in first position */
+			if (strcasecmp(arg, "no") == 0 ||
+			    (value2 = (strcasecmp(arg, "yes") == 0))) {
+				if (ac > 0) {
+					fatal("%s line %d: keyword %s \"%s\" "
+					    "argument must appear alone.",
+					    filename, linenum, keyword, arg);
+				}
+				if (*activep &&
+				    options->per_source_penalty.enabled == -1)
+					options->per_source_penalty.enabled = value2;
+				continue;
+			} else if (strncmp(arg, "crash:", 6) == 0) {
 				p = arg + 6;
-				intptr = &options->per_source_penalty_crash;
+				intptr = &options->per_source_penalty.penalty_crash;
 			} else if (strncmp(arg, "authfail:", 9) == 0) {
 				p = arg + 9;
-				intptr = &options->per_source_penalty_authfail;
+				intptr = &options->per_source_penalty.penalty_authfail;
 			} else if (strncmp(arg, "grace-exceeded:", 15) == 0) {
 				p = arg + 15;
-				intptr = &options->per_source_penalty_grace;
+				intptr = &options->per_source_penalty.penalty_grace;
 			} else if (strncmp(arg, "max:", 4) == 0) {
 				p = arg + 4;
-				intptr = &options->per_source_penalty_max;
+				intptr = &options->per_source_penalty.penalty_max;
 			} else if (strncmp(arg, "min:", 4) == 0) {
 				p = arg + 4;
-				intptr = &options->per_source_penalty_min;
+				intptr = &options->per_source_penalty.penalty_min;
+			} else if (strncmp(arg, "max-sources:", 12) == 0) {
+				intptr = &options->per_source_penalty.max_sources;
+				if ((errstr = atoi_err(arg+12, &value)) != NULL)
+					fatal("%s line %d: %s value %s.",
+					    filename, linenum, keyword, errstr);
+			} else if (strcmp(arg, "overflow:deny-all") == 0) {
+				intptr = &options->per_source_penalty.overflow_mode;
+				value = PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL;
+			} else if (strcmp(arg, "overflow:permissive") == 0) {
+				intptr = &options->per_source_penalty.overflow_mode;
+				value = PER_SOURCE_PENALTY_OVERFLOW_RANDOM_DROP;
 			} else {
-				fatal("%s line %d: unsupported %s penalty %s",
+				fatal("%s line %d: unsupported %s keyword %s",
 				    filename, linenum, keyword, arg);
 			}
-			if ((value = convtime(p)) == -1) {
-				fatal("%s line %d: invalid time value.",
-				    filename, linenum);
+			/* If no value was parsed above, assume it's a time */
+			if (value == -1 && (value = convtime(p)) == -1) {
+				fatal("%s line %d: invalid %s time value.",
+				    filename, linenum, keyword);
 			}
-			if (*activep && *intptr == -1)
+			if (*activep && *intptr == -1) {
 				*intptr = value;
+				/* any option implicitly enables penalties */
+				options->per_source_penalty.enabled = 1;
+			}
 		}
 		if (!found) {
 			fatal("%s line %d: no %s specified",
@@ -3152,8 +3190,18 @@ dump_config(ServerOptions *o)
 		printf(" verify-required");
 	printf("\n");
 
-	printf("persourcepenalties crash:%d authfail:%d grace-exceeded:%d "
-	    "max:%d min:%d\n", o->per_source_penalty_crash,
-	    o->per_source_penalty_authfail, o->per_source_penalty_grace,
-	    o->per_source_penalty_max, o->per_source_penalty_min);
+	if (o->per_source_penalty.enabled) {
+		printf("persourcepenalties crash:%d authfail:%d "
+		    "grace-exceeded:%d max:%d min:%d max-sources:%d "
+		    "overflow:%s\n", o->per_source_penalty.penalty_crash,
+		    o->per_source_penalty.penalty_authfail,
+		    o->per_source_penalty.penalty_grace,
+		    o->per_source_penalty.penalty_max,
+		    o->per_source_penalty.penalty_min,
+		    o->per_source_penalty.max_sources,
+		    o->per_source_penalty.overflow_mode ==
+		    PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL ?
+		    "deny-all" : "permissive");
+	} else
+		printf("persourcepenalties no\n");
 }
