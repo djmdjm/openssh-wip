@@ -32,9 +32,11 @@
 #include "srclimit.h"
 #include "xmalloc.h"
 #include "servconf.h"
+#include "match.h"
 
 static int max_children, max_persource, ipv4_masklen, ipv6_masklen;
 static struct per_source_penalty penalty_cfg;
+static char *penalty_exempt;
 
 /* Per connection state, used to enforce unauthenticated connection limit. */
 static struct child_info {
@@ -89,7 +91,7 @@ srclimit_peer_addr(int sock, struct xaddr *addr)
 
 void
 srclimit_init(int max, int persource, int ipv4len, int ipv6len,
-    struct per_source_penalty *penalty_conf)
+    struct per_source_penalty *penalty_conf, const char *penalty_exempt_conf)
 {
 	int i;
 
@@ -98,6 +100,7 @@ srclimit_init(int max, int persource, int ipv4len, int ipv6len,
 	ipv6_masklen = ipv6len;
 	max_persource = persource;
 	penalty_cfg = *penalty_conf;
+	penalty_exempt = xstrdup(penalty_exempt_conf);
 	if (max_persource == INT_MAX)	/* no limit */
 		return;
 	debug("%s: max connections %d, per source %d, masks %d,%d", __func__,
@@ -294,6 +297,14 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 
 	if (!penalty_cfg.enabled)
 		return;
+	if (penalty_exempt != NULL) {
+		if (addr_ntop(addr, addrnetmask, sizeof(addrnetmask)) != 0)
+			return; /* shouldn't happen */
+		if (addr_match_list(addrnetmask, penalty_exempt) == 1) {
+			debug3_f("address %s is exempt", addrnetmask);
+			return;
+		}
+	}
 
 	switch (penalty_type) {
 	case SRCLIMIT_PENALTY_NONE:

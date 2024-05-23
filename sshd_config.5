@@ -1604,6 +1604,14 @@ which denies all incoming connections until a penalty expires, and
 .Cm permissive ,
 which allows new connections by removing existing penalties early.
 .El
+.It Cm PerSourcePenaltyExemptList
+Specifies a comma-separated list of addresses to exempt from penalties.
+This list may contain wildcards and CIDR address/masklen ranges.
+Note that the mask length provided must be consistent with the address -
+it is an error to specify a mask length that is too long for the address
+or one with bits set in this host portion of the address.
+For example, 192.0.2.0/33 and 192.0.2.0/8, respectively.
+The default is not to exempt any addresses.
 .It Cm PidFile
 Specifies the file that contains the process ID of the
 SSH daemon, or

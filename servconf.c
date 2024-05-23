@@ -145,6 +145,7 @@ initialize_server_options(ServerOptions *options)
 	options->per_source_max_startups = -1;
 	options->per_source_masklen_ipv4 = -1;
 	options->per_source_masklen_ipv6 = -1;
+	options->per_source_penalty_exempt = NULL;
 	options->per_source_penalty.enabled = -1;
 	options->per_source_penalty.max_sources = -1;
 	options->per_source_penalty.overflow_mode = -1;
@@ -478,6 +479,7 @@ fill_default_server_options(ServerOptions *options)
 	CLEAR_ON_NONE(options->chroot_directory);
 	CLEAR_ON_NONE(options->routing_domain);
 	CLEAR_ON_NONE(options->host_key_agent);
+	CLEAR_ON_NONE(options->per_source_penalty_exempt);
 
 	for (i = 0; i < options->num_host_key_files; i++)
 		CLEAR_ON_NONE(options->host_key_files[i]);
@@ -509,7 +511,7 @@ typedef enum {
 	sBanner, sUseDNS, sHostbasedAuthentication,
 	sHostbasedUsesNameFromPacketOnly, sHostbasedAcceptedAlgorithms,
 	sHostKeyAlgorithms, sPerSourceMaxStartups, sPerSourceNetBlockSize,
-	sPerSourcePenalties,
+	sPerSourcePenalties, sPerSourcePenaltyExemptList,
 	sClientAliveInterval, sClientAliveCountMax, sAuthorizedKeysFile,
 	sGssAuthentication, sGssCleanupCreds, sGssStrictAcceptor,
 	sAcceptEnv, sSetEnv, sPermitTunnel,
@@ -627,6 +629,7 @@ static struct {
 	{ "persourcemaxstartups", sPerSourceMaxStartups, SSHCFG_GLOBAL },
 	{ "persourcenetblocksize", sPerSourceNetBlockSize, SSHCFG_GLOBAL },
 	{ "persourcepenalties", sPerSourcePenalties, SSHCFG_GLOBAL },
+	{ "persourcepenaltyexemptlist", sPerSourcePenaltyExemptList, SSHCFG_GLOBAL },
 	{ "maxauthtries", sMaxAuthTries, SSHCFG_ALL },
 	{ "maxsessions", sMaxSessions, SSHCFG_ALL },
 	{ "banner", sBanner, SSHCFG_ALL },
@@ -1914,6 +1917,21 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			options->per_source_max_startups = value;
 		break;
 
+	case sPerSourcePenaltyExemptList:
+		charptr = &options->per_source_penalty_exempt;
+		arg = argv_next(&ac, &av);
+		if (!arg || *arg == '\0')
+			fatal("%s line %d: missing file name.",
+			    filename, linenum);
+		if (addr_match_list(NULL, arg) != 0) {
+			fatal("%s line %d: keyword %s "
+			    "invalid address argument.",
+			    filename, linenum, keyword);
+		}
+		if (*activep && *charptr == NULL)
+			*charptr = xstrdup(arg);
+		break;
+
 	case sPerSourcePenalties:
 		while ((arg = argv_next(&ac, &av)) != NULL) {
 			found = 1;
@@ -3102,6 +3120,7 @@ dump_config(ServerOptions *o)
 	dump_cfg_string(sPubkeyAcceptedAlgorithms, o->pubkey_accepted_algos);
 	dump_cfg_string(sRDomain, o->routing_domain);
 	dump_cfg_string(sSshdSessionPath, o->sshd_session_path);
+	dump_cfg_string(sPerSourcePenaltyExemptList, o->per_source_penalty_exempt);
 
 	/* string arguments requiring a lookup */
 	dump_cfg_string(sLogLevel, log_level_name(o->log_level));

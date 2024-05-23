@@ -185,6 +185,7 @@ typedef struct {
 	int	per_source_max_startups;
 	int	per_source_masklen_ipv4;
 	int	per_source_masklen_ipv6;
+	char	*per_source_penalty_exempt;
 	struct per_source_penalty per_source_penalty;
 	int	max_authtries;
 	int	max_sessions;
