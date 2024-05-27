@@ -118,7 +118,7 @@ srclimit_check_allow(int sock, int id)
 
 	debug("%s: sock %d id %d limit %d", __func__, sock, id, max_persource);
 	if (srclimit_peer_addr(sock, &xa) != 0)
-		return -1;
+		return 1;
 	bits = xa.af == AF_INET ? ipv4_masklen : ipv6_masklen;
 	if (srclimit_mask_addr(&xa, bits, &xb) != 0)
 		return 1;
