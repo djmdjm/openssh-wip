@@ -80,6 +80,9 @@
 #define REEXEC_CONFIG_PASS_FD		(STDERR_FILENO + 3)
 #define REEXEC_MIN_FREE_FD		(STDERR_FILENO + 4)
 
+/* Exit values from forked children */
+#define EXIT_LOGIN_GRACE	3	/* login grace period exceeded */
+
 extern char *__progname;
 
 /* Server configuration options. */
@@ -120,6 +123,8 @@ struct {
 } sensitive_data;
 
 /* This is set to true when a signal is received. */
+static volatile sig_atomic_t received_siginfo = 0;
+static volatile sig_atomic_t received_sigchld = 0;
 static volatile sig_atomic_t received_sighup = 0;
 static volatile sig_atomic_t received_sigterm = 0;
 
@@ -127,8 +132,9 @@ static volatile sig_atomic_t received_sigterm = 0;
 u_int utmp_len = HOST_NAME_MAX+1;
 
 /*
- * startup_pipes/flags are used for tracking children of the listening sshd
- * process early in their lifespans. This tracking is needed for three things:
+ * The early_child/children array below is used for tracking children of the
+ * listening sshd process early in their lifespans, before they have
+ * completed authentication. This tracking is needed for four things:
  *
  * 1) Implementing the MaxStartups limit of concurrent unauthenticated
  *    connections.
@@ -137,14 +143,29 @@ u_int utmp_len = HOST_NAME_MAX+1;
  *    after it restarts.
  * 3) Ensuring that rexec'd sshd processes have received their initial state
  *    from the parent listen process before handling SIGHUP.
+ * 4) Tracking and logging unsuccessful exits from the preauth sshd monitor,
+ *    including and especially those for LoginGraceTime timeouts.
  *
  * Child processes signal that they have completed closure of the listen_socks
  * and (if applicable) received their rexec state by sending a char over their
- * sock. Child processes signal that authentication has completed by closing
- * the sock (or by exiting).
+ * sock.
+ *
+ * Child processes signal that authentication has completed by sending a
+ * second char over the socket before closing it, otherwise the listener will
+ * continue tracking the child (and using up a MaxStartups slot) until the
+ * preauth subprocess exits, whereupon the listener will log its exit status.
+ * preauth processes will exit with a status of EXIT_LOGIN_GRACE to indicate
+ * they did not authenticate before the LoginGraceTime alarm fired.
  */
-static int *startup_pipes = NULL;
-static int *startup_flags = NULL;	/* Indicates child closed listener */
+struct early_child {
+	int pipefd;
+	int flags;		/* Indicates child closed listener */
+	char *id;		/* human readable connection identifier */
+	pid_t pid;
+	int status, have_status;
+};
+static struct early_child *children;
+static int children_active;
 static int startup_pipe = -1;		/* in child */
 
 /* sshd_config buffer */
@@ -171,15 +192,203 @@ close_listen_socks(void)
 	num_listen_socks = 0;
 }
 
+/* Allocate and initialise the children array */
+static void
+child_alloc(void)
+{
+	int i;
+
+	children = xcalloc(options.max_startups, sizeof(*children));
+	for (i = 0; i < options.max_startups; i++) {
+		children[i].pipefd = -1;
+		children[i].pid = -1;
+	}
+}
+
+/* Register a new connection in the children array; child pid comes later */
+static struct early_child *
+child_register(int pipefd, int sockfd)
+{
+	int i, lport, rport;
+	char *laddr = NULL, *raddr = NULL;
+	struct early_child *child = NULL;
+
+	for (i = 0; i < options.max_startups; i++) {
+		if (children[i].pipefd != -1 || children[i].pid > 0)
+			continue;
+		child = &(children[i]);
+		break;
+	}
+	if (child == NULL) {
+		fatal_f("error: accepted connection when all %d child "
+		    " slots full", options.max_startups);
+	}
+	child->pipefd = pipefd;
+	child->flags = 1;
+	if ((lport = get_local_port(sockfd)) == 0 ||
+	    (rport = get_peer_port(sockfd)) == 0) {
+		/* Not a TCP socket */
+		raddr = get_peer_ipaddr(sockfd);
+		xasprintf(&child->id, "connection from %s", raddr);
+	} else {
+		laddr = get_local_ipaddr(sockfd);
+		raddr = get_peer_ipaddr(sockfd);
+		xasprintf(&child->id, "connection from %s to %s", laddr, raddr);
+	}
+	free(laddr);
+	free(raddr);
+	children_active++;
+	return child;
+}
+
+/*
+ * Finally free a child entry. Don't call this directly.
+ */
+static void
+child_finish(struct early_child *child)
+{
+	if (child->pipefd != -1)
+		close(child->pipefd);
+	free(child->id);
+	memset(child, '\0', sizeof(*child));
+	child->pipefd = -1;
+	child->pid = -1;
+	children_active--;
+}
+
+/*
+ * Close a child's pipe. This will not stop tracking the child immediately
+ * (it will still be tracked for waitpid()) unless force_final is set, or
+ * child has already exited.
+ */
+static void
+child_close(struct early_child *child, int force_final, int quiet)
+{
+	if (!quiet)
+		debug_f("enter%s", force_final ? " (forcing)" : "");
+	if (child->pipefd != -1) {
+		close(child->pipefd);
+		child->pipefd = -1;
+	}
+	if (child->pid == -1 || force_final)
+		child_finish(child);
+}
+
+/* Record a child exit. Safe to call from signal handlers */
+static void
+child_exit(pid_t pid, int status)
+{
+	int i;
+
+	if (children == NULL || pid <= 0)
+		return;
+	for (i = 0; i < options.max_startups; i++) {
+		if (children[i].pid == pid) {
+			children[i].have_status = 1;
+			children[i].status = status;
+			break;
+		}
+	}
+}
+
+/*
+ * Reap a child entry that has exited, as previously flagged
+ * using child_exit().
+ * Handles logging of exit condition and will finalise the child if its pipe
+ * had already been closed.
+ */
+static void
+child_reap(struct early_child *child)
+{
+	LogLevel level = SYSLOG_LEVEL_DEBUG1;
+
+	/* Log exit information */
+	if (WIFSIGNALED(child->status)) {
+		/*
+		 * Increase logging for signals potentially associated
+		 * with serious conditions.
+		 */
+		if (signal_is_crash(WTERMSIG(child->status)))
+			level = SYSLOG_LEVEL_ERROR;
+		do_log2(level, "preauth child %ld for %s killed by signal %d%s",
+		    (long)child->pid, child->id, WTERMSIG(child->status),
+		    child->flags ? " (early)" : "");
+	} else if (!WIFEXITED(child->status)) {
+		error("preauth child %ld for %s terminated abnormally%s",
+		    (long)child->pid, child->id,
+		    child->flags ? " (early)" : "");
+	} else {
+		/* Normal exit. We care about the status */
+		switch (WEXITSTATUS(child->status)) {
+		case EXIT_LOGIN_GRACE:
+			logit("Timeout before authentication for %s, "
+			    "pid = %ld%s", child->id, (long)child->pid,
+			    child->flags ? " (early)" : "");
+			break;
+		case 0:
+			level = SYSLOG_LEVEL_DEBUG3;
+			/* FALLTHROUGH */
+		default:
+			do_log2(level, "preauth child %ld for %s exited "
+			    "with status %d%s", (long)child->pid, child->id,
+			    WEXITSTATUS(child->status),
+			    child->flags ? " (early)" : "");
+			break;
+		}
+	}
+	/*
+	 * XXX we could use abnormal terminations to throttle
+	 * connections from particular connection sources via srclimit.
+	 */
+	child->pid = -1;
+	child->have_status = 0;
+	if (child->pipefd == -1)
+		child_finish(child);
+}
+
+/* Reap all children that have exited; called after SIGCHLD */
+static void
+child_exited(void)
+{
+	int i;
+
+	if (children == NULL)
+		return;
+	for (i = 0; i < options.max_startups; i++) {
+		if (!children[i].have_status)
+			continue;
+		child_reap(&(children[i]));
+	}
+}
+
 static void
 close_startup_pipes(void)
 {
 	int i;
 
-	if (startup_pipes)
-		for (i = 0; i < options.max_startups; i++)
-			if (startup_pipes[i] != -1)
-				close(startup_pipes[i]);
+	if (children == NULL)
+		return;
+	for (i = 0; i < options.max_startups; i++)
+		child_close(&(children[i]), 1, 1);
+}
+
+/* Called after SIGINFO */
+static void
+show_info(void)
+{
+	int i;
+
+	/* XXX print listening sockets here too */
+	if (children == NULL)
+		return;
+	logit("%d active startups", children_active);
+	for (i = 0; i < options.max_startups; i++) {
+		if (children[i].pipefd == -1 && children[i].pid <= 0)
+			continue;
+		logit("child %d: fd=%d pid=%ld %s%s", i, children[i].pipefd,
+		    (long)children[i].pid, children[i].id,
+		    children[i].flags ? " (early)" : "");
+	}
 }
 
 /*
@@ -222,6 +431,12 @@ sigterm_handler(int sig)
 	received_sigterm = sig;
 }
 
+static void
+siginfo_handler(int sig)
+{
+	received_siginfo = 1;
+}
+
 /*
  * SIGCHLD handler.  This is called whenever a child dies.  This will then
  * reap any zombies left by exited children.
@@ -233,9 +448,17 @@ main_sigchld_handler(int sig)
 	pid_t pid;
 	int status;
 
-	while ((pid = waitpid(-1, &status, WNOHANG)) > 0 ||
-	    (pid == -1 && errno == EINTR))
-		;
+	for (;;) {
+		if ((pid = waitpid(-1, &status, WNOHANG)) == 0)
+			break;
+		else if (pid == -1) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		child_exit(pid, status);
+		received_sigchld = 1;
+	}
 	errno = save_errno;
 }
 
@@ -548,32 +771,30 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
     int log_stderr)
 {
 	struct pollfd *pfd = NULL;
-	int i, j, ret, npfd;
-	int ostartups = -1, startups = 0, listening = 0, lameduck = 0;
+	int i, ret, npfd;
+	int oactive = -1, listening = 0, lameduck = 0;
 	int startup_p[2] = { -1 , -1 }, *startup_pollfd;
 	char c = 0;
 	struct sockaddr_storage from;
+	struct early_child *child;
 	socklen_t fromlen;
-	pid_t pid;
 	sigset_t nsigset, osigset;
 
 	/* setup fd set for accept */
 	/* pipes connected to unauthenticated child sshd processes */
-	startup_pipes = xcalloc(options.max_startups, sizeof(int));
-	startup_flags = xcalloc(options.max_startups, sizeof(int));
+	child_alloc();
 	startup_pollfd = xcalloc(options.max_startups, sizeof(int));
-	for (i = 0; i < options.max_startups; i++)
-		startup_pipes[i] = -1;
 
 	/*
 	 * Prepare signal mask that we use to block signals that might set
-	 * received_sigterm or received_sighup, so that we are guaranteed
+	 * received_sigterm/hup/chld/info, so that we are guaranteed
 	 * to immediately wake up the ppoll if a signal is received after
 	 * the flag is checked.
 	 */
 	sigemptyset(&nsigset);
 	sigaddset(&nsigset, SIGHUP);
 	sigaddset(&nsigset, SIGCHLD);
+	sigaddset(&nsigset, SIGINFO);
 	sigaddset(&nsigset, SIGTERM);
 	sigaddset(&nsigset, SIGQUIT);
 
@@ -595,11 +816,19 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 				unlink(options.pid_file);
 			exit(received_sigterm == SIGTERM ? 0 : 255);
 		}
-		if (ostartups != startups) {
+		if (received_sigchld) {
+			child_exited();
+			received_sigchld = 0;
+		}
+		if (received_siginfo) {
+			show_info();
+			received_siginfo = 0;
+		}
+		if (oactive != children_active) {
 			setproctitle("%s [listener] %d of %d-%d startups",
-			    listener_proctitle, startups,
+			    listener_proctitle, children_active,
 			    options.max_startups_begin, options.max_startups);
-			ostartups = startups;
+			oactive = children_active;
 		}
 		if (received_sighup) {
 			if (!lameduck) {
@@ -620,8 +849,8 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 		npfd = num_listen_socks;
 		for (i = 0; i < options.max_startups; i++) {
 			startup_pollfd[i] = -1;
-			if (startup_pipes[i] != -1) {
-				pfd[npfd].fd = startup_pipes[i];
+			if (children[i].pipefd != -1) {
+				pfd[npfd].fd = children[i].pipefd;
 				pfd[npfd].events = POLLIN;
 				startup_pollfd[i] = npfd++;
 			}
@@ -639,34 +868,46 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 			continue;
 
 		for (i = 0; i < options.max_startups; i++) {
-			if (startup_pipes[i] == -1 ||
+			if (children[i].pipefd == -1 ||
 			    startup_pollfd[i] == -1 ||
 			    !(pfd[startup_pollfd[i]].revents & (POLLIN|POLLHUP)))
 				continue;
-			switch (read(startup_pipes[i], &c, sizeof(c))) {
+			switch (read(children[i].pipefd, &c, sizeof(c))) {
 			case -1:
 				if (errno == EINTR || errno == EAGAIN)
 					continue;
 				if (errno != EPIPE) {
 					error_f("startup pipe %d (fd=%d): "
-					    "read %s", i, startup_pipes[i],
+					    "read %s", i, children[i].pipefd,
 					    strerror(errno));
 				}
 				/* FALLTHROUGH */
 			case 0:
-				/* child exited or completed auth */
-				close(startup_pipes[i]);
-				srclimit_done(startup_pipes[i]);
-				startup_pipes[i] = -1;
-				startups--;
-				if (startup_flags[i])
+				/* child exited preauth */
+				if (children[i].flags)
 					listening--;
+				srclimit_done(children[i].pipefd);
+				child_close(&(children[i]), 0, 0);
 				break;
 			case 1:
-				/* child has finished preliminaries */
-				if (startup_flags[i]) {
+				if (children[i].flags && c == '\0') {
+					/* child has finished preliminaries */
 					listening--;
-					startup_flags[i] = 0;
+					children[i].flags = 0;
+					debug2_f("child %lu for %s received "
+					    "config", (long)children[i].pid,
+					    children[i].id);
+				} else if (!children[i].flags && c == '\001') {
+					/* child has completed auth */
+					debug2_f("child %lu for %s auth done",
+					    (long)children[i].pid,
+					    children[i].id);
+					child_close(&(children[i]), 1, 0);
+				} else {
+					error_f("unexpected message 0x%02x "
+					    "child %ld for %s in state %d",
+					    c, (long)children[i].pid,
+					    children[i].id, children[i].flags);
 				}
 				break;
 			}
@@ -695,7 +936,8 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 				close(*newsock);
 				continue;
 			}
-			if (drop_connection(*newsock, startups, startup_p[0])) {
+			if (drop_connection(*newsock,
+			    children_active, startup_p[0])) {
 				close(*newsock);
 				close(startup_p[0]);
 				close(startup_p[1]);
@@ -711,14 +953,6 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 				close(startup_p[1]);
 				continue;
 			}
-
-			for (j = 0; j < options.max_startups; j++)
-				if (startup_pipes[j] == -1) {
-					startup_pipes[j] = startup_p[0];
-					startups++;
-					startup_flags[j] = 1;
-					break;
-				}
 
 			/*
 			 * Got connection.  Fork a child to handle it, unless
@@ -737,7 +971,6 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 				close(startup_p[0]);
 				close(startup_p[1]);
 				startup_pipe = -1;
-				pid = getpid();
 				send_rexec_state(config_s[0], cfg);
 				close(config_s[0]);
 				free(pfd);
@@ -750,7 +983,8 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 			 * parent continues listening.
 			 */
 			listening++;
-			if ((pid = fork()) == 0) {
+			child = child_register(startup_p[0], *newsock);
+			if ((child->pid = fork()) == 0) {
 				/*
 				 * Child.  Close the listening and
 				 * max_startup sockets.  Start using
@@ -774,10 +1008,10 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 			}
 
 			/* Parent.  Stay in the loop. */
-			if (pid == -1)
+			if (child->pid == -1)
 				error("fork: %.100s", strerror(errno));
 			else
-				debug("Forked child %ld.", (long)pid);
+				debug("Forked child %ld.", (long)child->pid);
 
 			close(startup_p[1]);
 
@@ -1331,6 +1565,7 @@ main(int ac, char **av)
 		ssh_signal(SIGCHLD, main_sigchld_handler);
 		ssh_signal(SIGTERM, sigterm_handler);
 		ssh_signal(SIGQUIT, sigterm_handler);
+		ssh_signal(SIGINFO, siginfo_handler);
 
 		/*
 		 * Write out the pid file after the sigterm handler

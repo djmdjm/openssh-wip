@@ -250,6 +250,7 @@ void	notify_complete(struct notifier_ctx *, const char *, ...)
 
 typedef void (*sshsig_t)(int);
 sshsig_t ssh_signal(int, sshsig_t);
+int signal_is_crash(int);
 
 /* On OpenBSD time_t is int64_t which is long long. */
 #define SSH_TIME_T_MAX LLONG_MAX

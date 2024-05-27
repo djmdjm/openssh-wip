@@ -100,6 +100,9 @@
 #define REEXEC_CONFIG_PASS_FD		(STDERR_FILENO + 3)
 #define REEXEC_MIN_FREE_FD		(STDERR_FILENO + 4)
 
+/* meaningful exit values */
+#define EXIT_LOGIN_GRACE	3	/* login grace period exceeded */
+
 extern char *__progname;
 
 /* Server configuration options. */
@@ -188,11 +191,7 @@ grace_alarm_handler(int sig)
 		ssh_signal(SIGTERM, SIG_IGN);
 		kill(0, SIGTERM);
 	}
-
-	/* Log error and exit. */
-	sigdie("Timeout before authentication for %s port %d",
-	    ssh_remote_ipaddr(the_active_state),
-	    ssh_remote_port(the_active_state));
+	_exit(EXIT_LOGIN_GRACE);
 }
 
 /* Destroy the host and server keys.  They will no longer be needed. */
@@ -1220,6 +1219,8 @@ main(int ac, char **av)
 	ssh_signal(SIGALRM, SIG_DFL);
 	authctxt->authenticated = 1;
 	if (startup_pipe != -1) {
+		/* signal listener that authentication completed successfully */
+		(void)atomicio(vwrite, startup_pipe, "\001", 1);
 		close(startup_pipe);
 		startup_pipe = -1;
 	}
