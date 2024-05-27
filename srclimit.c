@@ -54,11 +54,15 @@ struct penalty {
 	time_t expiry;
 	int active;
 	const char *reason;
-	RB_ENTRY(penalty) tree_entry;
+	RB_ENTRY(penalty) by_addr;
+	RB_ENTRY(penalty) by_expiry;
 };
 static int penalty_addr_cmp(struct penalty *a, struct penalty *b);
-RB_HEAD(penalties, penalty) penalties;
-RB_GENERATE_STATIC(penalties, penalty, tree_entry, penalty_addr_cmp)
+static int penalty_expiry_cmp(struct penalty *a, struct penalty *b);
+RB_HEAD(penalties_by_addr, penalty) penalties_by_addr;
+RB_HEAD(penalties_by_expiry, penalty) penalties_by_expiry;
+RB_GENERATE_STATIC(penalties_by_addr, penalty, by_addr, penalty_addr_cmp)
+RB_GENERATE_STATIC(penalties_by_expiry, penalty, by_expiry, penalty_expiry_cmp)
 static size_t npenalties;
 
 static int
@@ -111,7 +115,8 @@ srclimit_init(int max, int persource, int ipv4len, int ipv6len,
 	child = xcalloc(max_children, sizeof(*child));
 	for (i = 0; i < max_children; i++)
 		child[i].id = -1;
-	RB_INIT(&penalties);
+	RB_INIT(&penalties_by_addr);
+	RB_INIT(&penalties_by_expiry);
 }
 
 /* returns 1 if connection allowed, 0 if not allowed. */
@@ -188,6 +193,16 @@ static int
 penalty_addr_cmp(struct penalty *a, struct penalty *b)
 {
 	return addr_cmp(&a->addr, &b->addr);
+	/* Addresses must be unique in by_addr, so no need to tiebreak */
+}
+
+static int
+penalty_expiry_cmp(struct penalty *a, struct penalty *b)
+{
+	if (a->expiry != b->expiry)
+		return a->expiry < b->expiry ? -1 : 1;
+	/* Tiebreak on addresses */
+	return addr_cmp(&a->addr, &b->addr);
 }
 
 static void
@@ -196,10 +211,15 @@ expire_penalties(time_t now)
 	struct penalty *penalty, *tmp;
 
 	/* XXX avoid full scan of tree, e.g. min-heap */
-	RB_FOREACH_SAFE(penalty, penalties, &penalties, tmp) {
+	RB_FOREACH_SAFE(penalty, penalties_by_expiry,
+	    &penalties_by_expiry, tmp) {
 		if (penalty->expiry >= now)
-			continue;
-		RB_REMOVE(penalties, &penalties, penalty);
+			break;
+		if (RB_REMOVE(penalties_by_expiry, &penalties_by_expiry,
+		    penalty) != penalty ||
+		    RB_REMOVE(penalties_by_addr, &penalties_by_addr,
+		    penalty) != penalty)
+			fatal_f("internal error: penalty tables corrupt");
 		free(penalty);
 		if (npenalties-- == 0)
 			fatal_f("internal error: npenalties underflow");
@@ -249,7 +269,8 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 	if (srclimit_mask_addr(&addr, bits, &find.addr) != 0)
 		return 1;
 	now = monotime();
-	if ((penalty = RB_FIND(penalties, &penalties, &find)) == NULL)
+	if ((penalty = RB_FIND(penalties_by_addr,
+	    &penalties_by_addr, &find)) == NULL)
 		return 1; /* no penalty */
 	if (penalty->expiry < now) {
 		expire_penalties(now);
@@ -264,31 +285,22 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 static void
 srclimit_remove_penalty(void)
 {
-	size_t n;
 	struct penalty *p = NULL;
 	int bits;
 	char s[NI_MAXHOST + 4];
 
-	/*
-	 * Delete random penalty entries from the list. Called when
-	 * too many entries are being tracked to avoid memory DoS on
-	 * sshd.
-	 * XXX maybe it should remove the penalty soonest to expire instead?
-	 */
+	/* Delete the soonest-to-expire penalties. */
 	while (npenalties > (size_t)penalty_cfg.max_sources) {
-		n = arc4random_uniform(npenalties);
-		/* XXX inefficient; should be able to pick element in log(n) */
-		RB_FOREACH(p, penalties, &penalties) {
-			if (n == 0)
-				break;
-			n--;
-		}
-		if (p == NULL)
-			return; /* shouldn't happen */
+		if ((p = RB_MIN(penalties_by_expiry,
+		    &penalties_by_expiry)) == NULL)
+			break; /* shouldn't happen */
 		bits = p->addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
 		addr_masklen_ntop(&p->addr, bits, s, sizeof(s));
-		debug3_f("overflow, remove %zu/%zu: %s", n, npenalties, s);
-		RB_REMOVE(penalties, &penalties, p);
+		debug3_f("overflow, remove %s", s);
+		if (RB_REMOVE(penalties_by_expiry,
+		    &penalties_by_expiry, p) != p ||
+		    RB_REMOVE(penalties_by_addr, &penalties_by_addr, p) != p)
+			fatal_f("internal error: penalty tables corrupt");
 		free(p);
 		npenalties--;
 	}
@@ -355,10 +367,14 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	penalty->addr = masked;
 	penalty->expiry = now + penalty_secs;
 	penalty->reason = reason;
-	if ((existing = RB_INSERT(penalties, &penalties, penalty)) == NULL) {
+	if ((existing = RB_INSERT(penalties_by_addr, &penalties_by_addr,
+	    penalty)) == NULL) {
 		/* penalty didn't previously exist */
 		if (penalty_secs > penalty_cfg.penalty_min)
 			penalty->active = 1;
+		if (RB_INSERT(penalties_by_expiry, &penalties_by_expiry,
+		    penalty) != NULL)
+			fatal_f("internal error: penalty tables corrupt");
 		verbose_f("%s: new %s penalty of %d seconds for %s",
 		    addrnetmask, penalty->active ? "active" : "deferred",
 		    penalty_secs, reason);
@@ -381,6 +397,12 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	}
 	existing->reason = penalty->reason;
 	free(penalty);
+	/* Expiry has changed, re-insert into expiry tree */
+	if (RB_REMOVE(penalties_by_expiry, &penalties_by_expiry,
+	    existing) != existing ||
+	    RB_INSERT(penalties_by_expiry, &penalties_by_expiry,
+	    existing) != NULL)
+		fatal_f("internal error: penalty tables corrupt");
 }
 
 void
@@ -393,7 +415,7 @@ srclimit_penalty_info(void)
 
 	now = monotime();
 	logit("%zu active penalties", npenalties);
-	RB_FOREACH(p, penalties, &penalties) {
+	RB_FOREACH(p, penalties_by_expiry, &penalties_by_expiry) {
 		bits = p->addr.af == AF_INET ? ipv4_masklen : ipv6_masklen;
 		addr_masklen_ntop(&p->addr, bits, s, sizeof(s));
 		if (p->expiry < now)
