@@ -133,7 +133,7 @@ u_int utmp_len = HOST_NAME_MAX+1;
 
 /*
  * The early_child/children array below is used for tracking children of the
- * listening sshd process early in their lifespans, before they have have
+ * listening sshd process early in their lifespans, before they have
  * completed authentication. This tracking is needed for four things:
  *
  * 1) Implementing the MaxStartups limit of concurrent unauthenticated
@@ -199,8 +199,10 @@ child_alloc(void)
 	int i;
 
 	children = xcalloc(options.max_startups, sizeof(*children));
-	for (i = 0; i < options.max_startups; i++)
+	for (i = 0; i < options.max_startups; i++) {
 		children[i].pipefd = -1;
+		children[i].pid = -1;
+	}
 }
 
 /* Register a new connection in the children array; child pid comes later */
@@ -220,7 +222,6 @@ child_register(int pipefd, int sockfd)
 	if (child == NULL) {
 		fatal_f("error: accepted connection when all %d child "
 		    " slots full", options.max_startups);
-		return NULL;
 	}
 	child->pipefd = pipefd;
 	child->flags = 1;
@@ -251,12 +252,13 @@ child_finish(struct early_child *child)
 	free(child->id);
 	memset(child, '\0', sizeof(*child));
 	child->pipefd = -1;
+	child->pid = -1;
 	children_active--;
 }
 
 /*
  * Close a child's pipe. This will not stop tracking the child immediately
- * (it will still be tracked for waidpid()) unless force_final is set, or
+ * (it will still be tracked for waitpid()) unless force_final is set, or
  * child has already exited.
  */
 static void
@@ -298,7 +300,7 @@ child_exit(pid_t pid, int status)
 static void
 child_reap(struct early_child *child)
 {
-	LogLevel l = SYSLOG_LEVEL_DEBUG1;
+	LogLevel level = SYSLOG_LEVEL_DEBUG1;
 
 	/* Log exit information */
 	if (WIFSIGNALED(child->status)) {
@@ -307,8 +309,8 @@ child_reap(struct early_child *child)
 		 * with serious conditions.
 		 */
 		if (signal_is_crash(WTERMSIG(child->status)))
-			l = SYSLOG_LEVEL_ERROR;
-		do_log2(l, "preauth child %ld for %s killed by signal %d%s",
+			level = SYSLOG_LEVEL_ERROR;
+		do_log2(level, "preauth child %ld for %s killed by signal %d%s",
 		    (long)child->pid, child->id, WTERMSIG(child->status),
 		    child->flags ? " (early)" : "");
 	} else if (!WIFEXITED(child->status)) {
@@ -324,10 +326,10 @@ child_reap(struct early_child *child)
 			    child->flags ? " (early)" : "");
 			break;
 		case 0:
-			l = SYSLOG_LEVEL_DEBUG3;
+			level = SYSLOG_LEVEL_DEBUG3;
 			/* FALLTHROUGH */
 		default:
-			do_log2(l, "preauth child %ld for %s exited "
+			do_log2(level, "preauth child %ld for %s exited "
 			    "with status %d%s", (long)child->pid, child->id,
 			    WEXITSTATUS(child->status),
 			    child->flags ? " (early)" : "");
@@ -888,13 +890,24 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 				child_close(&(children[i]), 0, 0);
 				break;
 			case 1:
-				if (children[i].flags) {
+				if (children[i].flags && c == '\0') {
 					/* child has finished preliminaries */
 					listening--;
 					children[i].flags = 0;
-				} else {
+					debug2_f("child %lu for %s received "
+					    "config", (long)children[i].pid,
+					    children[i].id);
+				} else if (!children[i].flags && c == '\001') {
 					/* child has completed auth */
+					debug2_f("child %lu for %s auth done",
+					    (long)children[i].pid,
+					    children[i].id);
 					child_close(&(children[i]), 1, 0);
+				} else {
+					error_f("unexpected message 0x%02x "
+					    "child %ld for %s in state %d",
+					    c, (long)children[i].pid,
+					    children[i].id, children[i].flags);
 				}
 				break;
 			}

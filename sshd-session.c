@@ -1220,7 +1220,7 @@ main(int ac, char **av)
 	authctxt->authenticated = 1;
 	if (startup_pipe != -1) {
 		/* signal listener that authentication completed successfully */
-		(void)atomicio(vwrite, startup_pipe, "\0", 1);
+		(void)atomicio(vwrite, startup_pipe, "\001", 1);
 		close(startup_pipe);
 		startup_pipe = -1;
 	}
