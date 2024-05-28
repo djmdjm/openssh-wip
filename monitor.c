@@ -295,6 +295,7 @@ monitor_child_preauth(struct ssh *ssh, struct monitor *pmonitor)
 		fatal_f("authentication method name unknown");
 
 	debug_f("user %s authenticated by privileged process", authctxt->user);
+	auth_attempted = 0;
 	ssh->authctxt = NULL;
 	ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
 
