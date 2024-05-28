@@ -66,7 +66,7 @@ struct listenaddr {
 };
 
 #define PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL	1
-#define PER_SOURCE_PENALTY_OVERFLOW_RANDOM_DROP	2
+#define PER_SOURCE_PENALTY_OVERFLOW_PERMISSIVE	2
 struct per_source_penalty {
 	int	enabled;
 	int	max_sources;

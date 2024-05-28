@@ -392,7 +392,7 @@ fill_default_server_options(ServerOptions *options)
 	if (options->per_source_penalty.max_sources == -1)
 		options->per_source_penalty.max_sources = 65536;
 	if (options->per_source_penalty.overflow_mode == -1)
-		options->per_source_penalty.overflow_mode = PER_SOURCE_PENALTY_OVERFLOW_RANDOM_DROP;
+		options->per_source_penalty.overflow_mode = PER_SOURCE_PENALTY_OVERFLOW_PERMISSIVE;
 	if (options->per_source_penalty.penalty_crash == -1)
 		options->per_source_penalty.penalty_crash = 90;
 	if (options->per_source_penalty.penalty_grace == -1)
@@ -1980,7 +1980,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 				value = PER_SOURCE_PENALTY_OVERFLOW_DENY_ALL;
 			} else if (strcmp(arg, "overflow:permissive") == 0) {
 				intptr = &options->per_source_penalty.overflow_mode;
-				value = PER_SOURCE_PENALTY_OVERFLOW_RANDOM_DROP;
+				value = PER_SOURCE_PENALTY_OVERFLOW_PERMISSIVE;
 			} else {
 				fatal("%s line %d: unsupported %s keyword %s",
 				    filename, linenum, keyword, arg);
