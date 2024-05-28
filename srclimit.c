@@ -46,7 +46,7 @@ static struct child_info {
 
 /*
  * Penalised addresses, active entries here prohibit connections until expired.
- * Entries become active when more than penalty_min second of penalty are
+ * Entries become active when more than penalty_min seconds of penalty are
  * outstanding.
  */
 struct penalty {
