@@ -283,7 +283,7 @@ srclimit_penalty_check_allow(int sock, const char **reason)
 }
 
 static void
-srclimit_remove_penalty(void)
+srclimit_remove_expired_penalties(void)
 {
 	struct penalty *p = NULL;
 	int bits;
@@ -379,13 +379,16 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 		    addrnetmask, penalty->active ? "active" : "deferred",
 		    penalty_secs, reason);
 		if (++npenalties > (size_t)penalty_cfg.max_sources)
-			srclimit_remove_penalty(); /* permissive */
+			srclimit_remove_expired_penalties(); /* permissive */
 		return;
 	}
-	/* An entry already existed. Accumulate penalty up to maximum */
 	debug_f("%s penalty for %s already exists, %lld seconds remaining",
 	    existing->active ? "active" : "inactive",
 	    addrnetmask, (long long)(existing->expiry - now));
+	/* Expiry information is about to change, remove from tree */
+	if (RB_REMOVE(penalties_by_expiry, &penalties_by_expiry,
+	    existing) != existing)
+	/* An entry already existed. Accumulate penalty up to maximum */
 	existing->expiry += penalty_secs;
 	if (existing->expiry - now > penalty_cfg.penalty_max)
 		existing->expiry = now + penalty_cfg.penalty_max;
@@ -397,10 +400,8 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	}
 	existing->reason = penalty->reason;
 	free(penalty);
-	/* Expiry has changed, re-insert into expiry tree */
-	if (RB_REMOVE(penalties_by_expiry, &penalties_by_expiry,
-	    existing) != existing ||
-	    RB_INSERT(penalties_by_expiry, &penalties_by_expiry,
+	/* Re-insert into expiry tree */
+	if (RB_INSERT(penalties_by_expiry, &penalties_by_expiry,
 	    existing) != NULL)
 		fatal_f("internal error: penalty tables corrupt");
 }

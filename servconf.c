@@ -1939,6 +1939,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 		while ((arg = argv_next(&ac, &av)) != NULL) {
 			found = 1;
 			value = -1;
+			value2 = 0;
 			p = NULL;
 			/* Allow no/yes only in first position */
 			if (strcasecmp(arg, "no") == 0 ||

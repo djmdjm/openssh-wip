@@ -157,7 +157,7 @@ u_int utmp_len = HOST_NAME_MAX+1;
  */
 struct early_child {
 	int pipefd;
-	int flags;		/* Indicates child closed listener */
+	int early;		/* Indicates child closed listener */
 	char *id;		/* human readable connection identifier */
 	pid_t pid;
 	struct xaddr addr;
@@ -227,7 +227,7 @@ child_register(int pipefd, int sockfd)
 		    " slots full", options.max_startups);
 	}
 	child->pipefd = pipefd;
-	child->flags = 1;
+	child->early = 1;
 	/* record peer address, if available */
 	if (getpeername(sockfd, sa, &addrlen) == 0 &&
 	   addr_sa_to_xaddr(sa, addrlen, &child->addr) == 0)
@@ -321,47 +321,47 @@ child_reap(struct early_child *child)
 			level = SYSLOG_LEVEL_ERROR;
 		do_log2(level, "session process %ld for %s killed by "
 		    "signal %d%s", (long)child->pid, child->id,
-		    WTERMSIG(child->status), child->flags ? " (early)" : "");
+		    WTERMSIG(child->status), child->early ? " (early)" : "");
 		if (was_crash)
 			penalty_type = SRCLIMIT_PENALTY_CRASH;
 	} else if (!WIFEXITED(child->status)) {
 		penalty_type = SRCLIMIT_PENALTY_CRASH;
 		error("session process %ld for %s terminated abnormally%s",
 		    (long)child->pid, child->id,
-		    child->flags ? " (early)" : "");
+		    child->early ? " (early)" : "");
 	} else {
 		/* Normal exit. We care about the status */
 		switch (WEXITSTATUS(child->status)) {
 		case 0:
 			debug3_f("preauth child %ld for %s completed "
 			    "normally %s", (long)child->pid, child->id,
-			    child->flags ? " (early)" : "");
+			    child->early ? " (early)" : "");
 			break;
 		case EXIT_LOGIN_GRACE:
 			penalty_type = SRCLIMIT_PENALTY_GRACE_EXCEEDED;
 			logit("Timeout before authentication for %s, "
 			    "pid = %ld%s", child->id, (long)child->pid,
-			    child->flags ? " (early)" : "");
+			    child->early ? " (early)" : "");
 			break;
 		case EXIT_CHILD_CRASH:
 			penalty_type = SRCLIMIT_PENALTY_CRASH;
 			logit("Session process %ld unpriv child crash for %s%s",
 			    (long)child->pid, child->id,
-			    child->flags ? " (early)" : "");
+			    child->early ? " (early)" : "");
 			break;
 		case EXIT_AUTH_ATTEMPTED:
 			penalty_type = SRCLIMIT_PENALTY_AUTHFAIL;
 			debug_f("preauth child %ld for %s exited "
 			    "after unsuccessful auth attempt %s",
 			    (long)child->pid, child->id,
-			    child->flags ? " (early)" : "");
+			    child->early ? " (early)" : "");
 			break;
 		default:
 			penalty_type = SRCLIMIT_PENALTY_NOAUTH;
 			debug_f("preauth child %ld for %s exited "
 			    "with status %d%s", (long)child->pid, child->id,
 			    WEXITSTATUS(child->status),
-			    child->flags ? " (early)" : "");
+			    child->early ? " (early)" : "");
 			break;
 		}
 	}
@@ -434,7 +434,7 @@ show_info(void)
 			continue;
 		logit("child %d: fd=%d pid=%ld %s%s", i, children[i].pipefd,
 		    (long)children[i].pid, children[i].id,
-		    children[i].flags ? " (early)" : "");
+		    children[i].early ? " (early)" : "");
 	}
 	srclimit_penalty_info();
 }
@@ -945,20 +945,20 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 				/* FALLTHROUGH */
 			case 0:
 				/* child exited preauth */
-				if (children[i].flags)
+				if (children[i].early)
 					listening--;
 				srclimit_done(children[i].pipefd);
 				child_close(&(children[i]), 0, 0);
 				break;
 			case 1:
-				if (children[i].flags && c == '\0') {
+				if (children[i].early && c == '\0') {
 					/* child has finished preliminaries */
 					listening--;
-					children[i].flags = 0;
+					children[i].early = 0;
 					debug2_f("child %lu for %s received "
 					    "config", (long)children[i].pid,
 					    children[i].id);
-				} else if (!children[i].flags && c == '\001') {
+				} else if (!children[i].early && c == '\001') {
 					/* child has completed auth */
 					debug2_f("child %lu for %s auth done",
 					    (long)children[i].pid,
@@ -968,7 +968,7 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s,
 					error_f("unexpected message 0x%02x "
 					    "child %ld for %s in state %d",
 					    c, (long)children[i].pid,
-					    children[i].id, children[i].flags);
+					    children[i].id, children[i].early);
 				}
 				break;
 			}
