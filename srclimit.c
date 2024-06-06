@@ -388,6 +388,7 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	/* Expiry information is about to change, remove from tree */
 	if (RB_REMOVE(penalties_by_expiry, &penalties_by_expiry,
 	    existing) != existing)
+		fatal_f("internal error: penalty tables corrupt (remove)");
 	/* An entry already existed. Accumulate penalty up to maximum */
 	existing->expiry += penalty_secs;
 	if (existing->expiry - now > penalty_cfg.penalty_max)
@@ -403,7 +404,7 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 	/* Re-insert into expiry tree */
 	if (RB_INSERT(penalties_by_expiry, &penalties_by_expiry,
 	    existing) != NULL)
-		fatal_f("internal error: penalty tables corrupt");
+		fatal_f("internal error: penalty tables corrupt (insert)");
 }
 
 void
