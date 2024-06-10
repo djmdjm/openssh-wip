@@ -219,4 +219,148 @@ Implementations that retrieve KRLs over untrusted channels must verify
 signatures. Signature sections are optional for KRLs distributed by
 trusted means.
 
+7. Bloom filter extensions
+
+A number of extensions that use Bloom filters to reduce the requirement
+to scan entire KRLs are described here.
+
+Each Bloom filter extension corresponds to a revocation section or
+subsection above. For all cases, the Bloom filter extension must
+appear in the KRL before its corresponding revocation block.
+
+Bloom filter set sizes must be a power of two.
+
+7.1 Explicit key Bloom filter extension "bloom-explicit-key"
+
+This extension section allows a KRL generator to specify a Bloom
+filter containing keys in a subsequent KRL_SECTION_EXPLICIT_KEY
+section. KRL consumers wishing to check a particular key may test
+the Bloom filter and, if the key is not a member, skip further
+processing of the subsequent KRL_SECTION_EXPLICIT_KEY section.
+
+If this section is present, it must be before the corresponding
+KRL_SECTION_EXPLICIT_KEY section and the KRL_SECTION_EXPLICIT_KEY
+section must be present in the KRL.
+
+Member keys are added to the Bloom filter by hashing their entire
+key blob. This section has the following format:
+
+	byte	KRL_SECTION_EXTENSION
+	string	extension_contents
+
+Where "extension contents" contains:
+
+	string	"bloom-explicit-key"
+	boolean FALSE (not critical)
+	string	bloom filter contents
+
+Where "bloom filter contents" is a serialized Bloom filter as
+described in section 8.
+
+7.2 Key hash Bloom filter extensions "bloom-key-hash-sha*"
+
+These extensions allows a KRL to contain Bloom filters that correspond
+to KRL_SECTION_FINGERPRINT_SHA1 and KRL_SECTION_FINGERPRINT_SHA256
+sections. Similar to the "bloom-explicit-key" extension, these
+extensions must appear before a section of their corresponding type.
+
+	byte	KRL_SECTION_EXTENSION
+	string	extension_contents
+
+Where "extension contents" contains:
+
+	string	"bloom-key-hash-sha1" or "bloom-key-hash-sha256"
+	boolean FALSE (not critical)
+	string	bloom filter contents
+
+Members of the Bloom filter for these extensions are the respective
+key hashes (hashed again using the Bloom filter hash). "bloom filter
+contents" is a serialized Bloom filter as described in section 8.
+
+7.2 Certificate key ID Bloom filter extension "cert-bloom-key-id"
+
+This certificate section extension allows a KRL reader to skip
+processing of a KRL_SECTION_CERT_KEY_ID subsection if the key under
+test is not an element of the Bloom filter. This extension must
+appear before the KRL_SECTION_CERT_KEY_ID subsection in the
+certificate section of the KRL.
+
+	byte	KRL_SECTION_CERT_EXTENSION
+	string	extension_contents
+
+Where "extension contents" contains:
+
+	string	"cert-bloom-key-id"
+	boolean FALSE (not critical)
+	string	bloom filter contents
+
+Members of the Bloom filter for these extensions are key ID strings.
+"bloom filter contents" is a serialized Bloom filter as described in
+section 8.
+
+7.3 Certificate serial Bloom filter extension "cert-bloom-serial"
+
+This certificate section extension allows a KRL reader to skip
+processing of KRL_SECTION_CERT_SERIAL_* subsections if the key under
+test is not an element of the Bloom filter. This extension must
+appear before any KRL_SECTION_CERT_SERIAL_* subsection in the
+certificate section of the KRL, and at least one such subsection must
+be present following the extension.
+
+	byte	KRL_SECTION_CERT_EXTENSION
+	string	extension_contents
+
+Where "extension contents" contains:
+
+	string	"cert-bloom-serial"
+	boolean FALSE (not critical)
+	string	bloom filter contents
+
+Members of the Bloom filter for these extensions are certificate
+serial numbers converted to 64-bit big endian byte strings for
+presentation to the Bloom filter hash. "bloom filter contents" is a
+serialized Bloom filter as described in section 8.
+
+8. Bloom filter serialization
+
+Bloom filters are serialized using the following format:
+
+	uint32 m
+	uint32 k
+	string hashalg
+	string seed
+	string bitmap
+
+Where "m" is the number of bit members in the filter and must greater
+than 1 and be a power of two, "k" is the number of hash algorithms used
+per element and must be at least 1 and no more than 32, "hashalg" is the
+hash algorithm in use (at present only a single algorithm is supported),
+"seed" is a seed to diversify the hash algorithm and resist adversarial
+hash collisions and "bitmap" is the contents of the Bloom filter bitmap
+in big endian format.
+
+9. The "sha256-ctr" hash algorithm
+
+The algorithm "sha256-ctr" is the hash family used in the Bloom
+filter sections above. As the name suggests, it is based
+on SHA256.
+
+This hash family generates integer hash values modulo the Bloom filter
+size by hashing a 32 byte seed, a counter (represented as big endian
+uint32), and the value to be added or tested in the set. The 256-bit
+output is treated as 8 x 32-bit big endian integers that are then
+reduced modulo the Bloom filter set size ('m'). If more than 8 hash
+values are required then the counter is incremented for each additional
+SHA256 invocation.
+
+In pseudocode:
+
+	ctr = 0
+	while (i < k):
+		raw_hash = SHA256(seed || format_uint32(ctr) || data)
+		for j in range(8):
+			hash_value[i] = get_uint32(raw_hash[j*4:j*4+4]) % m
+			i++
+		ctr++
+
 $OpenBSD: PROTOCOL.krl,v 1.7 2023/07/17 04:01:10 djm Exp $
