@@ -23,12 +23,11 @@
 
 #ifdef WITH_OPENSSL
 #include <openssl/bn.h>
-#include <openssl/ec.h>
+#include <openssl/evp.h>
 #include <openssl/ecdsa.h>
 #else /* OPENSSL */
 #define BIGNUM		void
-#define EC_GROUP	void
-#define EC_POINT	void
+#define EVP_PKEY	void
 #endif /* WITH_OPENSSL */
 
 struct kex;
@@ -184,7 +183,7 @@ int	sshpkt_put_u64(struct ssh *ssh, u_int64_t val);
 int	sshpkt_put_string(struct ssh *ssh, const void *v, size_t len);
 int	sshpkt_put_cstring(struct ssh *ssh, const void *v);
 int	sshpkt_put_stringb(struct ssh *ssh, const struct sshbuf *v);
-int	sshpkt_put_ec(struct ssh *ssh, const EC_POINT *v, const EC_GROUP *g);
+int	sshpkt_put_ec(struct ssh *ssh, EVP_PKEY *pkey);
 int	sshpkt_put_bignum2(struct ssh *ssh, const BIGNUM *v);
 
 int	sshpkt_get(struct ssh *ssh, void *valp, size_t len);
@@ -196,7 +195,7 @@ int	sshpkt_get_string_direct(struct ssh *ssh, const u_char **valp, size_t *lenp)
 int	sshpkt_peek_string_direct(struct ssh *ssh, const u_char **valp, size_t *lenp);
 int	sshpkt_get_cstring(struct ssh *ssh, char **valp, size_t *lenp);
 int	sshpkt_getb_froms(struct ssh *ssh, struct sshbuf **valp);
-int	sshpkt_get_ec(struct ssh *ssh, EC_POINT *v, const EC_GROUP *g);
+int	sshpkt_get_ec(struct ssh *ssh, u_char **pub, size_t *publen);
 int	sshpkt_get_bignum2(struct ssh *ssh, BIGNUM **valp);
 int	sshpkt_get_end(struct ssh *ssh);
 void	sshpkt_fmt_connection_id(struct ssh *ssh, char *s, size_t l);

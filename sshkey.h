@@ -31,16 +31,17 @@
 #ifdef WITH_OPENSSL
 #include <openssl/rsa.h>
 #include <openssl/dsa.h>
-#include <openssl/ec.h>
+#include <openssl/evp.h>
 #include <openssl/ecdsa.h>
 #define SSH_OPENSSL_VERSION OpenSSL_version(OPENSSL_VERSION)
 #else /* OPENSSL */
 #define BIGNUM		void
 #define RSA		void
 #define DSA		void
-#define EC_KEY		void
 #define EC_GROUP	void
+#define EC_KEY		void
 #define EC_POINT	void
+#define EVP_PKEY	void
 #define SSH_OPENSSL_VERSION "without OpenSSL"
 #endif /* WITH_OPENSSL */
 
@@ -119,13 +120,11 @@ struct sshkey_cert {
 struct sshkey {
 	int	 type;
 	int	 flags;
-	/* KEY_RSA */
-	RSA	*rsa;
+	EVP_PKEY *pkey;
 	/* KEY_DSA */
 	DSA	*dsa;
 	/* KEY_ECDSA and KEY_ECDSA_SK */
 	int	 ecdsa_nid;	/* NID of curve */
-	EC_KEY	*ecdsa;
 	/* KEY_ED25519 and KEY_ED25519_SK */
 	u_char	*ed25519_sk;
 	u_char	*ed25519_pk;
@@ -252,7 +251,7 @@ int		 sshkey_curve_name_to_nid(const char *);
 const char *	 sshkey_curve_nid_to_name(int);
 u_int		 sshkey_curve_nid_to_bits(int);
 int		 sshkey_ecdsa_bits_to_nid(int);
-int		 sshkey_ecdsa_key_to_nid(EC_KEY *);
+int		 sshkey_ecdsa_key_to_nid(EVP_PKEY *);
 int		 sshkey_ec_nid_to_hash_alg(int nid);
 int		 sshkey_ec_validate_public(const EC_GROUP *, const EC_POINT *);
 int		 sshkey_ec_validate_private(const EC_KEY *);
@@ -260,6 +259,10 @@ const char	*sshkey_ssh_name(const struct sshkey *);
 const char	*sshkey_ssh_name_plain(const struct sshkey *);
 int		 sshkey_names_valid2(const char *, int, int);
 char		*sshkey_alg_list(int, int, int, char);
+int		 sshkey_pkey_digest_sign(EVP_PKEY*, int, u_char **,
+    int *, const u_char *, size_t);
+int		 sshkey_pkey_digest_verify(EVP_PKEY *, int, const u_char *,
+    size_t, u_char *, int);
 
 int	 sshkey_from_blob(const u_char *, size_t, struct sshkey **);
 int	 sshkey_fromb(struct sshbuf *, struct sshkey **);
@@ -304,7 +307,8 @@ int	sshkey_parse_pubkey_from_private_fileblob_type(struct sshbuf *blob,
 
 int sshkey_check_rsa_length(const struct sshkey *, int);
 /* XXX should be internal, but used by ssh-keygen */
-int ssh_rsa_complete_crt_parameters(struct sshkey *, const BIGNUM *);
+int ssh_rsa_complete_crt_parameters(const BIGNUM *, const BIGNUM *,
+    const BIGNUM *, const BIGNUM *, BIGNUM **, BIGNUM **);
 
 /* stateful keys (e.g. XMSS) */
 int	 sshkey_set_filename(struct sshkey *, const char *);
@@ -332,9 +336,7 @@ int	check_rsa_length(const RSA *rsa); /* XXX remove */
 #ifndef WITH_OPENSSL
 #undef RSA
 #undef DSA
-#undef EC_KEY
-#undef EC_GROUP
-#undef EC_POINT
+#undef EVP_PKEY
 #endif /* WITH_OPENSSL */
 
 #endif /* SSHKEY_H */

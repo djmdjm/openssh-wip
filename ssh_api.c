@@ -52,7 +52,7 @@ int	mm_sshkey_sign(struct sshkey *, u_char **, u_int *,
     const u_char *, u_int, const char *, const char *, const char *, u_int);
 
 #ifdef WITH_OPENSSL
-DH	*mm_choose_dh(int, int, int);
+EVP_PKEY *mm_choose_dh(int min, int nbits, int max);
 #endif
 
 int
@@ -70,7 +70,7 @@ mm_sshkey_sign(struct sshkey *key, u_char **sigp, u_int *lenp,
 }
 
 #ifdef WITH_OPENSSL
-DH *
+EVP_PKEY *
 mm_choose_dh(int min, int nbits, int max)
 {
 	return choose_dh(min, nbits, max);

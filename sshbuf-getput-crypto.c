@@ -22,6 +22,7 @@
 
 #include <openssl/bn.h>
 #include <openssl/ec.h>
+#include <openssl/evp.h>
 
 #include "ssherr.h"
 #define SSHBUF_INTERNAL
@@ -93,6 +94,7 @@ sshbuf_get_eckey(struct sshbuf *buf, EC_KEY *v)
 	const u_char *d;
 	size_t len;
 
+	/* XXX make this allocate the key, nicer to callers */
 	if (pt == NULL) {
 		SSHBUF_DBG(("SSH_ERR_ALLOC_FAIL"));
 		return SSH_ERR_ALLOC_FAIL;
@@ -143,7 +145,7 @@ sshbuf_put_bignum2(struct sshbuf *buf, const BIGNUM *v)
 }
 
 int
-sshbuf_put_ec(struct sshbuf *buf, const EC_POINT *v, const EC_GROUP *g)
+sshbuf_put_ecbuf(struct sshbuf *buf, const EC_POINT *v, const EC_GROUP *g)
 {
 	u_char d[SSHBUF_MAX_ECPOINT];
 	size_t len;
@@ -163,9 +165,14 @@ sshbuf_put_ec(struct sshbuf *buf, const EC_POINT *v, const EC_GROUP *g)
 }
 
 int
-sshbuf_put_eckey(struct sshbuf *buf, const EC_KEY *v)
+sshbuf_put_ec(struct sshbuf *buf, EVP_PKEY *pkey)
 {
-	return sshbuf_put_ec(buf, EC_KEY_get0_public_key(v),
-	    EC_KEY_get0_group(v));
+	const EC_KEY *ec = EVP_PKEY_get0_EC_KEY(pkey);
+
+	if (ec == NULL)
+		return SSH_ERR_LIBCRYPTO_ERROR;
+
+	return sshbuf_put_ecbuf(buf, EC_KEY_get0_public_key(ec),
+	    EC_KEY_get0_group(ec));
 }
 
