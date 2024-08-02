@@ -29,6 +29,7 @@
 #include <string.h>
 #include <limits.h>
 
+#include <openssl/evp.h>
 #include <openssl/bn.h>
 #include <openssl/dh.h>
 
@@ -148,7 +149,7 @@ parse_prime(int linenum, char *line, struct dhgroup *dhg)
 	return 0;
 }
 
-DH *
+EVP_PKEY *
 choose_dh(int min, int wantbits, int max)
 {
 	FILE *f;
@@ -226,14 +227,19 @@ choose_dh(int min, int wantbits, int max)
 /* diffie-hellman-groupN-sha1 */
 
 int
-dh_pub_is_valid(const DH *dh, const BIGNUM *dh_pub)
+dh_pub_is_valid(EVP_PKEY *pkey, const BIGNUM *dh_pub)
 {
 	int i;
 	int n = BN_num_bits(dh_pub);
 	int bits_set = 0;
 	BIGNUM *tmp;
 	const BIGNUM *dh_p;
+	const DH *dh;
 
+	if ((dh = EVP_PKEY_get0_DH(pkey)) == NULL) {
+		logit_f("missing DH value");
+		return 0;
+	}
 	DH_get0_pqg(dh, &dh_p, NULL, NULL);
 
 	if (BN_is_negative(dh_pub)) {
@@ -274,50 +280,79 @@ dh_pub_is_valid(const DH *dh, const BIGNUM *dh_pub)
 }
 
 int
-dh_gen_key(DH *dh, int need)
+dh_gen_key(EVP_PKEY *pkey, int need)
 {
 	int pbits;
 	const BIGNUM *dh_p, *pub_key;
+	DH *dh = NULL;
+	int r = SSH_ERR_INTERNAL_ERROR;
 
+	if (need < 0)
+		return SSH_ERR_INVALID_ARGUMENT;
+	if ((dh = EVP_PKEY_get1_DH(pkey)) == NULL) {
+		r = SSH_ERR_INVALID_ARGUMENT;
+		goto out;
+	}
 	DH_get0_pqg(dh, &dh_p, NULL, NULL);
 
-	if (need < 0 || dh_p == NULL ||
-	    (pbits = BN_num_bits(dh_p)) <= 0 ||
-	    need > INT_MAX / 2 || 2 * need > pbits)
-		return SSH_ERR_INVALID_ARGUMENT;
 	if (need < 256)
 		need = 256;
+	if (dh_p == NULL || (pbits = BN_num_bits(dh_p)) <= 0 ||
+	    need > INT_MAX / 2 || 2 * need > pbits) {
+		r = SSH_ERR_INVALID_ARGUMENT;
+		goto out;
+	}
 	/*
 	 * Pollard Rho, Big step/Little Step attacks are O(sqrt(n)),
 	 * so double requested need here.
 	 */
-	if (!DH_set_length(dh, MINIMUM(need * 2, pbits - 1)))
-		return SSH_ERR_LIBCRYPTO_ERROR;
+	if (!DH_set_length(dh, MINIMUM(need * 2, pbits - 1))) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
 
-	if (DH_generate_key(dh) == 0)
-		return SSH_ERR_LIBCRYPTO_ERROR;
+	if (DH_generate_key(dh) == 0) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
 	DH_get0_key(dh, &pub_key, NULL);
-	if (!dh_pub_is_valid(dh, pub_key))
-		return SSH_ERR_INVALID_FORMAT;
-	return 0;
+	if (!EVP_PKEY_set1_DH(pkey, dh)) {
+		r = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	if (!dh_pub_is_valid(pkey, pub_key)) {
+		r = SSH_ERR_INVALID_FORMAT;
+		goto out;
+	}
+	/* success */
+	r = 0;
+ out:
+	DH_free(dh);
+	return r;
 }
 
-DH *
+EVP_PKEY *
 dh_new_group_asc(const char *gen, const char *modulus)
 {
-	DH *dh;
+	DH *dh = NULL;
+	EVP_PKEY *pkey = NULL;
 	BIGNUM *dh_p = NULL, *dh_g = NULL;
 
-	if ((dh = DH_new()) == NULL)
-		return NULL;
-	if (BN_hex2bn(&dh_p, modulus) == 0 ||
+	if ((dh = DH_new()) == NULL ||
+	    (pkey = EVP_PKEY_new()) == NULL ||
+	    BN_hex2bn(&dh_p, modulus) == 0 ||
 	    BN_hex2bn(&dh_g, gen) == 0)
 		goto fail;
 	if (!DH_set0_pqg(dh, dh_p, NULL, dh_g))
 		goto fail;
-	return dh;
+	dh_p = dh_g = NULL; /* transferred */
+	if (EVP_PKEY_set1_DH(pkey, dh) != 1)
+		goto fail;
+	DH_free(dh);
+	return pkey;
  fail:
 	DH_free(dh);
+	EVP_PKEY_free(pkey);
 	BN_clear_free(dh_p);
 	BN_clear_free(dh_g);
 	return NULL;
@@ -327,23 +362,35 @@ dh_new_group_asc(const char *gen, const char *modulus)
  * This just returns the group, we still need to generate the exchange
  * value.
  */
-DH *
+EVP_PKEY *
 dh_new_group(BIGNUM *gen, BIGNUM *modulus)
 {
-	DH *dh;
+	BIGNUM *copy_gen = NULL, *copy_modulus = NULL;
+	DH *dh = NULL;
+	EVP_PKEY *pkey = NULL;
 
-	if ((dh = DH_new()) == NULL)
-		return NULL;
-	if (!DH_set0_pqg(dh, modulus, NULL, gen)) {
+	if ((dh = DH_new()) == NULL ||
+	    (pkey = EVP_PKEY_new()) == NULL ||
+	    (copy_gen = BN_dup(gen)) == NULL ||
+	    (copy_modulus = BN_dup(modulus)) == NULL ||
+	    !DH_set0_pqg(dh, copy_modulus, NULL, copy_gen))
+		goto fail;
+	copy_modulus = copy_gen = NULL; /* transferred */
+
+	if (EVP_PKEY_set1_DH(pkey, dh) != 1) {
+ fail:
+		BN_free(copy_gen);
+		BN_free(copy_modulus);
 		DH_free(dh);
+		EVP_PKEY_free(pkey);
 		return NULL;
 	}
 
-	return dh;
+	return pkey;
 }
 
 /* rfc2409 "Second Oakley Group" (1024 bits) */
-DH *
+EVP_PKEY *
 dh_new_group1(void)
 {
 	static char *gen = "2", *group1 =
@@ -358,7 +405,7 @@ dh_new_group1(void)
 }
 
 /* rfc3526 group 14 "2048-bit MODP Group" */
-DH *
+EVP_PKEY *
 dh_new_group14(void)
 {
 	static char *gen = "2", *group14 =
@@ -378,7 +425,7 @@ dh_new_group14(void)
 }
 
 /* rfc3526 group 16 "4096-bit MODP Group" */
-DH *
+EVP_PKEY *
 dh_new_group16(void)
 {
 	static char *gen = "2", *group16 =
@@ -409,7 +456,7 @@ dh_new_group16(void)
 }
 
 /* rfc3526 group 18 "8192-bit MODP Group" */
-DH *
+EVP_PKEY *
 dh_new_group18(void)
 {
 	static char *gen = "2", *group18 =
@@ -461,7 +508,7 @@ dh_new_group18(void)
 }
 
 /* Select fallback group used by DH-GEX if moduli file cannot be read. */
-DH *
+EVP_PKEY *
 dh_new_group_fallback(int max)
 {
 	debug3_f("requested max size %d", max);

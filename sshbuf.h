@@ -28,6 +28,7 @@
 #include <openssl/ecdsa.h>
 #else /* OPENSSL */
 #define BIGNUM		void
+#define EVP_PKEY	void
 #define EC_KEY		void
 #define EC_GROUP	void
 #define EC_POINT	void
@@ -224,8 +225,8 @@ int	sshbuf_put_bignum2(struct sshbuf *buf, const BIGNUM *v);
 int	sshbuf_put_bignum2_bytes(struct sshbuf *buf, const void *v, size_t len);
 int	sshbuf_get_ec(struct sshbuf *buf, EC_POINT *v, const EC_GROUP *g);
 int	sshbuf_get_eckey(struct sshbuf *buf, EC_KEY *v);
-int	sshbuf_put_ec(struct sshbuf *buf, const EC_POINT *v, const EC_GROUP *g);
-int	sshbuf_put_eckey(struct sshbuf *buf, const EC_KEY *v);
+int	sshbuf_put_ecbuf(struct sshbuf *buf, const EC_POINT *v, const EC_GROUP *g);
+int	sshbuf_put_ec(struct sshbuf *buf, EVP_PKEY *pkey);
 
 /* Dump the contents of the buffer in a human-readable format */
 void	sshbuf_dump(const struct sshbuf *buf, FILE *f);

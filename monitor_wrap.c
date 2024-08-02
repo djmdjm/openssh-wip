@@ -219,13 +219,14 @@ mm_request_receive_expect(int sock, enum monitor_reqtype type, struct sshbuf *m)
 }
 
 #ifdef WITH_OPENSSL
-DH *
+EVP_PKEY *
 mm_choose_dh(int min, int nbits, int max)
 {
 	BIGNUM *p, *g;
 	int r;
 	u_char success = 0;
 	struct sshbuf *m;
+	EVP_PKEY *pkey;
 
 	if ((m = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new failed");
@@ -251,7 +252,10 @@ mm_choose_dh(int min, int nbits, int max)
 	debug3_f("remaining %zu", sshbuf_len(m));
 	sshbuf_free(m);
 
-	return (dh_new_group(g, p));
+	pkey = dh_new_group(g, p);
+	BN_free(g);
+	BN_free(p);
+	return pkey;
 }
 #endif
 

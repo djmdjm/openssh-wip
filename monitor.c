@@ -505,7 +505,7 @@ monitor_reset_key_state(void)
 int
 mm_answer_moduli(struct ssh *ssh, int sock, struct sshbuf *m)
 {
-	DH *dh;
+	EVP_PKEY *dh_pkey;
 	const BIGNUM *dh_p, *dh_g;
 	int r;
 	u_int min, want, max;
@@ -522,20 +522,19 @@ mm_answer_moduli(struct ssh *ssh, int sock, struct sshbuf *m)
 
 	sshbuf_reset(m);
 
-	dh = choose_dh(min, want, max);
-	if (dh == NULL) {
+	if ((dh_pkey = choose_dh(min, want, max)) == NULL) {
 		if ((r = sshbuf_put_u8(m, 0)) != 0)
 			fatal_fr(r, "assemble empty");
 		return (0);
 	} else {
 		/* Send first bignum */
-		DH_get0_pqg(dh, &dh_p, NULL, &dh_g);
+		DH_get0_pqg(EVP_PKEY_get0_DH(dh_pkey), &dh_p, NULL, &dh_g);
 		if ((r = sshbuf_put_u8(m, 1)) != 0 ||
 		    (r = sshbuf_put_bignum2(m, dh_p)) != 0 ||
 		    (r = sshbuf_put_bignum2(m, dh_g)) != 0)
 			fatal_fr(r, "assemble");
 
-		DH_free(dh);
+		EVP_PKEY_free(dh_pkey);
 	}
 	mm_request_send(sock, MONITOR_ANS_MODULI, m);
 	return (0);
