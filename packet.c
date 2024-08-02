@@ -2617,6 +2617,11 @@ sshpkt_put_ec(struct ssh *ssh, const EC_POINT *v, const EC_GROUP *g)
 	return sshbuf_put_ec(ssh->state->outgoing_packet, v, g);
 }
 
+int
+sshpkt_put_ec_pkey(struct ssh *ssh, EVP_PKEY *pkey)
+{
+	return sshbuf_put_ec_pkey(ssh->state->outgoing_packet, pkey);
+}
 
 int
 sshpkt_put_bignum2(struct ssh *ssh, const BIGNUM *v)

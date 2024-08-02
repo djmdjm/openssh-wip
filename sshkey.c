@@ -460,6 +460,99 @@ sshkey_type_certified(int type)
 }
 
 #ifdef WITH_OPENSSL
+static const EVP_MD *
+ssh_digest_to_md(int digest_type)
+{
+	switch (digest_type) {
+	case SSH_DIGEST_SHA1:
+		return EVP_sha1();
+	case SSH_DIGEST_SHA256:
+		return EVP_sha256();
+	case SSH_DIGEST_SHA384:
+		return EVP_sha384();
+	case SSH_DIGEST_SHA512:
+		return EVP_sha512();
+	}
+	return NULL;
+}
+
+int
+sshkey_pkey_digest_sign(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
+    int *lenp, const u_char *data, size_t datalen)
+{
+	EVP_MD_CTX *ctx = NULL;
+	u_char *sig = NULL;
+	int ret, slen;
+	size_t len;
+
+	*sigp = NULL;
+	*lenp = 0;
+
+	slen = EVP_PKEY_size(pkey);
+	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
+		return SSH_ERR_INVALID_ARGUMENT;
+
+	if ((sig = malloc(slen)) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+
+	if ((ctx = EVP_MD_CTX_new()) == NULL) {
+		ret = SSH_ERR_ALLOC_FAIL;
+		goto error;
+	}
+	len = slen;
+	if (EVP_DigestSignInit(ctx, NULL, ssh_digest_to_md(hash_alg),
+	        NULL, pkey) != 1 ||
+	    EVP_DigestSignUpdate(ctx, data, datalen) != 1 ||
+	    EVP_DigestSignFinal(ctx, sig, &len) != 1) {
+		ret = SSH_ERR_LIBCRYPTO_ERROR;
+		goto error;
+	}
+
+	*sigp = sig;
+	*lenp = len;
+	/* Now owned by the caller */
+	sig = NULL;
+	ret = 0;
+
+error:
+	EVP_MD_CTX_free(ctx);
+	free(sig);
+	return ret;
+}
+
+int
+sshkey_pkey_digest_verify(EVP_PKEY *pkey, int hash_alg, const u_char *data,
+    size_t datalen, u_char *sigbuf, int siglen)
+{
+	EVP_MD_CTX *ctx = NULL;
+	int ret = SSH_ERR_INTERNAL_ERROR;
+
+	if ((ctx = EVP_MD_CTX_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	if (EVP_DigestVerifyInit(ctx, NULL, ssh_digest_to_md(hash_alg),
+	    NULL, pkey) != 1 ||
+	    EVP_DigestVerifyUpdate(ctx, data, datalen) != 1) {
+		ret = SSH_ERR_LIBCRYPTO_ERROR;
+		goto done;
+	}
+	ret = EVP_DigestVerifyFinal(ctx, sigbuf, siglen);
+	switch (ret) {
+	case 1:
+		ret = 0;
+		break;
+	case 0:
+		ret = SSH_ERR_SIGNATURE_INVALID;
+		break;
+	default:
+		ret = SSH_ERR_LIBCRYPTO_ERROR;
+		break;
+	}
+
+done:
+	EVP_MD_CTX_free(ctx);
+	return ret;
+}
+
 /* XXX: these are really begging for a table-driven approach */
 int
 sshkey_curve_name_to_nid(const char *name)
@@ -1302,14 +1395,12 @@ int
 sshkey_check_rsa_length(const struct sshkey *k, int min_size)
 {
 #ifdef WITH_OPENSSL
-	const BIGNUM *rsa_n;
 	int nbits;
 
-	if (k == NULL || k->rsa == NULL ||
+	if (k == NULL || k->pkey == NULL ||
 	    (k->type != KEY_RSA && k->type != KEY_RSA_CERT))
 		return 0;
-	RSA_get0_key(k->rsa, &rsa_n, NULL, NULL);
-	nbits = BN_num_bits(rsa_n);
+	nbits = EVP_PKEY_bits(k->pkey);
 	if (nbits < SSH_RSA_MINIMUM_MODULUS_SIZE ||
 	    (min_size > 0 && nbits < min_size))
 		return SSH_ERR_KEY_LENGTH;
@@ -1358,6 +1449,19 @@ sshkey_ecdsa_key_to_nid(EC_KEY *k)
 		}
 	}
 	return nids[i];
+}
+
+int
+sshkey_ecdsa_pkey_to_nid(EVP_PKEY *pkey)
+{
+	int nid;
+	EC_KEY *ec;
+
+	if ((ec = EVP_PKEY_get1_EC_KEY(pkey)) == NULL)
+		return -1;
+	nid = sshkey_ecdsa_key_to_nid(ec);
+	EC_KEY_free(ec);
+	return nid;
 }
 #endif /* WITH_OPENSSL */
 
