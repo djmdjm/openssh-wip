@@ -886,6 +886,11 @@ pkcs11_fetch_rsa_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 		goto fail;
 	}
 
+	EVP_PKEY_free(key->pkey);
+	if ((key->pkey = EVP_PKEY_new()) == NULL)
+		fatal("EVP_PKEY_new failed");
+	if (EVP_PKEY_set1_RSA(key->pkey, rsa) != 1)
+		fatal("EVP_PKEY_set1_RSA failed");
 	key->rsa = rsa;
 	key->type = KEY_RSA;
 	key->flags |= SSHKEY_FLAG_EXT;
@@ -997,6 +1002,11 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 			goto out;
 		}
 
+		EVP_PKEY_free(key->pkey);
+		if ((key->pkey = EVP_PKEY_new()) == NULL)
+			fatal("EVP_PKEY_new failed");
+		if (EVP_PKEY_set1_RSA(key->pkey, rsa) != 1)
+			fatal("EVP_PKEY_set1_RSA failed");
 		key->rsa = rsa;
 		key->type = KEY_RSA;
 		key->flags |= SSHKEY_FLAG_EXT;
