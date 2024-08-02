@@ -3520,6 +3520,8 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 		}
 		if ((r = sshkey_check_rsa_length(prv, 0)) != 0)
 			goto out;
+		EVP_PKEY_up_ref(pk);
+		prv->pkey = pk;
 #ifdef WITH_DSA
 	} else if (EVP_PKEY_base_id(pk) == EVP_PKEY_DSA &&
 	    (type == KEY_UNSPEC || type == KEY_DSA)) {
@@ -3550,6 +3552,8 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
 		}
+		EVP_PKEY_up_ref(pk);
+		prv->pkey = pk;
 #ifdef DEBUG_PK
 		if (prv != NULL && prv->ecdsa != NULL)
 			sshkey_dump_ec_key(prv->ecdsa);

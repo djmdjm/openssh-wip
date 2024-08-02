@@ -473,6 +473,8 @@ do_convert_private_ssh2(struct sshbuf *b)
 #endif
 	BIGNUM *rsa_n = NULL, *rsa_e = NULL, *rsa_d = NULL;
 	BIGNUM *rsa_p = NULL, *rsa_q = NULL, *rsa_iqmp = NULL;
+	BIGNUM *rsa_dmp1 = NULL, *rsa_dmq1 = NULL;
+	RSA *rsa = NULL;
 
 	if ((r = sshbuf_get_u32(b, &magic)) != 0)
 		fatal_fr(r, "parse magic");
@@ -567,15 +569,25 @@ do_convert_private_ssh2(struct sshbuf *b)
 		buffer_get_bignum_bits(b, rsa_iqmp);
 		buffer_get_bignum_bits(b, rsa_q);
 		buffer_get_bignum_bits(b, rsa_p);
-		if (!RSA_set0_key(key->rsa, rsa_n, rsa_e, rsa_d))
+		if ((r = ssh_rsa_complete_crt_parameters(rsa_d, rsa_p, rsa_q,
+		    rsa_iqmp, &rsa_dmp1, &rsa_dmq1)) != 0)
+			fatal_fr(r, "generate RSA CRT parameters");
+		if ((key->pkey = EVP_PKEY_new()) == NULL)
+			fatal_f("EVP_PKEY_new failed");
+		if ((rsa = RSA_new()) == NULL)
+			fatal_f("RSA_new failed");
+		if (!RSA_set0_key(rsa, rsa_n, rsa_e, rsa_d))
 			fatal_f("RSA_set0_key failed");
 		rsa_n = rsa_e = rsa_d = NULL; /* transferred */
-		if (!RSA_set0_factors(key->rsa, rsa_p, rsa_q))
+		if (!RSA_set0_factors(rsa, rsa_p, rsa_q))
 			fatal_f("RSA_set0_factors failed");
 		rsa_p = rsa_q = NULL; /* transferred */
-		if ((r = ssh_rsa_complete_crt_parameters(key, rsa_iqmp)) != 0)
-			fatal_fr(r, "generate RSA parameters");
-		BN_clear_free(rsa_iqmp);
+		if (RSA_set0_crt_params(rsa, rsa_dmp1, rsa_dmq1, rsa_iqmp) != 1)
+			fatal_f("RSA_set0_crt_params failed");
+		rsa_dmp1 = rsa_dmq1 = rsa_iqmp = NULL;
+		if (EVP_PKEY_set1_RSA(key->pkey, rsa) != 1)
+			fatal_f("EVP_PKEY_set1_RSA failed");
+		key->rsa = rsa;
 		alg = "rsa-sha2-256";
 		break;
 	}
@@ -695,7 +707,11 @@ do_convert_from_pkcs8(struct sshkey **k, int *private)
 		if ((*k = sshkey_new(KEY_UNSPEC)) == NULL)
 			fatal("sshkey_new failed");
 		(*k)->type = KEY_RSA;
-		(*k)->rsa = EVP_PKEY_get1_RSA(pubkey);
+		(*k)->pkey = pubkey;
+		EVP_PKEY_up_ref((*k)->pkey);
+		if (((*k)->rsa = EVP_PKEY_get1_RSA(pubkey)) == NULL)
+			fatal_f("EVP_PKEY_get1_RSA failed");
+		pubkey = NULL;
 		break;
 #ifdef WITH_DSA
 	case EVP_PKEY_DSA:
@@ -731,8 +747,12 @@ do_convert_from_pem(struct sshkey **k, int *private)
 	if ((rsa = PEM_read_RSAPublicKey(fp, NULL, NULL, NULL)) != NULL) {
 		if ((*k = sshkey_new(KEY_UNSPEC)) == NULL)
 			fatal("sshkey_new failed");
+		if (((*k)->pkey = EVP_PKEY_new()) == NULL)
+			fatal("EVP_PKEY_new failed");
 		(*k)->type = KEY_RSA;
 		(*k)->rsa = rsa;
+		if (EVP_PKEY_set1_RSA((*k)->pkey, rsa) != 1)
+			fatal("EVP_PKEY_set1_RSA failed");
 		fclose(fp);
 		return;
 	}
