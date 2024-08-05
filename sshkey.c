@@ -1409,58 +1409,19 @@ sshkey_check_rsa_length(const struct sshkey *k, int min_size)
 
 #ifdef WITH_OPENSSL
 int
-sshkey_ecdsa_key_to_nid(EC_KEY *k)
+sshkey_ecdsa_key_to_nid(const EC_KEY *k)
 {
-	EC_GROUP *eg;
-	int nids[] = {
-		NID_X9_62_prime256v1,
-		NID_secp384r1,
-		NID_secp521r1,
-		-1
-	};
-	int nid;
-	u_int i;
-	const EC_GROUP *g = EC_KEY_get0_group(k);
+	const EC_GROUP *g;
 
-	/*
-	 * The group may be stored in a ASN.1 encoded private key in one of two
-	 * ways: as a "named group", which is reconstituted by ASN.1 object ID
-	 * or explicit group parameters encoded into the key blob. Only the
-	 * "named group" case sets the group NID for us, but we can figure
-	 * it out for the other case by comparing against all the groups that
-	 * are supported.
-	 */
-	if ((nid = EC_GROUP_get_curve_name(g)) > 0)
-		return nid;
-	for (i = 0; nids[i] != -1; i++) {
-		if ((eg = EC_GROUP_new_by_curve_name(nids[i])) == NULL)
-			return -1;
-		if (EC_GROUP_cmp(g, eg, NULL) == 0)
-			break;
-		EC_GROUP_free(eg);
-	}
-	if (nids[i] != -1) {
-		/* Use the group with the NID attached */
-		EC_GROUP_set_asn1_flag(eg, OPENSSL_EC_NAMED_CURVE);
-		if (EC_KEY_set_group(k, eg) != 1) {
-			EC_GROUP_free(eg);
-			return -1;
-		}
-	}
-	return nids[i];
+	if (k == NULL || (g = EC_KEY_get0_group(k)) == NULL)
+		return -1;
+	return EC_GROUP_get_curve_name(g);
 }
 
 int
 sshkey_ecdsa_pkey_to_nid(EVP_PKEY *pkey)
 {
-	int nid;
-	EC_KEY *ec;
-
-	if ((ec = EVP_PKEY_get1_EC_KEY(pkey)) == NULL)
-		return -1;
-	nid = sshkey_ecdsa_key_to_nid(ec);
-	EC_KEY_free(ec);
-	return nid;
+	return sshkey_ecdsa_key_to_nid(EVP_PKEY_get0_EC_KEY(pkey));
 }
 #endif /* WITH_OPENSSL */
 
@@ -3541,9 +3502,12 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 			r = SSH_ERR_ALLOC_FAIL;
 			goto out;
 		}
+		if ((prv->ecdsa_nid = sshkey_ecdsa_fixup_group(pk)) == -1) {
+			r = SSH_ERR_LIBCRYPTO_ERROR;
+			goto out;
+		}
 		prv->ecdsa = EVP_PKEY_get1_EC_KEY(pk);
 		prv->type = KEY_ECDSA;
-		prv->ecdsa_nid = sshkey_ecdsa_key_to_nid(prv->ecdsa);
 		if (prv->ecdsa_nid == -1 ||
 		    sshkey_curve_nid_to_name(prv->ecdsa_nid) == NULL ||
 		    sshkey_ec_validate_public(EC_KEY_get0_group(prv->ecdsa),
