@@ -256,7 +256,7 @@ int		 sshkey_curve_name_to_nid(const char *);
 const char *	 sshkey_curve_nid_to_name(int);
 u_int		 sshkey_curve_nid_to_bits(int);
 int		 sshkey_ecdsa_bits_to_nid(int);
-int		 sshkey_ecdsa_key_to_nid(EC_KEY *);
+int		 sshkey_ecdsa_key_to_nid(const EC_KEY *);
 int		 sshkey_ecdsa_pkey_to_nid(EVP_PKEY *);
 int		 sshkey_ec_nid_to_hash_alg(int nid);
 int		 sshkey_ec_validate_public(const EC_GROUP *, const EC_POINT *);
@@ -326,6 +326,10 @@ int	 sshkey_private_serialize_maxsign(struct sshkey *key,
     struct sshbuf *buf, u_int32_t maxsign, int);
 
 void	 sshkey_sig_details_free(struct sshkey_sig_details *);
+
+#ifdef WITH_OPENSSL
+int	sshkey_ecdsa_fixup_group(EVP_PKEY *k); /* ssh-ecdsa.c */
+#endif
 
 #ifdef SSHKEY_INTERNAL
 int	sshkey_sk_fields_equal(const struct sshkey *a, const struct sshkey *b);

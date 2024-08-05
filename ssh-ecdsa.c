@@ -38,6 +38,58 @@
 #define SSHKEY_INTERNAL
 #include "sshkey.h"
 
+int
+sshkey_ecdsa_fixup_group(EVP_PKEY *k)
+{
+	int nids[] = {
+		NID_X9_62_prime256v1,
+		NID_secp384r1,
+		NID_secp521r1,
+		-1
+	};
+	int nid = -1;
+	u_int i;
+	const EC_GROUP *g;
+	EC_KEY *ec = NULL;
+	EC_GROUP *eg = NULL;
+
+	if ((ec = EVP_PKEY_get1_EC_KEY(k)) == NULL ||
+	    (g = EC_KEY_get0_group(ec)) == NULL)
+		goto out;
+	/*
+	 * The group may be stored in a ASN.1 encoded private key in one of two
+	 * ways: as a "named group", which is reconstituted by ASN.1 object ID
+	 * or explicit group parameters encoded into the key blob. Only the
+	 * "named group" case sets the group NID for us, but we can figure
+	 * it out for the other case by comparing against all the groups that
+	 * are supported.
+	 */
+	if ((nid = EC_GROUP_get_curve_name(g)) > 0)
+		goto out;
+	for (i = 0; nids[i] != -1; i++) {
+		if ((eg = EC_GROUP_new_by_curve_name(nids[i])) == NULL)
+			goto out;
+		if (EC_GROUP_cmp(g, eg, NULL) == 0)
+			break;
+		EC_GROUP_free(eg);
+		eg = NULL;
+	}
+	if (nids[i] == -1)
+		goto out;
+
+	/* Use the group with the NID attached */
+	EC_GROUP_set_asn1_flag(eg, OPENSSL_EC_NAMED_CURVE);
+	if (EC_KEY_set_group(ec, eg) != 1 ||
+	    EVP_PKEY_set1_EC_KEY(k, ec) != 1)
+		goto out;
+	/* success */
+	nid = nids[i];
+ out:
+	EC_KEY_free(ec);
+	EC_GROUP_free(eg);
+	return nid;
+}
+
 static u_int
 ssh_ecdsa_size(const struct sshkey *key)
 {

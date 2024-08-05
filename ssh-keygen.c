@@ -723,11 +723,12 @@ do_convert_from_pkcs8(struct sshkey **k, int *private)
 	case EVP_PKEY_EC:
 		if ((*k = sshkey_new(KEY_UNSPEC)) == NULL)
 			fatal("sshkey_new failed");
+		if (((*k)->ecdsa_nid = sshkey_ecdsa_fixup_group(pubkey)) == -1)
+			fatal("sshkey_ecdsa_fixup_group failed");
 		(*k)->type = KEY_ECDSA;
 		(*k)->pkey = pubkey;
 		if (((*k)->ecdsa = EVP_PKEY_get1_EC_KEY(pubkey)) == NULL)
 			fatal_f("EVP_PKEY_get1_EC_KEY failed");
-		(*k)->ecdsa_nid = sshkey_ecdsa_key_to_nid((*k)->ecdsa);
 		pubkey = NULL;
 		break;
 	default:
