@@ -461,9 +461,9 @@ sshkey_type_certified(int type)
 
 #ifdef WITH_OPENSSL
 static const EVP_MD *
-ssh_digest_to_md(int digest_type)
+ssh_digest_to_md(int hash_alg)
 {
-	switch (digest_type) {
+	switch (hash_alg) {
 	case SSH_DIGEST_SHA1:
 		return EVP_sha1();
 	case SSH_DIGEST_SHA256:
@@ -482,14 +482,16 @@ sshkey_pkey_digest_sign(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
 {
 	EVP_MD_CTX *ctx = NULL;
 	u_char *sig = NULL;
-	int ret, slen;
-	size_t len;
+	int ret;
+	size_t slen;
+	const EVP_MD *evpmd;
 
 	*sigp = NULL;
 	*lenp = 0;
 
 	slen = EVP_PKEY_size(pkey);
-	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
+	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM ||
+	   (evpmd = ssh_digest_to_md(hash_alg)) == NULL)
 		return SSH_ERR_INVALID_ARGUMENT;
 
 	if ((sig = malloc(slen)) == NULL)
@@ -497,24 +499,21 @@ sshkey_pkey_digest_sign(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
 
 	if ((ctx = EVP_MD_CTX_new()) == NULL) {
 		ret = SSH_ERR_ALLOC_FAIL;
-		goto error;
+		goto out;
 	}
-	len = slen;
-	if (EVP_DigestSignInit(ctx, NULL, ssh_digest_to_md(hash_alg),
-	        NULL, pkey) != 1 ||
-	    EVP_DigestSignUpdate(ctx, data, datalen) != 1 ||
-	    EVP_DigestSignFinal(ctx, sig, &len) != 1) {
+	if (EVP_DigestSignInit(ctx, NULL, evpmd, NULL, pkey) != 1 ||
+	    EVP_DigestSign(ctx, sig, &slen, data, datalen) != 1) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto error;
+		goto out;
 	}
 
 	*sigp = sig;
-	*lenp = len;
+	*lenp = slen;
 	/* Now owned by the caller */
 	sig = NULL;
 	ret = 0;
 
-error:
+out:
 	EVP_MD_CTX_free(ctx);
 	free(sig);
 	return ret;
@@ -526,17 +525,17 @@ sshkey_pkey_digest_verify(EVP_PKEY *pkey, int hash_alg, const u_char *data,
 {
 	EVP_MD_CTX *ctx = NULL;
 	int ret = SSH_ERR_INTERNAL_ERROR;
+	const EVP_MD *evpmd;
 
+	if ((evpmd = ssh_digest_to_md(hash_alg)) == NULL)
+		return SSH_ERR_INVALID_ARGUMENT;
 	if ((ctx = EVP_MD_CTX_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	if (EVP_DigestVerifyInit(ctx, NULL, ssh_digest_to_md(hash_alg),
-	    NULL, pkey) != 1 ||
-	    EVP_DigestVerifyUpdate(ctx, data, datalen) != 1) {
+	if (EVP_DigestVerifyInit(ctx, NULL, evpmd, NULL, pkey) != 1) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto done;
+		goto out;
 	}
-	ret = EVP_DigestVerifyFinal(ctx, sigbuf, siglen);
-	switch (ret) {
+	switch (EVP_DigestVerify(ctx, sigbuf, siglen, data, datalen)) {
 	case 1:
 		ret = 0;
 		break;
@@ -548,7 +547,7 @@ sshkey_pkey_digest_verify(EVP_PKEY *pkey, int hash_alg, const u_char *data,
 		break;
 	}
 
-done:
+out:
 	EVP_MD_CTX_free(ctx);
 	return ret;
 }
