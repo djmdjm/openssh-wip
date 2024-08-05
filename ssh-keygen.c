@@ -708,7 +708,6 @@ do_convert_from_pkcs8(struct sshkey **k, int *private)
 			fatal("sshkey_new failed");
 		(*k)->type = KEY_RSA;
 		(*k)->pkey = pubkey;
-		EVP_PKEY_up_ref((*k)->pkey);
 		if (((*k)->rsa = EVP_PKEY_get1_RSA(pubkey)) == NULL)
 			fatal_f("EVP_PKEY_get1_RSA failed");
 		pubkey = NULL;

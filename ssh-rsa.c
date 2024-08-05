@@ -59,9 +59,9 @@ ssh_rsa_cleanup(struct sshkey *k)
 static int
 ssh_rsa_equal(const struct sshkey *a, const struct sshkey *b)
 {
-	if (EVP_PKEY_cmp(a->pkey, b->pkey) == 1)
-		return 1;
-	return 1;
+	if (a->pkey == NULL || b->pkey == NULL)
+		return 0;
+	return EVP_PKEY_cmp(a->pkey, b->pkey);
 }
 
 static int
