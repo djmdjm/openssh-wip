@@ -725,10 +725,10 @@ do_convert_from_pkcs8(struct sshkey **k, int *private)
 			fatal("sshkey_new failed");
 		(*k)->type = KEY_ECDSA;
 		(*k)->pkey = pubkey;
-		EVP_PKEY_up_ref((*k)->pkey);
 		if (((*k)->ecdsa = EVP_PKEY_get1_EC_KEY(pubkey)) == NULL)
 			fatal_f("EVP_PKEY_get1_EC_KEY failed");
 		(*k)->ecdsa_nid = sshkey_ecdsa_key_to_nid((*k)->ecdsa);
+		pubkey = NULL;
 		break;
 	default:
 		fatal_f("unsupported pubkey type %d",

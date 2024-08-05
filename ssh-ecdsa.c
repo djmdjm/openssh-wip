@@ -65,10 +65,9 @@ ssh_ecdsa_cleanup(struct sshkey *k)
 static int
 ssh_ecdsa_equal(const struct sshkey *a, const struct sshkey *b)
 {
-	if (EVP_PKEY_cmp(a->pkey, b->pkey) == 1)
-		return 1;
-
-	return 0;
+	if (a->pkey == NULL || b->pkey == NULL)
+		return 0;
+	return EVP_PKEY_cmp(a->pkey, b->pkey);
 }
 
 static int
