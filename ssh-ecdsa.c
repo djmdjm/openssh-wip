@@ -108,8 +108,6 @@ ssh_ecdsa_size(const struct sshkey *key)
 static void
 ssh_ecdsa_cleanup(struct sshkey *k)
 {
-	EC_KEY_free(k->ecdsa);
-	k->ecdsa = NULL;
 	EVP_PKEY_free(k->pkey);
 	k->pkey = NULL;
 }
@@ -173,11 +171,6 @@ ssh_ecdsa_generate(struct sshkey *k, int bits)
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	if ((k->ecdsa = EVP_PKEY_get1_EC_KEY(res)) == NULL) {
-		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
-
 	/* success */
 	k->pkey = res;
 	res = NULL;
@@ -217,8 +210,6 @@ ssh_ecdsa_copy_public(const struct sshkey *from, struct sshkey *to)
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	to->ecdsa = ec_to;
-	ec_to = NULL;
 	ret = 0;
  out:
 	EC_KEY_free(ec_to);
@@ -264,8 +255,6 @@ ssh_ecdsa_deserialize_public(const char *ktype, struct sshbuf *b,
 	EVP_PKEY_free(key->pkey);
 	key->pkey = pkey;
 	pkey = NULL;
-	key->ecdsa = ec;
-	ec = NULL;
 	/* success */
 	r = 0;
 #ifdef DEBUG_PK
@@ -312,8 +301,6 @@ ssh_ecdsa_deserialize_private(const char *ktype, struct sshbuf *b,
 		goto out;
 	}
 	/* success */
-	key->ecdsa = ec;
-	ec = NULL;
 	r = 0;
  out:
 	BN_clear_free(exponent);

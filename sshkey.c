@@ -3277,7 +3277,8 @@ sshkey_private_to_blob_pem_pkcs8(struct sshkey *key, struct sshbuf *buf,
 #endif
 	case KEY_ECDSA:
 		if (format == SSHKEY_PRIVATE_PEM) {
-			success = PEM_write_bio_ECPrivateKey(bio, key->ecdsa,
+			success = PEM_write_bio_ECPrivateKey(bio,
+			    EVP_PKEY_get0_EC_KEY(key->pkey),
 			    cipher, passphrase, len, NULL, NULL);
 		} else {
 			pkey = key->pkey;
@@ -3443,6 +3444,7 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 	BIO *bio = NULL;
 	int r;
 	RSA *rsa = NULL;
+	EC_KEY *ecdsa = NULL;
 
 	if (keyp != NULL)
 		*keyp = NULL;
@@ -3512,25 +3514,25 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 			r = SSH_ERR_ALLOC_FAIL;
 			goto out;
 		}
-		if ((prv->ecdsa_nid = sshkey_ecdsa_fixup_group(pk)) == -1) {
+		if ((prv->ecdsa_nid = sshkey_ecdsa_fixup_group(pk)) == -1 ||
+		    (ecdsa = EVP_PKEY_get1_EC_KEY(pk)) == NULL) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
 		}
-		prv->ecdsa = EVP_PKEY_get1_EC_KEY(pk);
 		prv->type = KEY_ECDSA;
 		if (prv->ecdsa_nid == -1 ||
 		    sshkey_curve_nid_to_name(prv->ecdsa_nid) == NULL ||
-		    sshkey_ec_validate_public(EC_KEY_get0_group(prv->ecdsa),
-		    EC_KEY_get0_public_key(prv->ecdsa)) != 0 ||
-		    sshkey_ec_validate_private(prv->ecdsa) != 0) {
+		    sshkey_ec_validate_public(EC_KEY_get0_group(ecdsa),
+		    EC_KEY_get0_public_key(ecdsa)) != 0 ||
+		    sshkey_ec_validate_private(ecdsa) != 0) {
 			r = SSH_ERR_INVALID_FORMAT;
 			goto out;
 		}
 		EVP_PKEY_up_ref(pk);
 		prv->pkey = pk;
 #ifdef DEBUG_PK
-		if (prv != NULL && prv->ecdsa != NULL)
-			sshkey_dump_ec_key(prv->ecdsa);
+		if (prv != NULL && prv->pkey != NULL)
+			sshkey_dump_ec_key(EVP_PKEY_get0_EC_KEY(prv->pkey));
 #endif
 	} else if (EVP_PKEY_base_id(pk) == EVP_PKEY_ED25519 &&
 	    (type == KEY_UNSPEC || type == KEY_ED25519)) {
@@ -3580,6 +3582,7 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 	BIO_free(bio);
 	EVP_PKEY_free(pk);
 	RSA_free(rsa);
+	EC_KEY_free(ecdsa);
 	sshkey_free(prv);
 	return r;
 }

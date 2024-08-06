@@ -796,11 +796,9 @@ pkcs11_fetch_ecdsa_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 		fatal("EVP_PKEY_new failed");
 	if (EVP_PKEY_set1_EC_KEY(key->pkey, ec) != 1)
 		fatal("EVP_PKEY_set1_EC_KEY failed");
-	key->ecdsa = ec;
 	key->ecdsa_nid = nid;
 	key->type = KEY_ECDSA;
 	key->flags |= SSHKEY_FLAG_EXT;
-	ec = NULL;	/* now owned by key */
 
 fail:
 	for (i = 0; i < 3; i++)
@@ -1042,11 +1040,9 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 			fatal("EVP_PKEY_new failed");
 		if (EVP_PKEY_set1_EC_KEY(key->pkey, ec) != 1)
 			fatal("EVP_PKEY_set1_EC_KEY failed");
-		key->ecdsa = ec;
 		key->ecdsa_nid = nid;
 		key->type = KEY_ECDSA;
 		key->flags |= SSHKEY_FLAG_EXT;
-		ec = NULL;	/* now owned by key */
 	} else {
 		error("unknown certificate key type");
 		goto out;
