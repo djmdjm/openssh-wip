@@ -360,6 +360,13 @@ child_reap(struct early_child *child)
 			    (long)child->pid, child->id,
 			    child->early ? " (early)" : "");
 			break;
+		case EXIT_AUTH_BADUSER:
+			penalty_type = SRCLIMIT_PENALTY_BADUSER;
+			debug_f("preauth child %ld for %s exited "
+			    "after auth attempt against invalid user %s",
+			    (long)child->pid, child->id,
+			    child->early ? " (early)" : "");
+			break;
 		default:
 			penalty_type = SRCLIMIT_PENALTY_NOAUTH;
 			debug_f("preauth child %ld for %s exited "

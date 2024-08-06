@@ -379,6 +379,10 @@ srclimit_penalise(struct xaddr *addr, int penalty_type)
 		penalty_secs = penalty_cfg.penalty_noauth;
 		reason = "penalty: connections without attempting authentication";
 		break;
+	case SRCLIMIT_PENALTY_BADUSER:
+		penalty_secs = penalty_cfg.penalty_invalid_user;
+		reason = "penalty: attempting authentication for invalid user";
+		break;
 	case SRCLIMIT_PENALTY_GRACE_EXCEEDED:
 		penalty_secs = penalty_cfg.penalty_crash;
 		reason = "penalty: exceeded LoginGraceTime";
