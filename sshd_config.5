@@ -1602,6 +1602,9 @@ scanning tools such as
 Specifies how long to refuse clients that fail to authenticate after
 .Cm LoginGraceTime
 (default: 10s).
+.It Cm invalid_user:duration
+Specifies how long to refuse clients that attempt to authentication against
+an invalid destination username (default: 8s).
 .It Cm max:duration
 Specifies the maximum time a particular source address range will be refused
 access for (default: 10m).

@@ -1357,7 +1357,7 @@ do_ssh2_kex(struct ssh *ssh)
 void
 cleanup_exit(int i)
 {
-	extern int auth_attempted; /* monitor.c */
+	extern int auth_attempted, auth_invalid_user; /* monitor.c */
 
 	if (the_active_state != NULL && the_authctxt != NULL) {
 		do_cleanup(the_active_state, the_authctxt);
@@ -1372,7 +1372,11 @@ cleanup_exit(int i)
 		}
 	}
 	/* Override default fatal exit value when auth was attempted */
-	if (i == 255 && auth_attempted)
-		_exit(EXIT_AUTH_ATTEMPTED);
+	if (i == 255) {
+		if (auth_invalid_user)
+			_exit(EXIT_AUTH_BADUSER);
+		if (auth_attempted)
+			_exit(EXIT_AUTH_ATTEMPTED);
+	}
 	_exit(i);
 }

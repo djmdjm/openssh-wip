@@ -154,6 +154,7 @@ initialize_server_options(ServerOptions *options)
 	options->per_source_penalty.penalty_crash = -1;
 	options->per_source_penalty.penalty_authfail = -1;
 	options->per_source_penalty.penalty_noauth = -1;
+	options->per_source_penalty.penalty_invalid_user = -1;
 	options->per_source_penalty.penalty_grace = -1;
 	options->per_source_penalty.penalty_max = -1;
 	options->per_source_penalty.penalty_min = -1;
@@ -407,6 +408,8 @@ fill_default_server_options(ServerOptions *options)
 		options->per_source_penalty.penalty_authfail = 5;
 	if (options->per_source_penalty.penalty_noauth == -1)
 		options->per_source_penalty.penalty_noauth = 1;
+	if (options->per_source_penalty.penalty_invalid_user == -1)
+		options->per_source_penalty.penalty_invalid_user = 8;
 	if (options->per_source_penalty.penalty_min == -1)
 		options->per_source_penalty.penalty_min = 15;
 	if (options->per_source_penalty.penalty_max == -1)
@@ -1968,6 +1971,9 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			} else if (strncmp(arg, "noauth:", 7) == 0) {
 				p = arg + 7;
 				intptr = &options->per_source_penalty.penalty_noauth;
+			} else if (strncmp(arg, "invalid_user:", 13) == 0) {
+				p = arg + 13;
+				intptr = &options->per_source_penalty.penalty_invalid_user;
 			} else if (strncmp(arg, "grace-exceeded:", 15) == 0) {
 				p = arg + 15;
 				intptr = &options->per_source_penalty.penalty_grace;
@@ -3235,12 +3241,14 @@ dump_config(ServerOptions *o)
 
 	if (o->per_source_penalty.enabled) {
 		printf("persourcepenalties crash:%d authfail:%d noauth:%d "
-		    "grace-exceeded:%d max:%d min:%d max-sources4:%d "
-		    "max-sources6:%d overflow:%s overflow6:%s\n",
+		    "grace-exceeded:%d invalid_user:%d max:%d min:%d "
+		    "max-sources4:%d max-sources6:%d "
+		    "overflow:%s overflow6:%s\n",
 		    o->per_source_penalty.penalty_crash,
 		    o->per_source_penalty.penalty_authfail,
 		    o->per_source_penalty.penalty_noauth,
 		    o->per_source_penalty.penalty_grace,
+		    o->per_source_penalty.penalty_invalid_user,
 		    o->per_source_penalty.penalty_max,
 		    o->per_source_penalty.penalty_min,
 		    o->per_source_penalty.max_sources4,
