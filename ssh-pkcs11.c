@@ -896,10 +896,8 @@ pkcs11_fetch_rsa_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 		fatal("EVP_PKEY_new failed");
 	if (EVP_PKEY_set1_RSA(key->pkey, rsa) != 1)
 		fatal("EVP_PKEY_set1_RSA failed");
-	key->rsa = rsa;
 	key->type = KEY_RSA;
 	key->flags |= SSHKEY_FLAG_EXT;
-	rsa = NULL;	/* now owned by key */
 
 fail:
 	for (i = 0; i < 3; i++)
@@ -1012,10 +1010,8 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 			fatal("EVP_PKEY_new failed");
 		if (EVP_PKEY_set1_RSA(key->pkey, rsa) != 1)
 			fatal("EVP_PKEY_set1_RSA failed");
-		key->rsa = rsa;
 		key->type = KEY_RSA;
 		key->flags |= SSHKEY_FLAG_EXT;
-		rsa = NULL;	/* now owned by key */
 	} else if (EVP_PKEY_base_id(evp) == EVP_PKEY_EC) {
 		if (EVP_PKEY_get0_EC_KEY(evp) == NULL) {
 			error("invalid x509; no ec key");

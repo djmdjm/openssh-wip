@@ -40,8 +40,6 @@ ssh_rsa_size(const struct sshkey *k)
 static int
 ssh_rsa_alloc(struct sshkey *k)
 {
-	if ((k->rsa = RSA_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
 	if ((k->pkey = EVP_PKEY_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	return 0;
@@ -50,8 +48,6 @@ ssh_rsa_alloc(struct sshkey *k)
 static void
 ssh_rsa_cleanup(struct sshkey *k)
 {
-	RSA_free(k->rsa);
-	k->rsa = NULL;
 	EVP_PKEY_free(k->pkey);
 	k->pkey = NULL;
 }
@@ -120,7 +116,6 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 	EVP_PKEY_CTX *ctx = NULL;
 	EVP_PKEY *res = NULL;
 	BIGNUM *f4 = NULL;
-	RSA *rsa = NULL;
 
 	int ret = SSH_ERR_INTERNAL_ERROR;
 
@@ -148,13 +143,8 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-	if ((rsa = EVP_PKEY_get1_RSA(res)) == NULL) {
-		ret = SSH_ERR_LIBCRYPTO_ERROR;
-		goto out;
-	}
 	/* success */
 	k->pkey = res;
-	k->rsa = rsa;
 	ret = 0;
  out:
 	EVP_PKEY_CTX_free(ctx);
@@ -192,8 +182,6 @@ ssh_rsa_copy_public(const struct sshkey *from, struct sshkey *to)
 		goto out;
 	}
 	/* success */
-	to->rsa = rsa_to;
-	rsa_to = NULL;
 	r = 0;
  out:
 	RSA_free(rsa_to);
@@ -233,8 +221,6 @@ ssh_rsa_deserialize_public(const char *ktype, struct sshbuf *b,
 	RSA_print_fp(stderr, rsa, 8);
 #endif
 	/* success */
-	key->rsa = rsa;
-	rsa = NULL;
 	ret = 0;
  out:
 	RSA_free(rsa);
@@ -303,8 +289,6 @@ ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
 	if ((r = sshkey_check_rsa_length(key, 0)) != 0)
 		goto out;
 	/* success */
-	key->rsa = rsa;
-	rsa = NULL;
 	r = 0;
  out:
 	RSA_free(rsa);
