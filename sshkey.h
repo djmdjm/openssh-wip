@@ -121,8 +121,6 @@ struct sshkey_cert {
 struct sshkey {
 	int	 type;
 	int	 flags;
-	/* KEY_RSA */
-	RSA	*rsa;
 	/* KEY_DSA */
 	DSA	*dsa;
 	/* KEY_ECDSA and KEY_ECDSA_SK */

@@ -3257,10 +3257,6 @@ sshkey_private_to_blob_pem_pkcs8(struct sshkey *key, struct sshbuf *buf,
 		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if (format == SSHKEY_PRIVATE_PKCS8 && (pkey = EVP_PKEY_new()) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
 	if ((r = sshkey_unshield_private(key)) != 0)
 		goto out;
 
@@ -3271,6 +3267,10 @@ sshkey_private_to_blob_pem_pkcs8(struct sshkey *key, struct sshbuf *buf,
 			success = PEM_write_bio_DSAPrivateKey(bio, key->dsa,
 			    cipher, passphrase, len, NULL, NULL);
 		} else {
+			if ((pkey = EVP_PKEY_new()) == NULL) {
+				r = SSH_ERR_ALLOC_FAIL;
+				goto out;
+			}
 			success = EVP_PKEY_set1_DSA(pkey, key->dsa);
 		}
 		break;
@@ -3280,15 +3280,20 @@ sshkey_private_to_blob_pem_pkcs8(struct sshkey *key, struct sshbuf *buf,
 			success = PEM_write_bio_ECPrivateKey(bio, key->ecdsa,
 			    cipher, passphrase, len, NULL, NULL);
 		} else {
-			success = EVP_PKEY_set1_EC_KEY(pkey, key->ecdsa);
+			pkey = key->pkey;
+			EVP_PKEY_up_ref(key->pkey);
+			success = 1;
 		}
 		break;
 	case KEY_RSA:
 		if (format == SSHKEY_PRIVATE_PEM) {
-			success = PEM_write_bio_RSAPrivateKey(bio, key->rsa,
+			success = PEM_write_bio_RSAPrivateKey(bio,
+			    EVP_PKEY_get0_RSA(key->pkey),
 			    cipher, passphrase, len, NULL, NULL);
 		} else {
-			success = EVP_PKEY_set1_RSA(pkey, key->rsa);
+			pkey = key->pkey;
+			EVP_PKEY_up_ref(key->pkey);
+			success = 1;
 		}
 		break;
 	default:
@@ -3437,6 +3442,7 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 	struct sshkey *prv = NULL;
 	BIO *bio = NULL;
 	int r;
+	RSA *rsa = NULL;
 
 	if (keyp != NULL)
 		*keyp = NULL;
@@ -3470,19 +3476,23 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
 			r = SSH_ERR_ALLOC_FAIL;
 			goto out;
 		}
-		prv->rsa = EVP_PKEY_get1_RSA(pk);
-		prv->type = KEY_RSA;
-#ifdef DEBUG_PK
-		RSA_print_fp(stderr, prv->rsa, 8);
-#endif
-		if (RSA_blinding_on(prv->rsa, NULL) != 1) {
+		if ((rsa = EVP_PKEY_get1_RSA(pk)) == NULL) {
 			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
 		}
-		if ((r = sshkey_check_rsa_length(prv, 0)) != 0)
+		prv->type = KEY_RSA;
+#ifdef DEBUG_PK
+		RSA_print_fp(stderr, rsa, 8);
+#endif
+		if (RSA_blinding_on(rsa, NULL) != 1 ||
+		    EVP_PKEY_set1_RSA(pk, rsa) != 1) {
+			r = SSH_ERR_LIBCRYPTO_ERROR;
 			goto out;
+		}
 		EVP_PKEY_up_ref(pk);
 		prv->pkey = pk;
+		if ((r = sshkey_check_rsa_length(prv, 0)) != 0)
+			goto out;
 #ifdef WITH_DSA
 	} else if (EVP_PKEY_base_id(pk) == EVP_PKEY_DSA &&
 	    (type == KEY_UNSPEC || type == KEY_DSA)) {
@@ -3569,6 +3579,7 @@ sshkey_parse_private_pem_fileblob(struct sshbuf *blob, int type,
  out:
 	BIO_free(bio);
 	EVP_PKEY_free(pk);
+	RSA_free(rsa);
 	sshkey_free(prv);
 	return r;
 }

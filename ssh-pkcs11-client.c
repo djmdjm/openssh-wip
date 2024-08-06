@@ -258,8 +258,6 @@ rsa_encrypt(int flen, const u_char *from, u_char *to, RSA *rsa, int padding)
 	}
 
 	key->type = KEY_RSA;
-	RSA_up_ref(rsa);
-	key->rsa = rsa;
 	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
 		error_fr(r, "encode key");
 		goto fail;
