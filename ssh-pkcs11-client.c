@@ -338,11 +338,8 @@ ecdsa_do_sign(const unsigned char *dgst, int dgst_len, const BIGNUM *inv,
 		error("couldn't get curve nid");
 		goto fail;
 	}
-
-	key->ecdsa = ec;
 	key->ecdsa_nid = nid;
 	key->type = KEY_ECDSA;
-	EC_KEY_up_ref(ec);
 
 	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0) {
 		error_fr(r, "encode key");

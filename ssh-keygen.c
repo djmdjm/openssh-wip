@@ -373,7 +373,8 @@ do_convert_to_pkcs8(struct sshkey *k)
 		break;
 #endif
 	case KEY_ECDSA:
-		if (!PEM_write_EC_PUBKEY(stdout, k->ecdsa))
+		if (!PEM_write_EC_PUBKEY(stdout,
+		    EVP_PKEY_get0_EC_KEY(k->pkey)))
 			fatal("PEM_write_EC_PUBKEY failed");
 		break;
 	default:
@@ -398,7 +399,8 @@ do_convert_to_pem(struct sshkey *k)
 		break;
 #endif
 	case KEY_ECDSA:
-		if (!PEM_write_EC_PUBKEY(stdout, k->ecdsa))
+		if (!PEM_write_EC_PUBKEY(stdout,
+		    EVP_PKEY_get0_EC_KEY(k->pkey)))
 			fatal("PEM_write_EC_PUBKEY failed");
 		break;
 	default:
@@ -727,8 +729,6 @@ do_convert_from_pkcs8(struct sshkey **k, int *private)
 			fatal("sshkey_ecdsa_fixup_group failed");
 		(*k)->type = KEY_ECDSA;
 		(*k)->pkey = pubkey;
-		if (((*k)->ecdsa = EVP_PKEY_get1_EC_KEY(pubkey)) == NULL)
-			fatal_f("EVP_PKEY_get1_EC_KEY failed");
 		pubkey = NULL;
 		break;
 	default:
@@ -802,8 +802,9 @@ do_convert_from(struct passwd *pw)
 			break;
 #endif
 		case KEY_ECDSA:
-			ok = PEM_write_ECPrivateKey(stdout, k->ecdsa, NULL,
-			    NULL, 0, NULL, NULL);
+			ok = PEM_write_ECPrivateKey(stdout,
+			    EVP_PKEY_get0_EC_KEY(k->pkey), NULL, NULL, 0,
+			    NULL, NULL);
 			break;
 		case KEY_RSA:
 			ok = PEM_write_RSAPrivateKey(stdout,
