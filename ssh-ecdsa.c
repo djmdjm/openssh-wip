@@ -67,7 +67,7 @@ ssh_ecdsa_equal(const struct sshkey *a, const struct sshkey *b)
 {
 	if (a->pkey == NULL || b->pkey == NULL)
 		return 0;
-	return EVP_PKEY_cmp(a->pkey, b->pkey);
+	return EVP_PKEY_cmp(a->pkey, b->pkey) == 1;
 }
 
 static int
