@@ -235,7 +235,10 @@ ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
 
 	if (sshkey_is_cert(key)) {
 		/* sshkey_private_deserialize already has pubkey from cert */
-		rsa = EVP_PKEY_get1_RSA(key->pkey);
+		if ((rsa = EVP_PKEY_get1_RSA(key->pkey)) == NULL) {
+			r = SSH_ERR_LIBCRYPTO_ERROR;
+			goto out;
+		}
 	} else {
 		if ((rsa = RSA_new()) == NULL)
 			return SSH_ERR_LIBCRYPTO_ERROR;
@@ -357,6 +360,7 @@ ssh_rsa_complete_crt_parameters(const BIGNUM *rsa_d, const BIGNUM *rsa_p,
 	BN_CTX *ctx = NULL;
 	int r;
 
+	*rsa_dmq1 = *rsa_dmp1 = NULL;
 	if ((ctx = BN_CTX_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	if ((aux = BN_new()) == NULL ||
@@ -412,6 +416,8 @@ ssh_rsa_sign(struct sshkey *key,
 	    sshkey_type_plain(key->type) != KEY_RSA)
 		return SSH_ERR_INVALID_ARGUMENT;
 	slen = EVP_PKEY_size(key->pkey);
+	if (slen <= 0 || slen > SSHBUF_MAX_BIGNUM)
+		return SSH_ERR_INVALID_ARGUMENT;
 	if (EVP_PKEY_bits(key->pkey) < SSH_RSA_MINIMUM_MODULUS_SIZE)
 		return SSH_ERR_KEY_LENGTH;
 
