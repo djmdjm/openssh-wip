@@ -27,6 +27,7 @@
 #include <sys/types.h>
 
 #include <openssl/bn.h>
+#include <openssl/ec.h>
 #include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 
@@ -66,6 +67,7 @@ sshkey_ecdsa_fixup_group(EVP_PKEY *k)
 	 */
 	if ((nid = EC_GROUP_get_curve_name(g)) > 0)
 		goto out;
+	nid = -1;
 	for (i = 0; nids[i] != -1; i++) {
 		if ((eg = EC_GROUP_new_by_curve_name(nids[i])) == NULL)
 			goto out;
@@ -201,7 +203,6 @@ ssh_ecdsa_copy_public(const struct sshkey *from, struct sshkey *to)
 		goto out;
 	}
 	EVP_PKEY_free(to->pkey);
-	to->pkey = NULL;
 	if ((to->pkey = EVP_PKEY_new()) == NULL) {
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
@@ -264,11 +265,8 @@ ssh_ecdsa_deserialize_public(const char *ktype, struct sshbuf *b,
 #endif
  out:
 	EC_KEY_free(ec);
+	EVP_PKEY_free(pkey);
 	free(curve);
-	if (r != 0) {
-		EVP_PKEY_free(key->pkey);
-		key->pkey = NULL;
-	}
 	return r;
 }
 
@@ -319,7 +317,7 @@ ssh_ecdsa_sign(struct sshkey *key,
 	const unsigned char *psig;
 	const BIGNUM *sig_r, *sig_s;
 	int hash_alg;
-	int len;
+	int slen = 0, len = 0;
 	struct sshbuf *b = NULL, *bb = NULL;
 	int ret = SSH_ERR_INTERNAL_ERROR;
 
@@ -335,12 +333,12 @@ ssh_ecdsa_sign(struct sshkey *key,
 	if ((hash_alg = sshkey_ec_nid_to_hash_alg(key->ecdsa_nid)) == -1)
 		return SSH_ERR_INTERNAL_ERROR;
 
-	if ((ret = sshkey_pkey_digest_sign(key->pkey, hash_alg, &sigb, &len,
+	if ((ret = sshkey_pkey_digest_sign(key->pkey, hash_alg, &sigb, &slen,
 	    data, dlen)) != 0)
 		goto out;
 
 	psig = sigb;
-	if (d2i_ECDSA_SIG(&esig, &psig, len) == NULL) {
+	if (d2i_ECDSA_SIG(&esig, &psig, slen) == NULL) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
@@ -367,7 +365,7 @@ ssh_ecdsa_sign(struct sshkey *key,
 		*lenp = len;
 	ret = 0;
  out:
-	free(sigb);
+	freezero(sigb, slen);
 	sshbuf_free(b);
 	sshbuf_free(bb);
 	ECDSA_SIG_free(esig);
@@ -382,7 +380,7 @@ ssh_ecdsa_verify(const struct sshkey *key,
 {
 	ECDSA_SIG *esig = NULL;
 	BIGNUM *sig_r = NULL, *sig_s = NULL;
-	int hash_alg, len;
+	int hash_alg, len = 0;
 	int ret = SSH_ERR_INTERNAL_ERROR;
 	struct sshbuf *b = NULL, *sigbuf = NULL;
 	char *ktype = NULL;
@@ -434,18 +432,25 @@ ssh_ecdsa_verify(const struct sshkey *key,
 	}
 	sig_r = sig_s = NULL; /* transferred */
 
-	sigb = NULL;
-	if ((len = i2d_ECDSA_SIG(esig, &sigb)) <= 0) {
+	if ((len = i2d_ECDSA_SIG(esig, NULL)) <= 0) {
+		len = 0;
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
-
+	if ((sigb = calloc(1, len)) == NULL) {
+		ret = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+	if (i2d_ECDSA_SIG(esig, &sigb) != len) {
+		ret = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
 	if ((ret = sshkey_pkey_digest_verify(key->pkey, hash_alg,
 	    data, dlen, sigb, len)) != 0)
 		goto out;
 	/* success */
  out:
-	OPENSSL_free(sigb); /* NB. must use OPENSSL_free() for BoringSSL */
+	freezero(sigb, len);
 	sshbuf_free(sigbuf);
 	sshbuf_free(b);
 	ECDSA_SIG_free(esig);

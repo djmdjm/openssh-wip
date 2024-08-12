@@ -1412,10 +1412,13 @@ int
 sshkey_ecdsa_key_to_nid(const EC_KEY *k)
 {
 	const EC_GROUP *g;
+	int nid;
 
 	if (k == NULL || (g = EC_KEY_get0_group(k)) == NULL)
 		return -1;
-	return EC_GROUP_get_curve_name(g);
+	if ((nid = EC_GROUP_get_curve_name(g)) <= 0)
+		return -1;
+	return nid;
 }
 
 int

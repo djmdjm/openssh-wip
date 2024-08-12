@@ -30,6 +30,7 @@
 #include <sys/types.h>
 
 #include <openssl/bn.h>
+#include <openssl/ec.h>
 #include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 
@@ -224,7 +225,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	u_char msghash[32], apphash[32];
 	u_int sig_counter;
 	u_char *sigb = NULL;
-	int is_webauthn = 0, ret = SSH_ERR_INTERNAL_ERROR, len;
+	int is_webauthn = 0, ret = SSH_ERR_INTERNAL_ERROR, len = 0;
 	struct sshbuf *b = NULL, *sigbuf = NULL, *original_signed = NULL;
 	struct sshbuf *webauthn_wrapper = NULL, *webauthn_exts = NULL;
 	char *ktype = NULL, *webauthn_origin = NULL;
@@ -357,9 +358,16 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-
-	sigb = NULL;
-	if ((len = i2d_ECDSA_SIG(esig, &sigb)) <= 0) {
+	if ((len = i2d_ECDSA_SIG(esig, NULL)) <= 0) {
+		len = 0;
+		ret = SSH_ERR_LIBCRYPTO_ERROR;
+		goto out;
+	}
+	if ((sigb = calloc(1, len)) == NULL) {
+		ret = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+	if (i2d_ECDSA_SIG(esig, &sigb) != len) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
@@ -402,7 +410,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	BN_clear_free(sig_r);
 	BN_clear_free(sig_s);
 	free(ktype);
-	OPENSSL_free(sigb); /* NB. must use OPENSSL_free() for BoringSSL */
+	freezero(sigb, len);
 	EVP_MD_CTX_free(md_ctx);
 	return ret;
 }
