@@ -115,7 +115,6 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 {
 	EVP_PKEY_CTX *ctx = NULL;
 	EVP_PKEY *res = NULL;
-	BIGNUM *f4 = NULL;
 
 	int ret = SSH_ERR_INTERNAL_ERROR;
 
@@ -123,8 +122,7 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 	    bits > SSHBUF_MAX_BIGNUM * 8)
 		return SSH_ERR_KEY_LENGTH;
 
-	if ((ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL)) == NULL
-		|| (f4 = BN_new()) == NULL || !BN_set_word(f4, RSA_F4)) {
+	if ((ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL)) == NULL) {
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
@@ -136,9 +134,6 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 		ret = SSH_ERR_KEY_LENGTH;
 		goto out;
 	}
-	if (EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, f4) <= 0)
-		goto out;
-	f4 = NULL;
 	if (EVP_PKEY_keygen(ctx, &res) <= 0 || res == NULL) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
@@ -148,7 +143,6 @@ ssh_rsa_generate(struct sshkey *k, int bits)
 	ret = 0;
  out:
 	EVP_PKEY_CTX_free(ctx);
-	BN_free(f4);
 	return ret;
 }
 
