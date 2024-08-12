@@ -478,7 +478,7 @@ ssh_digest_to_md(int hash_alg)
 
 int
 sshkey_pkey_digest_sign(EVP_PKEY *pkey, int hash_alg, u_char **sigp,
-    int *lenp, const u_char *data, size_t datalen)
+    size_t *lenp, const u_char *data, size_t datalen)
 {
 	EVP_MD_CTX *ctx = NULL;
 	u_char *sig = NULL;
@@ -521,7 +521,7 @@ out:
 
 int
 sshkey_pkey_digest_verify(EVP_PKEY *pkey, int hash_alg, const u_char *data,
-    size_t datalen, u_char *sigbuf, int siglen)
+    size_t datalen, u_char *sigbuf, size_t siglen)
 {
 	EVP_MD_CTX *ctx = NULL;
 	int ret = SSH_ERR_INTERNAL_ERROR;

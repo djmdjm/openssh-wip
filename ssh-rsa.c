@@ -398,7 +398,8 @@ ssh_rsa_sign(struct sshkey *key,
     const char *alg, const char *sk_provider, const char *sk_pin, u_int compat)
 {
 	u_char *sig = NULL;
-	int len, slen = 0;
+	size_t diff, len = 0;
+	int slen = 0;
 	int hash_alg, ret = SSH_ERR_INTERNAL_ERROR;
 	struct sshbuf *b = NULL;
 
@@ -421,17 +422,14 @@ ssh_rsa_sign(struct sshkey *key,
 	if (EVP_PKEY_bits(key->pkey) < SSH_RSA_MINIMUM_MODULUS_SIZE)
 		return SSH_ERR_KEY_LENGTH;
 
-	ret = sshkey_pkey_digest_sign(key->pkey, hash_alg, &sig, &len,
-	    data, datalen);
-	if (ret < 0) {
+	if ((ret = sshkey_pkey_digest_sign(key->pkey, hash_alg, &sig, &len,
+	    data, datalen)) < 0)
 		goto out;
-	}
-
-	if (len < slen) {
-		size_t diff = slen - len;
+	if (len < (size_t)slen) {
+		diff = slen - len;
 		memmove(sig + diff, sig, len);
 		explicit_bzero(sig, diff);
-	} else if (len > slen) {
+	} else if (len > (size_t)slen) {
 		ret = SSH_ERR_INTERNAL_ERROR;
 		goto out;
 	}

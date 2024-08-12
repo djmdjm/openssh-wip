@@ -285,9 +285,9 @@ int	 sshkey_get_sigtype(const u_char *, size_t, char **);
 
 /* Signing and verification backend for libcrypto-backed keys */
 int	sshkey_pkey_digest_sign(EVP_PKEY*, int, u_char **,
-    int *, const u_char *, size_t);
+    size_t *, const u_char *, size_t);
 int	sshkey_pkey_digest_verify(EVP_PKEY *, int, const u_char *,
-    size_t, u_char *, int);
+    size_t, u_char *, size_t);
 
 /* for debug */
 void	sshkey_dump_ec_point(const EC_GROUP *, const EC_POINT *);

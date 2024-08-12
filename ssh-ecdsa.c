@@ -317,9 +317,9 @@ ssh_ecdsa_sign(struct sshkey *key,
 	const unsigned char *psig;
 	const BIGNUM *sig_r, *sig_s;
 	int hash_alg;
-	int slen = 0, len = 0;
+	size_t slen = 0;
 	struct sshbuf *b = NULL, *bb = NULL;
-	int ret = SSH_ERR_INTERNAL_ERROR;
+	int len = 0, ret = SSH_ERR_INTERNAL_ERROR;
 
 	if (lenp != NULL)
 		*lenp = 0;
