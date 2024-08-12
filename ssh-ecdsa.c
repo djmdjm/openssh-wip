@@ -338,7 +338,7 @@ ssh_ecdsa_sign(struct sshkey *key,
 		goto out;
 
 	psig = sigb;
-	if (d2i_ECDSA_SIG(&esig, &psig, slen) == NULL) {
+	if ((esig = d2i_ECDSA_SIG(NULL, &psig, slen)) == NULL) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
