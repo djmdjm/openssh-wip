@@ -178,11 +178,15 @@ struct sshbuf *loginmsg;
 void destroy_sensitive_data(void);
 void demote_sensitive_data(void);
 
-/* XXX stub */
+/* XXX reduce to stub once postauth split */
 int
 mm_is_monitor(void)
 {
-	return 1;
+	/*
+	 * m_pid is only set in the privileged part, and
+	 * points to the unprivileged child.
+	 */
+	return (pmonitor && pmonitor->m_pid > 0);
 }
 
 /*
