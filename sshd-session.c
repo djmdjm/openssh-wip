@@ -293,21 +293,8 @@ pack_hostkeys(void)
 static int
 privsep_preauth(struct ssh *ssh)
 {
-	int devnull, i, hold[3], status, r;
+	int status, r;
 	pid_t pid;
-
-	/*
-	 * We need to ensure that we don't assign the monitor fds to
-	 * ones that will collide with the clients, so reserve a few
-	 * now. They will be freed momentarily.
-	 */
-	if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1)
-		fatal_f("open %s: %s", _PATH_DEVNULL, strerror(errno));
-	for (i = 0; i < (int)(sizeof(hold) / sizeof(*hold)); i++) {
-		if ((hold[i] = dup(devnull)) == -1)
-			fatal_f("dup devnull: %s", strerror(errno));
-		fcntl(hold[i], F_SETFD, FD_CLOEXEC);
-	}
 
 	/* Set up unprivileged child process to deal with network data */
 	pmonitor = monitor_init();
@@ -318,11 +305,6 @@ privsep_preauth(struct ssh *ssh)
 		fatal("fork of unprivileged child failed");
 	else if (pid != 0) {
 		debug2("Network child is on pid %ld", (long)pid);
-
-		close(devnull);
-		for (i = 0; i < (int)(sizeof(hold) / sizeof(*hold)); i++)
-			close(hold[i]);
-
 		pmonitor->m_pid = pid;
 		if (have_agent) {
 			r = ssh_get_authentication_socket(&auth_sock);
@@ -364,25 +346,29 @@ privsep_preauth(struct ssh *ssh)
 		 * 5 monitor logging socket
 		 *
 		 * We know that the monitor sockets will have fds > 4 because
-		 * of the reserved fds in hold[].
+		 * of the reserved fds in main()
 		 */
 
-		if (dup2(ssh_packet_get_connection_in(ssh),
-		    STDIN_FILENO) == -1)
-			debug3_f("dup2 stdin: %s", strerror(errno));
-		if (dup2(ssh_packet_get_connection_out(ssh),
+		if (ssh_packet_get_connection_in(ssh) != STDIN_FILENO &&
+		    dup2(ssh_packet_get_connection_in(ssh), STDIN_FILENO) == -1)
+			fatal("dup2 stdin failed: %s", strerror(errno));
+		if (ssh_packet_get_connection_out(ssh) != STDOUT_FILENO &&
+		    dup2(ssh_packet_get_connection_out(ssh),
 		    STDOUT_FILENO) == -1)
-			debug3_f("dup2 stdin: %s", strerror(errno));
+			fatal("dup2 stdout failed: %s", strerror(errno));
 		/* leave stderr as-is */
 		log_redirect_stderr_to(NULL); /* dup can clobber log fd */
-		if (dup2(pmonitor->m_recvfd, PRIVSEP_MONITOR_FD) == -1)
-			debug3_f("dup2 stdin: %s", strerror(errno));
-		if (dup2(pmonitor->m_log_sendfd, PRIVSEP_LOG_FD) == -1)
-			debug3_f("dup2 stdin: %s", strerror(errno));
+		if (pmonitor->m_recvfd != PRIVSEP_MONITOR_FD &&
+		    dup2(pmonitor->m_recvfd, PRIVSEP_MONITOR_FD) == -1)
+			fatal("dup2 monitor fd: %s", strerror(errno));
+		if (pmonitor->m_log_sendfd != PRIVSEP_LOG_FD &&
+		    dup2(pmonitor->m_log_sendfd, PRIVSEP_LOG_FD) == -1)
+			fatal("dup2 log fd: %s", strerror(errno));
 		closefrom(PRIVSEP_MIN_FREE_FD);
 
 		saved_argv[0] = options.sshd_session_auth_path;
 		execv(options.sshd_session_auth_path, saved_argv);
+
 		fatal_f("exec of %s failed: %s",
 		    options.sshd_session_auth_path, strerror(errno));
 	}
@@ -764,7 +750,7 @@ main(int ac, char **av)
 	struct ssh *ssh = NULL;
 	extern char *optarg;
 	extern int optind;
-	int r, opt, on = 1, remote_port;
+	int devnull, r, opt, on = 1, remote_port;
 	int sock_in = -1, sock_out = -1, rexeced_flag = 0, have_key = 0;
 	const char *remote_ip, *rdomain;
 	char *line, *laddr, *logfile = NULL;
@@ -913,6 +899,14 @@ main(int ac, char **av)
 
 	closefrom(REEXEC_MIN_FREE_FD);
 
+	/* Reserve fds we'll need later for reexec things */
+	if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1)
+		fatal("open %s: %s", _PATH_DEVNULL, strerror(errno));
+	while (devnull < PRIVSEP_MIN_FREE_FD) {
+		if ((devnull = dup(devnull)) == -1)
+			fatal("dup %s: %s", _PATH_DEVNULL, strerror(errno));
+	}
+
 #ifdef WITH_OPENSSL
 	OpenSSL_add_all_algorithms();
 #endif
@@ -948,7 +942,9 @@ main(int ac, char **av)
 		fatal("sshbuf_new config buf failed");
 	setproctitle("%s", "[rexeced]");
 	recv_rexec_state(REEXEC_CONFIG_PASS_FD, cfg, &timing_secret);
-	close(REEXEC_CONFIG_PASS_FD);
+	/* close the fd, but keep the slot reserved */
+	if (dup2(devnull, REEXEC_CONFIG_PASS_FD) == -1)
+		fatal("dup2 devnull->config fd: %s", strerror(errno));
 	parse_server_config(&options, "rexec", cfg, &includes, NULL, 1);
 	/* Fill in default values for those options not explicitly set. */
 	fill_default_server_options(&options);
@@ -957,7 +953,9 @@ main(int ac, char **av)
 	if (!debug_flag && !inetd_flag) {
 		if ((startup_pipe = dup(REEXEC_STARTUP_PIPE_FD)) == -1)
 			fatal("internal error: no startup pipe");
-		close(REEXEC_STARTUP_PIPE_FD);
+		/* close the fd, but keep the slot reserved */
+		if (dup2(devnull, REEXEC_STARTUP_PIPE_FD) == -1)
+			fatal("dup2 devnull->startup fd: %s", strerror(errno));
 
 		/*
 		 * Signal parent that this child is at a point where
