@@ -86,7 +86,6 @@
 #include "ssh-gss.h"
 #endif
 #include "monitor_wrap.h"
-#include "ssh-sandbox.h"
 #include "auth-options.h"
 #include "version.h"
 #include "ssherr.h"
@@ -241,6 +240,10 @@ privsep_child_demote(void)
 			fatal("setgroups: %.100s", strerror(errno));
 		permanently_set_uid(pw);
 	}
+
+	/* sandbox ourselves */
+	if (pledge("stdio", NULL) == -1)
+		fatal_f("pledge()");
 }
 
 static void
@@ -713,7 +716,7 @@ main(int ac, char **av)
 	/* Fetch our configuration */
 	if ((cfg = sshbuf_new()) == NULL)
 		fatal("sshbuf_new config buf failed");
-	setproctitle("%s", "[unpriv-preauth-early]");
+	setproctitle("%s", "[session-auth early]");
 	recv_privsep_state(ssh, PRIVSEP_CONFIG_PASS_FD, cfg);
 	parse_server_config(&options, "rexec", cfg, &includes, NULL, 1);
 	/* Fill in default values for those options not explicitly set. */
@@ -898,7 +901,9 @@ main(int ac, char **av)
 		error("chdir(\"/\"): %s", strerror(errno));
 
 	/* This is the child processing a new connection. */
-	setproctitle("%s", "[unpriv]");
+	setproctitle("%s", "[session-auth]");
+	// XXX
+	error("XXX sandbox");
 
 	/* Executed child processes don't need these. */
 	fcntl(sock_out, F_SETFD, FD_CLOEXEC);
