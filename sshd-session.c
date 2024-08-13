@@ -954,7 +954,11 @@ main(int ac, char **av)
 	fill_default_server_options(&options);
 	options.timing_secret = timing_secret;
 
-	if (startup_pipe != -1) {
+	if (!debug_flag) {
+		if ((startup_pipe = dup(REEXEC_STARTUP_PIPE_FD)) == -1)
+			fatal("internal error: no starup pipe");
+		close(REEXEC_STARTUP_PIPE_FD);
+
 		/*
 		 * Signal parent that this child is at a point where
 		 * they can go away if they have a SIGHUP pending.
