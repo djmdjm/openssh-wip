@@ -689,6 +689,7 @@ static struct {
 	{ "channeltimeout", sChannelTimeout, SSHCFG_ALL },
 	{ "unusedconnectiontimeout", sUnusedConnectionTimeout, SSHCFG_ALL },
 	{ "sshdsessionpath", sSshdSessionPath, SSHCFG_GLOBAL },
+	{ "sshdsessionauthpath", sSshdSessionAuthPath, SSHCFG_GLOBAL },
 	{ NULL, sBadOption, 0 }
 };
 
