@@ -954,9 +954,9 @@ main(int ac, char **av)
 	fill_default_server_options(&options);
 	options.timing_secret = timing_secret;
 
-	if (!debug_flag) {
+	if (!debug_flag && !inetd_flag) {
 		if ((startup_pipe = dup(REEXEC_STARTUP_PIPE_FD)) == -1)
-			fatal("internal error: no starup pipe");
+			fatal("internal error: no startup pipe");
 		close(REEXEC_STARTUP_PIPE_FD);
 
 		/*
