@@ -459,7 +459,7 @@ fill_default_server_options(ServerOptions *options)
 	if (options->sshd_session_path == NULL)
 		options->sshd_session_path = xstrdup(_PATH_SSHD_SESSION);
 	if (options->sshd_session_auth_path == NULL)
-		options->sshd_session_path = xstrdup(_PATH_SSHD_SESSION_AUTH);
+		options->sshd_session_auth_path = xstrdup(_PATH_SSHD_SESSION_AUTH);
 
 	assemble_algorithms(options);
 
