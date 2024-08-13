@@ -672,10 +672,6 @@ main(int ac, char **av)
 	for (i = 0; i < options.num_log_verbose; i++)
 		log_verbose_add(options.log_verbose[i]);
 
-	/* Reinitialize the log (because of the fork above). */
-	log_init(__progname, options.log_level, options.log_facility, 1);
-	set_log_handler(mm_log_handler, pmonitor);
-
 	/*
 	 * Chdir to the root directory so that the current disk can be
 	 * unmounted if desired.
@@ -683,10 +679,8 @@ main(int ac, char **av)
 	if (chdir("/") == -1)
 		error("chdir(\"/\"): %s", strerror(errno));
 
-	/* This is the child processing a new connection. */
+	/* This is the child authenticating a new connection. */
 	setproctitle("%s", "[session-auth]");
-	// XXX
-	error("XXX sandbox");
 
 	/* Executed child processes don't need these. */
 	fcntl(sock_out, F_SETFD, FD_CLOEXEC);
@@ -698,7 +692,6 @@ main(int ac, char **av)
 	ssh_signal(SIGTERM, SIG_DFL);
 	ssh_signal(SIGQUIT, SIG_DFL);
 	ssh_signal(SIGCHLD, SIG_DFL);
-
 
 	/* Prepare the channels layer */
 	channel_init_channels(ssh);
@@ -731,8 +724,6 @@ main(int ac, char **av)
 	/* Cache supported mechanism OIDs for later use */
 	ssh_gssapi_prepare_supported_oids();
 #endif
-
-	setproctitle("%s", "[unpriv-preauth]");
 
 	privsep_child_demote();
 
