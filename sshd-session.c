@@ -86,7 +86,6 @@
 #include "ssh-gss.h"
 #endif
 #include "monitor_wrap.h"
-#include "ssh-sandbox.h"
 #include "auth-options.h"
 #include "version.h"
 #include "ssherr.h"
@@ -99,6 +98,12 @@
 #define REEXEC_STARTUP_PIPE_FD		(STDERR_FILENO + 2)
 #define REEXEC_CONFIG_PASS_FD		(STDERR_FILENO + 3)
 #define REEXEC_MIN_FREE_FD		(STDERR_FILENO + 4)
+
+/* Privsep fds */
+#define PRIVSEP_MONITOR_FD		(STDERR_FILENO + 1)
+#define PRIVSEP_LOG_FD			(STDERR_FILENO + 2)
+#define PRIVSEP_CONFIG_PASS_FD		(STDERR_FILENO + 3)
+#define PRIVSEP_MIN_FREE_FD		(STDERR_FILENO + 4)
 
 extern char *__progname;
 
@@ -240,69 +245,84 @@ demote_sensitive_data(void)
 }
 
 static void
-privsep_preauth_child(void)
+send_privsep_state(struct ssh *ssh, int fd, struct sshbuf *conf)
 {
-	gid_t gidset[1];
-	struct passwd *pw;
+	struct sshbuf *m = NULL, *inc = NULL;
+	struct include_item *item = NULL;
+	int r;
 
-	/* Enable challenge-response authentication for privilege separation */
-	privsep_challenge_enable();
+	debug3_f("entering fd = %d config len %zu", fd,
+	    sshbuf_len(conf));
 
-#ifdef GSSAPI
-	/* Cache supported mechanism OIDs for later use */
-	ssh_gssapi_prepare_supported_oids();
-#endif
+	if ((m = sshbuf_new()) == NULL || (inc = sshbuf_new()) == NULL)
+		fatal_f("sshbuf_new failed");
 
-	/* Demote the private keys to public keys. */
-	demote_sensitive_data();
-
-	/* Demote the child */
-	if (getuid() == 0 || geteuid() == 0) {
-		if ((pw = getpwnam(SSH_PRIVSEP_USER)) == NULL)
-			fatal("Privilege separation user %s does not exist",
-			    SSH_PRIVSEP_USER);
-		pw = pwcopy(pw); /* Ensure mutable */
-		endpwent();
-		freezero(pw->pw_passwd, strlen(pw->pw_passwd));
-
-		/* Change our root directory */
-		if (chroot(_PATH_PRIVSEP_CHROOT_DIR) == -1)
-			fatal("chroot(\"%s\"): %s", _PATH_PRIVSEP_CHROOT_DIR,
-			    strerror(errno));
-		if (chdir("/") == -1)
-			fatal("chdir(\"/\"): %s", strerror(errno));
-
-		/*
-		 * Drop our privileges
-		 * NB. Can't use setusercontext() after chroot.
-		 */
-		debug3("privsep user:group %u:%u", (u_int)pw->pw_uid,
-		    (u_int)pw->pw_gid);
-		gidset[0] = pw->pw_gid;
-		if (setgroups(1, gidset) == -1)
-			fatal("setgroups: %.100s", strerror(errno));
-		permanently_set_uid(pw);
+	/* XXX unneccessary? */
+	/* pack includes into a string */
+	TAILQ_FOREACH(item, &includes, entry) {
+		if ((r = sshbuf_put_cstring(inc, item->selector)) != 0 ||
+		    (r = sshbuf_put_cstring(inc, item->filename)) != 0 ||
+		    (r = sshbuf_put_stringb(inc, item->contents)) != 0)
+			fatal_fr(r, "compose includes");
 	}
+
+	/*
+	 * Protocol from monitor to unpriv privsep process:
+	 *	string	configuration
+	 *	string  server_banner
+	 *	string  client_banner
+	 *	string	included_files[] {
+	 *		string	selector
+	 *		string	filename
+	 *		string	contents
+	 *	}
+	 */
+	if ((r = sshbuf_put_stringb(m, conf)) != 0 ||
+	    (r = sshbuf_put_stringb(m, ssh->kex->server_version)) != 0 ||
+	    (r = sshbuf_put_stringb(m, ssh->kex->client_version)) != 0 ||
+	    (r = sshbuf_put_stringb(m, inc)) != 0)
+		fatal_fr(r, "compose config");
+	if (ssh_msg_send(fd, 0, m) == -1)
+		error_f("ssh_msg_send failed");
+
+	sshbuf_free(m);
+	sshbuf_free(inc);
+
+	debug3_f("done");
 }
 
 static int
 privsep_preauth(struct ssh *ssh)
 {
-	int status, r;
+	int devnull, i, hold[3], status, r, config_s[2];
 	pid_t pid;
-	struct ssh_sandbox *box = NULL;
+
+	/*
+	 * We need to ensure that we don't assign the monitor fds to
+	 * ones that will collide with the clients, so reserve a few
+	 * now. They will be freed momentarily.
+	 */
+	if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1)
+		fatal_f("open %s: %s", _PATH_DEVNULL, strerror(errno));
+	for (i = 0; i < (int)(sizeof(hold) / sizeof(*hold)); i++) {
+		if ((hold[i] = dup(devnull)) == -1)
+			fatal_f("dup devnull: %s", strerror(errno));
+		fcntl(hold[i], F_SETFD, FD_CLOEXEC);
+	}
 
 	/* Set up unprivileged child process to deal with network data */
 	pmonitor = monitor_init();
 	/* Store a pointer to the kex for later rekeying */
 	pmonitor->m_pkex = &ssh->kex;
 
-	box = ssh_sandbox_init();
-	pid = fork();
-	if (pid == -1) {
+	if ((pid = fork()) == -1)
 		fatal("fork of unprivileged child failed");
-	} else if (pid != 0) {
+	else if (pid != 0) {
 		debug2("Network child is on pid %ld", (long)pid);
+
+		close(devnull);
+		for (i = 0; i < (int)(sizeof(hold) / sizeof(*hold)); i++)
+			close(hold[i]);
 
 		pmonitor->m_pid = pid;
 		if (have_agent) {
@@ -312,8 +332,6 @@ privsep_preauth(struct ssh *ssh)
 				have_agent = 0;
 			}
 		}
-		if (box != NULL)
-			ssh_sandbox_parent_preauth(box, pid);
 		monitor_child_preauth(ssh, pmonitor);
 
 		/* Wait for the child's exit status */
@@ -332,23 +350,49 @@ privsep_preauth(struct ssh *ssh)
 		} else if (WIFSIGNALED(status))
 			fatal_f("preauth child terminated by signal %d",
 			    WTERMSIG(status));
-		if (box != NULL)
-			ssh_sandbox_parent_finish(box);
 		return 1;
 	} else {
 		/* child */
 		close(pmonitor->m_sendfd);
 		close(pmonitor->m_log_recvfd);
 
-		/* Arrange for logging to be sent to the monitor */
-		set_log_handler(mm_log_handler, pmonitor);
+		/*
+		 * Arrange unpriv-preauth child process fds:
+		 * 0, 1 network socket
+		 * 2 optional stderr
+		 * 3 reserved
+		 * 4 monitor message socket
+		 * 5 monitor logging socket
+		 * 6 configuration message socket
+		 *
+		 * We know that the monitor sockets will have fds > 4 because
+		 * of the reserved fds in hold[].
+		 */
 
-		privsep_preauth_child();
-		setproctitle("%s", "[net]");
-		if (box != NULL)
-			ssh_sandbox_child(box);
+		/* Send configuration to ancestor sshd-monitor process */
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, config_s) == -1)
+			fatal("socketpair: %s", strerror(errno));
+		send_privsep_state(ssh, config_s[0], cfg);
 
-		return 0;
+		if (dup2(ssh_packet_get_connection_in(ssh),
+		    STDIN_FILENO) == -1)
+			debug3_f("dup2 stdin: %s", strerror(errno));
+		if (dup2(ssh_packet_get_connection_out(ssh),
+		    STDOUT_FILENO) == -1)
+			debug3_f("dup2 stdin: %s", strerror(errno));
+		/* leave stderr as-is */
+		log_redirect_stderr_to(NULL); /* dup can clobber log fd */
+		if (dup2(pmonitor->m_recvfd, PRIVSEP_MONITOR_FD) == -1)
+			debug3_f("dup2 stdin: %s", strerror(errno));
+		if (dup2(pmonitor->m_log_sendfd, PRIVSEP_LOG_FD) == -1)
+			debug3_f("dup2 stdin: %s", strerror(errno));
+		if (dup2(config_s[1], PRIVSEP_CONFIG_PASS_FD) == -1)
+			debug3_f("dup2 stdin: %s", strerror(errno));
+		closefrom(PRIVSEP_MIN_FREE_FD);
+
+		execv(options.sshd_session_auth_path, saved_argv);
+		fatal_f("exec of %s failed: %s",
+		    options.sshd_session_auth_path, strerror(errno));
 	}
 }
 
@@ -991,9 +1035,7 @@ main(int ac, char **av)
 	fill_default_server_options(&options);
 	options.timing_secret = timing_secret;
 
-	if (!debug_flag) {
-		startup_pipe = dup(REEXEC_STARTUP_PIPE_FD);
-		close(REEXEC_STARTUP_PIPE_FD);
+	if (startup_pipe != -1) {
 		/*
 		 * Signal parent that this child is at a point where
 		 * they can go away if they have a SIGHUP pending.

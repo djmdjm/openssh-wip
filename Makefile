@@ -2,7 +2,7 @@
 
 .include <bsd.own.mk>
 
-SUBDIR=	ssh sshd sshd-session \
+SUBDIR=	ssh sshd sshd-session sshd-session-auth \
 	ssh-add ssh-keygen ssh-agent scp sftp-server \
 	ssh-keysign ssh-keyscan sftp ssh-pkcs11-helper ssh-sk-helper
 
