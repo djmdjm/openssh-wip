@@ -251,10 +251,47 @@ demote_sensitive_data(void)
 	}
 }
 
+static struct sshbuf *
+pack_hostkeys(void)
+{
+	struct sshbuf *keybuf = NULL, *hostkeys = NULL;
+	int r;
+	u_int i;
+
+	if ((hostkeys = sshbuf_new()) == NULL)
+		fatal_f("sshbuf_new failed");
+
+	/* pack hostkeys into a string. Empty key slots get empty strings */
+	for (i = 0; i < options.num_host_key_files; i++) {
+		/* public key */
+		if (sensitive_data.host_pubkeys[i] != NULL) {
+			if ((r = sshkey_puts(sensitive_data.host_pubkeys[i],
+			    hostkeys)) != 0)
+				fatal_fr(r, "compose hostkey public");
+		} else {
+			if ((r = sshbuf_put_string(hostkeys, NULL, 0)) != 0)
+				fatal_fr(r, "compose hostkey empty public");
+		}
+		/* cert */
+		if (sensitive_data.host_certificates[i] != NULL) {
+			if ((r = sshkey_puts(
+			    sensitive_data.host_certificates[i],
+			    hostkeys)) != 0)
+				fatal_fr(r, "compose host cert");
+		} else {
+			if ((r = sshbuf_put_string(hostkeys, NULL, 0)) != 0)
+				fatal_fr(r, "compose host cert empty");
+		}
+	}
+
+	sshbuf_free(keybuf);
+	return hostkeys;
+}
+
 static void
 send_privsep_state(struct ssh *ssh, int fd, struct sshbuf *conf)
 {
-	struct sshbuf *m = NULL, *inc = NULL;
+	struct sshbuf *m = NULL, *inc = NULL, *hostkeys = NULL;
 	struct include_item *item = NULL;
 	int r;
 
@@ -273,9 +310,15 @@ send_privsep_state(struct ssh *ssh, int fd, struct sshbuf *conf)
 			fatal_fr(r, "compose includes");
 	}
 
+	hostkeys = pack_hostkeys();
+
 	/*
 	 * Protocol from monitor to unpriv privsep process:
 	 *	string	configuration
+	 *	string	host_keys[] {
+	 *		string public_key
+	 *		string certificate
+	 *	}
 	 *	string  server_banner
 	 *	string  client_banner
 	 *	string	included_files[] {
@@ -285,6 +328,7 @@ send_privsep_state(struct ssh *ssh, int fd, struct sshbuf *conf)
 	 *	}
 	 */
 	if ((r = sshbuf_put_stringb(m, conf)) != 0 ||
+	    (r = sshbuf_put_stringb(m, hostkeys)) != 0 ||
 	    (r = sshbuf_put_stringb(m, ssh->kex->server_version)) != 0 ||
 	    (r = sshbuf_put_stringb(m, ssh->kex->client_version)) != 0 ||
 	    (r = sshbuf_put_stringb(m, inc)) != 0)
