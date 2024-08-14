@@ -682,6 +682,16 @@ The location of the file is exposed to the user session through the
 environment variable.
 The default is
 .Cm no .
+.It Cm ExposeSessionID
+Causes
+.Xr sshd 8
+to set the
+.Ev SSH_SESSION_ID
+environment variable to the SSH protocol-level session identifier derived
+during initial key exchange.
+This value may be used to uniquely identify a connection.
+The default is
+.Cm no .
 .It Cm FingerprintHash
 Specifies the hash algorithm used when logging key fingerprints.
 Valid options are:
@@ -1294,6 +1304,7 @@ Available keywords are
 .Cm DenyUsers ,
 .Cm DisableForwarding ,
 .Cm ExposeAuthInfo ,
+.Cm ExposeSessionID ,
 .Cm ForceCommand ,
 .Cm GatewayPorts ,
 .Cm GSSAPIAuthentication ,
