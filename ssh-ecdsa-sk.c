@@ -224,7 +224,7 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 	u_char sig_flags;
 	u_char msghash[32], apphash[32];
 	u_int sig_counter;
-	u_char *sigb = NULL;
+	u_char *sigb = NULL, *cp;
 	int is_webauthn = 0, ret = SSH_ERR_INTERNAL_ERROR, len = 0;
 	struct sshbuf *b = NULL, *sigbuf = NULL, *original_signed = NULL;
 	struct sshbuf *webauthn_wrapper = NULL, *webauthn_exts = NULL;
@@ -367,7 +367,8 @@ ssh_ecdsa_sk_verify(const struct sshkey *key,
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if (i2d_ECDSA_SIG(esig, &sigb) != len) {
+	cp = sigb; /* ASN1_item_d2i increments the pointer past the object */
+	if (i2d_ECDSA_SIG(esig, &cp) != len) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}

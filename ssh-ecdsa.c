@@ -384,7 +384,7 @@ ssh_ecdsa_verify(const struct sshkey *key,
 	int ret = SSH_ERR_INTERNAL_ERROR;
 	struct sshbuf *b = NULL, *sigbuf = NULL;
 	char *ktype = NULL;
-	unsigned char *sigb = NULL;
+	unsigned char *sigb = NULL, *cp;
 
 	if (key == NULL || key->pkey == NULL ||
 	    sshkey_type_plain(key->type) != KEY_ECDSA ||
@@ -441,7 +441,8 @@ ssh_ecdsa_verify(const struct sshkey *key,
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if (i2d_ECDSA_SIG(esig, &sigb) != len) {
+	cp = sigb; /* ASN1_item_d2i increments the pointer past the object */
+	if (i2d_ECDSA_SIG(esig, &cp) != len) {
 		ret = SSH_ERR_LIBCRYPTO_ERROR;
 		goto out;
 	}
