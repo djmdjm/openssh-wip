@@ -36,6 +36,7 @@
 #include "sshbuf.h"
 #include "digest.h"
 #include "ssherr.h"
+#include "log.h"
 
 #include "libcrux_mlkem768_sha3.h"
 

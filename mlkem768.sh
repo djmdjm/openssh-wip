@@ -7,7 +7,6 @@ WANT_LIBCRUX_REVISION="origin/main"
 
 # Apache2.0 license only; need to replace.
 XXXFILES="
-	libcrux/libcrux-ml-kem/cg/karamel/target.h
 	libcrux/libcrux-ml-kem/cg/eurydice_glue.h
 "
 
@@ -44,7 +43,13 @@ echo '/*'
 cat libcrux/LICENSE-MIT | sed 's/^/ * /;s/ *$//'
 echo ' */'
 echo
-
+echo '#if !defined(__GNUC__) || (__GNUC__ < 2)'
+echo '# define __attribute__(x)'
+echo '#endif'
+echo '#define KRML_MUSTINLINE inline'
+echo '#define KRML_NOINLINE __attribute__((noinline, unused))'
+echo '#define KRML_HOST_EPRINTF(...)'
+echo '#define KRML_HOST_EXIT(x) fatal_f("internal error")'
 echo
 for i in $FILES; do
 	echo "/* from $i */"
