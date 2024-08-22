@@ -39,8 +39,6 @@ OPENSSL?=	yes
 ZLIB?=		yes
 DSAKEY?=	no
 
-CFLAGS+= -DDEBUG_KEXECDH=1
-
 .if (${OPENSSL:L} == "yes")
 CFLAGS+=	-DWITH_OPENSSL
 .endif
