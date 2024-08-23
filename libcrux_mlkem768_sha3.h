@@ -1,5 +1,5 @@
 /*  $OpenBSD$ */
-/* Extracted from libcrux revision $LIBCRUX_REVISION */
+/* Extracted from libcrux revision 4873df779b9222eb238e0918438cb04f15b9dd7f */
 
 /*
  * MIT License
@@ -34,12 +34,6 @@
 #define KRML_HOST_EXIT(x) fatal_f("internal error")
 
 /* from libcrux/libcrux-ml-kem/cg/eurydice_glue.h */
-/*
- * SPDX-FileCopyrightText: 2024 Eurydice Contributors
- * SPDX-FileCopyrightText: 2024 Cryspen Sarl <info@cryspen.com>
- *
- * SPDX-License-Identifier: Apache-2.0
- */
 
 #pragma once
 

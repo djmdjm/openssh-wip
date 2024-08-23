@@ -5,13 +5,8 @@
 
 WANT_LIBCRUX_REVISION="origin/main"
 
-# Apache2.0 license only; need to replace.
-XXXFILES="
-	libcrux/libcrux-ml-kem/cg/eurydice_glue.h
-"
-
 FILES="
-	$XXXFILES
+	libcrux/libcrux-ml-kem/cg/eurydice_glue.h
 	libcrux/libcrux-ml-kem/cg/libcrux_core.h
 	libcrux/libcrux-ml-kem/cg/libcrux_ct_ops.h
 	libcrux/libcrux-ml-kem/cg/libcrux_sha3_portable.h
@@ -37,7 +32,7 @@ set -e
 cd $START
 echo -n '/*  $OpenBSD$ */'
 echo
-echo '/* Extracted from libcrux revision $LIBCRUX_REVISION */'
+echo "/* Extracted from libcrux revision $LIBCRUX_REVISION */"
 echo
 echo '/*'
 cat libcrux/LICENSE-MIT | sed 's/^/ * /;s/ *$//'
@@ -62,12 +57,11 @@ for i in $FILES; do
 	    -e 's/[	 ]*$//' \
 	    $i | \
 	case "$i" in
-# XXX example
-#	# Remove unused function to prevent warning.
-#	libcrux/libcrux-ml-kem/cg/somefile.c)
-#	    sed \
-#		-e '/int some_func(/,/^}$/d' \
-#	    ;;
+	# Remove incorrect license text.
+	libcrux/libcrux-ml-kem/cg/eurydice_glue.h)
+	    sed \
+		-e '/^[/][*]/,/^ [*][/]$/d' \
+	    ;;
 	# Default: pass through.
 	*)
 	    cat
