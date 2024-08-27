@@ -44,15 +44,11 @@ int
 kex_kem_mlkem768x25519_keypair(struct kex *kex)
 {
 	struct sshbuf *buf = NULL;
-	u_char rnd[64], *cp = NULL;
+	u_char rnd[LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN], *cp = NULL;
 	size_t need;
 	int r = SSH_ERR_INTERNAL_ERROR;
-	libcrux_ml_kem_mlkem768_MlKem768KeyPair keypair;
+	struct libcrux_mlkem_keypair keypair;
 
-	/* consistancy checks; XXX would rather these at compile time */
-	if (sizeof(keypair.sk.value) != sizeof(kex->mlkem768_client_key) ||
-	    sizeof(keypair.pk.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
-		return SSH_ERR_INTERNAL_ERROR;
 	if ((buf = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	need = crypto_kem_mlkem768_PUBLICKEYBYTES + CURVE25519_SIZE;
@@ -91,24 +87,18 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 	struct sshbuf *server_blob = NULL;
 	struct sshbuf *buf = NULL;
 	const u_char *client_pub;
-	u_char rnd[32];
+	u_char rnd[LIBCRUX_ML_KEM_ENC_PRNG_LEN];
 	u_char server_pub[CURVE25519_SIZE], server_key[CURVE25519_SIZE];
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
 	size_t need;
 	int r = SSH_ERR_INTERNAL_ERROR;
-	tuple_3c enc;
-	Option_92 valid;
-	struct libcrux_ml_kem_types_MlKemPublicKey_15_s mlkem_pub;
+	struct libcrux_mlkem_enc_result enc;
+	struct libcrux_mlkem_pk_valid_result valid;
+	struct libcrux_mlkem_pk mlkem_pub;
 
 	*server_blobp = NULL;
 	*shared_secretp = NULL;
 	memset(&mlkem_pub, 0, sizeof(mlkem_pub));
-
-	/* consistency checks; XXX would rather do these at compile time */
-	if (sizeof(mlkem_pub.value) != crypto_kem_mlkem768_PUBLICKEYBYTES ||
-	    sizeof(enc.fst.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES ||
-	    sizeof(enc.snd) != crypto_kem_mlkem768_BYTES)
-		return SSH_ERR_INTERNAL_ERROR;
 
 	/* client_blob contains both KEM and ECDH client pubkeys */
 	need = crypto_kem_mlkem768_PUBLICKEYBYTES + CURVE25519_SIZE;
@@ -124,7 +114,7 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 	    client_pub + crypto_kem_mlkem768_PUBLICKEYBYTES,
 	    CURVE25519_SIZE);
 #endif
-	/* check public key validity; XXX necessary? */
+	/* check public key validity */
 	memcpy(mlkem_pub.value, client_pub, crypto_kem_mlkem768_PUBLICKEYBYTES);
 	valid = libcrux_ml_kem_mlkem768_portable_validate_public_key(mlkem_pub);
 	if (valid.tag != Some) {
@@ -201,17 +191,13 @@ kex_kem_mlkem768x25519_dec(struct kex *kex,
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
 	size_t need;
 	int r;
-	libcrux_ml_kem_types_MlKemPrivateKey_55 mlkem_priv;
-	libcrux_ml_kem_mlkem768_MlKem768Ciphertext mlkem_ciphertext;
+	struct libcrux_mlkem_sk mlkem_priv;
+	struct libcrux_mlkem_ciphertext mlkem_ciphertext;
 
 	*shared_secretp = NULL;
 	memset(&mlkem_priv, 0, sizeof(mlkem_priv));
 	memset(&mlkem_ciphertext, 0, sizeof(mlkem_ciphertext));
 
-	/* consistancy checks; XXX would rather these at compile time */
-	if (sizeof(mlkem_priv.value) != sizeof(kex->mlkem768_client_key) ||
-	    sizeof(mlkem_ciphertext.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
-		return SSH_ERR_INTERNAL_ERROR;
 	need = crypto_kem_mlkem768_CIPHERTEXTBYTES + CURVE25519_SIZE;
 	if (sshbuf_len(server_blob) != need) {
 		r = SSH_ERR_SIGNATURE_INVALID;
@@ -233,7 +219,6 @@ kex_kem_mlkem768x25519_dec(struct kex *kex,
 	    sizeof(mlkem_ciphertext.value));
 	dump_digest("server public key c25519:", server_pub, CURVE25519_SIZE);
 #endif
-	/* XXX can decapsulation fail here? */
 	libcrux_ml_kem_mlkem768_portable_kyber_decapsulate(&mlkem_priv,
 	    &mlkem_ciphertext, mlkem_key);
 	if ((r = sshbuf_put(buf, mlkem_key, sizeof(mlkem_key))) != 0)
