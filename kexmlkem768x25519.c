@@ -55,7 +55,7 @@ kex_kem_mlkem768x25519_keypair(struct kex *kex)
 	if ((r = sshbuf_reserve(buf, need, &cp)) != 0)
 		goto out;
 	arc4random_buf(rnd, sizeof(rnd));
-	keypair = libcrux_ml_kem_mlkem768_portable_kyber_generate_key_pair(rnd);
+	keypair = libcrux_ml_kem_mlkem768_portable_generate_key_pair(rnd);
 	memcpy(cp, keypair.pk.value, crypto_kem_mlkem768_PUBLICKEYBYTES);
 	memcpy(kex->mlkem768_client_key, keypair.sk.value,
 	    sizeof(kex->mlkem768_client_key));
@@ -135,8 +135,7 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 	}
 	/* generate and encrypt KEM key with client key */
 	arc4random_buf(rnd, sizeof(rnd));
-	enc = libcrux_ml_kem_mlkem768_portable_kyber_encapsulate(
-	    &valid.f0, rnd);
+	enc = libcrux_ml_kem_mlkem768_portable_encapsulate(&valid.f0, rnd);
 	/* generate ECDH key pair, store server pubkey after ciphertext */
 	kexc25519_keygen(server_key, server_pub);
 	if ((r = sshbuf_put(buf, enc.snd, sizeof(enc.snd))) != 0 ||
@@ -219,7 +218,7 @@ kex_kem_mlkem768x25519_dec(struct kex *kex,
 	    sizeof(mlkem_ciphertext.value));
 	dump_digest("server public key c25519:", server_pub, CURVE25519_SIZE);
 #endif
-	libcrux_ml_kem_mlkem768_portable_kyber_decapsulate(&mlkem_priv,
+	libcrux_ml_kem_mlkem768_portable_decapsulate(&mlkem_priv,
 	    &mlkem_ciphertext, mlkem_key);
 	if ((r = sshbuf_put(buf, mlkem_key, sizeof(mlkem_key))) != 0)
 		goto out;
