@@ -12258,12 +12258,12 @@ typedef int16_t
 
 
 /* rename some types to be a bit more ergonomic */
-#define libcrux_mlkem_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair_s
-#define libcrux_mlkem_pk_valid_result Option_92_s
-#define libcrux_mlkem_pk libcrux_ml_kem_types_MlKemPublicKey_15_s
-#define libcrux_mlkem_sk libcrux_ml_kem_types_MlKemPrivateKey_55_s
-#define libcrux_mlkem_ciphertext libcrux_ml_kem_mlkem768_MlKem768Ciphertext_s
-#define libcrux_mlkem_enc_result tuple_3c_s
+#define libcrux_mlkem768_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair_s
+#define libcrux_mlkem768_pk_valid_result Option_92_s
+#define libcrux_mlkem768_pk libcrux_ml_kem_types_MlKemPublicKey_15_s
+#define libcrux_mlkem768_sk libcrux_ml_kem_types_MlKemPrivateKey_55_s
+#define libcrux_mlkem768_ciphertext libcrux_ml_kem_mlkem768_MlKem768Ciphertext_s
+#define libcrux_mlkem768_enc_result tuple_3c_s
 /* defines for PRNG inputs */
 #define LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN 64
 #define LIBCRUX_ML_KEM_ENC_PRNG_LEN 32

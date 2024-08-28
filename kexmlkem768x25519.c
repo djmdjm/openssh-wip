@@ -47,7 +47,7 @@ kex_kem_mlkem768x25519_keypair(struct kex *kex)
 	u_char rnd[LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN], *cp = NULL;
 	size_t need;
 	int r = SSH_ERR_INTERNAL_ERROR;
-	struct libcrux_mlkem_keypair keypair;
+	struct libcrux_mlkem768_keypair keypair;
 
 	if ((buf = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
@@ -92,9 +92,9 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
 	size_t need;
 	int r = SSH_ERR_INTERNAL_ERROR;
-	struct libcrux_mlkem_enc_result enc;
-	struct libcrux_mlkem_pk_valid_result valid;
-	struct libcrux_mlkem_pk mlkem_pub;
+	struct libcrux_mlkem768_enc_result enc;
+	struct libcrux_mlkem768_pk_valid_result valid;
+	struct libcrux_mlkem768_pk mlkem_pub;
 
 	*server_blobp = NULL;
 	*shared_secretp = NULL;
@@ -190,8 +190,8 @@ kex_kem_mlkem768x25519_dec(struct kex *kex,
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
 	size_t need;
 	int r;
-	struct libcrux_mlkem_sk mlkem_priv;
-	struct libcrux_mlkem_ciphertext mlkem_ciphertext;
+	struct libcrux_mlkem768_sk mlkem_priv;
+	struct libcrux_mlkem768_ciphertext mlkem_ciphertext;
 
 	*shared_secretp = NULL;
 	memset(&mlkem_priv, 0, sizeof(mlkem_priv));

@@ -19,7 +19,7 @@ die() {
 	exit 1
 }
 
-set -xe
+set -xeuo pipefail
 test -d libcrux || git clone https://github.com/cryspen/libcrux
 cd libcrux
 test `git diff | wc -l` -ne 0 && die "tree has unstaged changes"
@@ -74,51 +74,68 @@ done
 
 echo
 echo '/* rename some types to be a bit more ergonomic */'
-echo '#define libcrux_mlkem_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair_s'
-echo '#define libcrux_mlkem_pk_valid_result Option_92_s'
-echo '#define libcrux_mlkem_pk libcrux_ml_kem_types_MlKemPublicKey_15_s'
-echo '#define libcrux_mlkem_sk libcrux_ml_kem_types_MlKemPrivateKey_55_s'
-echo '#define libcrux_mlkem_ciphertext libcrux_ml_kem_mlkem768_MlKem768Ciphertext_s'
-echo '#define libcrux_mlkem_enc_result tuple_3c_s'
+echo '#define libcrux_mlkem768_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair_s'
+echo '#define libcrux_mlkem768_pk_valid_result Option_92_s'
+echo '#define libcrux_mlkem768_pk libcrux_ml_kem_types_MlKemPublicKey_15_s'
+echo '#define libcrux_mlkem768_sk libcrux_ml_kem_types_MlKemPrivateKey_55_s'
+echo '#define libcrux_mlkem768_ciphertext libcrux_ml_kem_mlkem768_MlKem768Ciphertext_s'
+echo '#define libcrux_mlkem768_enc_result tuple_3c_s'
 ) > libcrux_mlkem768_sha3.h_new
 
 # Do some checks on the resultant file
 
-crypto_api_val() {
-	grep "^#define $1 " crypto_api.h | sed "s/.*$1 //" | sed 's/ //g'
+cat > libcrux_mlkem768_sha3_check.c << _EOF
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <signal.h>
+#include <err.h>
+#include "crypto_api.h"
+#define fatal_f(x) exit(1)
+#include "libcrux_mlkem768_sha3.h_new"
+int main(void) {
+	struct libcrux_mlkem768_keypair keypair = {0};
+	struct libcrux_mlkem768_pk_valid_result valid_result = {0};
+	struct libcrux_mlkem768_pk pk = {0};
+	struct libcrux_mlkem768_sk sk = {0};
+	struct libcrux_mlkem768_ciphertext ct = {0};
+	struct libcrux_mlkem768_enc_result enc_result = {0};
+	uint8_t kp_seed[64] = {0}, enc_seed[32] = {0};
+	uint8_t shared_key[crypto_kem_mlkem768_BYTES];
+
+	if (sizeof(keypair.pk.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
+		errx(1, "keypair.pk bad");
+	if (sizeof(keypair.sk.value) != crypto_kem_mlkem768_SECRETKEYBYTES)
+		errx(1, "keypair.sk bad");
+	if (sizeof(pk.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
+		errx(1, "pk bad");
+	if (sizeof(sk.value) != crypto_kem_mlkem768_SECRETKEYBYTES)
+		errx(1, "sk bad");
+	if (sizeof(ct.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
+		errx(1, "ct bad");
+	if (sizeof(valid_result.f0.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
+		errx(1, "valid_result bad");
+	if (sizeof(enc_result.fst.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
+		errx(1, "enc_result ct bad");
+	if (sizeof(enc_result.snd) != crypto_kem_mlkem768_BYTES)
+		errx(1, "enc_result shared key bad");
+
+	keypair = libcrux_ml_kem_mlkem768_portable_generate_key_pair(kp_seed);
+	enc_result = libcrux_ml_kem_mlkem768_portable_encapsulate(&keypair.pk,
+	    enc_seed);
+	libcrux_ml_kem_mlkem768_portable_decapsulate(&keypair.sk,
+	    &enc_result.fst, shared_key);
+	if (memcmp(shared_key, enc_result.snd, sizeof(shared_key)) != 0)
+		errx(1, "smoke failed");
+	return 0;
 }
-
-PUBLICKEYBYTES=`crypto_api_val crypto_kem_mlkem768_PUBLICKEYBYTES`
-SECRETKEYBYTES=`crypto_api_val crypto_kem_mlkem768_SECRETKEYBYTES`
-CIPHERTEXTBYTES=`crypto_api_val crypto_kem_mlkem768_CIPHERTEXTBYTES`
-BYTES=`crypto_api_val crypto_kem_mlkem768_BYTES`
-
-echo "Checking: " 1>&2
-echo "    crypto_kem_mlkem768_PUBLICKEYBYTES == $PUBLICKEYBYTES" 1>&2
-echo "    crypto_kem_mlkem768_SECRETKEYBYTES == $SECRETKEYBYTES" 1>&2
-echo "    crypto_kem_mlkem768_CIPHERTEXTBYTES == $CIPHERTEXTBYTES" 1>&2
-echo "    crypto_kem_mlkem768_BYTES == $BYTES" 1>&2
-
-sed -e '/^typedef struct libcrux_ml_kem_types_MlKemPublicKey_15_s {$/,/^} libcrux_ml_kem_types_MlKemPublicKey_15;$/!d' \
-	< libcrux_mlkem768_sha3.h_new \
-	| grep -q "uint8_t value\[${PUBLICKEYBYTES}U\];" \
-	|| die "crypto_kem_mlkem768_PUBLICKEYBYTES mismatch"
-sed -e '/^typedef struct libcrux_ml_kem_types_MlKemPrivateKey_55_s {$/,/^} libcrux_ml_kem_types_MlKemPrivateKey_55;$/!d' \
-	< libcrux_mlkem768_sha3.h_new \
-	| grep -q "uint8_t value\[${SECRETKEYBYTES}U\];" \
-	|| die "crypto_kem_mlkem768_SECRETKEYBYTES mismatch"
-sed -e '/^typedef struct libcrux_ml_kem_mlkem768_MlKem768Ciphertext_s {$/,/^} libcrux_ml_kem_mlkem768_MlKem768Ciphertext;$/!d' \
-	< libcrux_mlkem768_sha3.h_new \
-	| grep -q "uint8_t value\[${CIPHERTEXTBYTES}U\];" \
-	|| die "crypto_kem_mlkem768_CIPHERTEXTBYTES mismatch"
-sed -e '/^typedef struct tuple_3c_s {$/,/^} tuple_3c;$/!d' \
-	< libcrux_mlkem768_sha3.h_new \
-	| grep -q "uint8_t snd\[${BYTES}U\];" \
-	|| die "crypto_kem_mlkem768_BYTES mismatch in libcrux_ml_kem_mlkem768_portable_kyber_encapsulate result"
-sed -e '/^static inline void libcrux_ml_kem_mlkem768_portable_kyber_decapsulate[(]$/,/[)] {$/!d' \
-	< libcrux_mlkem768_sha3.h_new \
-	| grep -q ", uint8_t ret\[${BYTES}U\]" \
-	|| die "crypto_kem_mlkem768_BYTES mismatch in libcrux_ml_kem_mlkem768_portable_kyber_decapsulate"
+_EOF
+cc -Wall -Wextra -Wno-unused-parameter -o libcrux_mlkem768_sha3_check \
+	libcrux_mlkem768_sha3_check.c
+./libcrux_mlkem768_sha3_check
 
 # Extract PRNG inputs; there's no nice #defines for these
 key_pair_rng_len=`sed -e '/^libcrux_ml_kem_mlkem768_portable_kyber_generate_key_pair[(]$/,/[)] {$/!d' < libcrux_mlkem768_sha3.h_new | grep 'uint8_t randomness\[[0-9]*U\][)]' | sed 's/.*randomness\[\([0-9]*\)U\].*/\1/'`
@@ -132,11 +149,8 @@ echo "#define LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN $key_pair_rng_len"
 echo "#define LIBCRUX_ML_KEM_ENC_PRNG_LEN $enc_rng_len"
 ) >> libcrux_mlkem768_sha3.h_new
 
-echo "Found:" 1>&2
-echo "    LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN = $key_pair_rng_len" 1>&2
-echo "    LIBCRUX_ML_KEM_ENC_PRNG_LEN = $enc_rng_len" 1>&2
-
 mv libcrux_mlkem768_sha3.h_new libcrux_mlkem768_sha3.h
+rm libcrux_mlkem768_sha3_check libcrux_mlkem768_sha3_check.c
 echo 1>&2
 echo "libcrux_mlkem768_sha3.h OK" 1>&2
 
