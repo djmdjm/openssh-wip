@@ -27,6 +27,7 @@ void	srclimit_done(int);
 #define SRCLIMIT_PENALTY_AUTHFAIL	2
 #define SRCLIMIT_PENALTY_GRACE_EXCEEDED	3
 #define SRCLIMIT_PENALTY_NOAUTH		4
+#define SRCLIMIT_PENALTY_ADMIN_REFUSED	5
 
 /* meaningful exit values, used by sshd listener for penalties */
 #define EXIT_LOGIN_GRACE	3	/* login grace period exceeded */
