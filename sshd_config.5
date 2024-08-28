@@ -1322,6 +1322,7 @@ Available keywords are
 .Cm PubkeyAuthentication ,
 .Cm PubkeyAuthOptions ,
 .Cm RekeyLimit ,
+.Cm RefuseConnection ,
 .Cm RevokedKeys ,
 .Cm RDomain ,
 .Cm SetEnv ,
@@ -1751,6 +1752,13 @@ options have any effect for other, non-FIDO, public key types.
 Specifies whether public key authentication is allowed.
 The default is
 .Cm yes .
+.It Cm RefuseConnection
+Indicates that
+.Xr sshd 8
+should unconditionally terminate the connection.
+This option is only really useful in a
+.Cm Match
+block.
 .It Cm RekeyLimit
 Specifies the maximum amount of data that may be transmitted or received
 before the session key is renegotiated, optionally followed by a maximum
