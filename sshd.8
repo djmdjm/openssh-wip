@@ -115,6 +115,10 @@ and
 .Dq rdomain
 and correspond to source address, user, resolved source host name,
 local address, local port number and routing domain respectively.
+Additionally the
+.Dq invalid-user
+flag (which does not take a value argument) may be specified to simulate
+a connection from an unrecognised username.
 .It Fl c Ar host_certificate_file
 Specifies a path to a certificate file to identify
 .Nm

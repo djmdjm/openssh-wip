@@ -253,6 +253,7 @@ typedef struct {
 /* Information about the incoming connection as used by Match */
 struct connection_info {
 	const char *user;
+	int user_invalid;
 	const char *host;	/* possibly resolved hostname */
 	const char *address;	/* remote address */
 	const char *laddress;	/* local address */
