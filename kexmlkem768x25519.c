@@ -93,7 +93,6 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 	size_t need;
 	int r = SSH_ERR_INTERNAL_ERROR;
 	struct libcrux_mlkem768_enc_result enc;
-	struct libcrux_mlkem768_pk_valid_result valid;
 	struct libcrux_mlkem768_pk mlkem_pub;
 
 	*server_blobp = NULL;
@@ -116,8 +115,7 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 #endif
 	/* check public key validity */
 	memcpy(mlkem_pub.value, client_pub, crypto_kem_mlkem768_PUBLICKEYBYTES);
-	valid = libcrux_ml_kem_mlkem768_portable_validate_public_key(mlkem_pub);
-	if (valid.tag != Some) {
+	if (!libcrux_ml_kem_mlkem768_portable_validate_public_key(&mlkem_pub)) {
 		r = SSH_ERR_SIGNATURE_INVALID;
 		goto out;
 	}
@@ -135,7 +133,7 @@ kex_kem_mlkem768x25519_enc(struct kex *kex,
 	}
 	/* generate and encrypt KEM key with client key */
 	arc4random_buf(rnd, sizeof(rnd));
-	enc = libcrux_ml_kem_mlkem768_portable_encapsulate(&valid.f0, rnd);
+	enc = libcrux_ml_kem_mlkem768_portable_encapsulate(&mlkem_pub, rnd);
 	/* generate ECDH key pair, store server pubkey after ciphertext */
 	kexc25519_keygen(server_key, server_pub);
 	if ((r = sshbuf_put(buf, enc.snd, sizeof(enc.snd))) != 0 ||

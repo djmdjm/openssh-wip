@@ -23,7 +23,7 @@ set -xeuo pipefail
 test -d libcrux || git clone https://github.com/cryspen/libcrux
 cd libcrux
 test `git diff | wc -l` -ne 0 && die "tree has unstaged changes"
-#git fetch
+git fetch
 git checkout -B extract 1>&2
 git reset --hard $WANT_LIBCRUX_REVISION 1>&2
 LIBCRUX_REVISION=`git rev-parse HEAD`
@@ -51,19 +51,12 @@ for i in $FILES; do
 	echo "/* from $i */"
 	# Changes to all files:
 	#  - remove all includes, we inline everything required.
-	#  - make functions not required elsewhere static.
-	#  - rename the functions we do use.
-	#  - remove unnecessary defines and externs.
+	#  - cleanup whitespace
 	sed -e "/#include/d" \
 	    -e 's/[	 ]*$//' \
 	    $i | \
 	case "$i" in
-	# Remove incorrect license text, with permission:
-	# Message-ID: <CAACePAKad5bFex4T0U6w2C4poXpng-UqfaCtU0eo4OthyQuE0w@mail.gmail.com>
-	libcrux/libcrux-ml-kem/cg/eurydice_glue.h)
-	    sed \
-		-e '/^[/][*]/,/^ [*][/]$/d' \
-	    ;;
+	# XXX per-file handling goes here.
 	# Default: pass through.
 	*)
 	    cat
@@ -98,7 +91,6 @@ cat > libcrux_mlkem768_sha3_check.c << _EOF
 #include "libcrux_mlkem768_sha3.h_new"
 int main(void) {
 	struct libcrux_mlkem768_keypair keypair = {0};
-	struct libcrux_mlkem768_pk_valid_result valid_result = {0};
 	struct libcrux_mlkem768_pk pk = {0};
 	struct libcrux_mlkem768_sk sk = {0};
 	struct libcrux_mlkem768_ciphertext ct = {0};
@@ -116,14 +108,14 @@ int main(void) {
 		errx(1, "sk bad");
 	if (sizeof(ct.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
 		errx(1, "ct bad");
-	if (sizeof(valid_result.f0.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
-		errx(1, "valid_result bad");
 	if (sizeof(enc_result.fst.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
 		errx(1, "enc_result ct bad");
 	if (sizeof(enc_result.snd) != crypto_kem_mlkem768_BYTES)
 		errx(1, "enc_result shared key bad");
 
 	keypair = libcrux_ml_kem_mlkem768_portable_generate_key_pair(kp_seed);
+	if (!libcrux_ml_kem_mlkem768_portable_validate_public_key(&keypair.pk))
+		errx(1, "valid smoke failed");
 	enc_result = libcrux_ml_kem_mlkem768_portable_encapsulate(&keypair.pk,
 	    enc_seed);
 	libcrux_ml_kem_mlkem768_portable_decapsulate(&keypair.sk,
