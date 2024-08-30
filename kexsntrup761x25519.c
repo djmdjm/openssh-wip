@@ -35,6 +35,10 @@
 #include "digest.h"
 #include "ssherr.h"
 
+volatile crypto_int16 crypto_int16_optblocker = 0;
+volatile crypto_int32 crypto_int32_optblocker = 0;
+volatile crypto_int64 crypto_int64_optblocker = 0;
+
 int
 kex_kem_sntrup761x25519_keypair(struct kex *kex)
 {
