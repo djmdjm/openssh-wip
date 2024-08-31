@@ -185,6 +185,7 @@ initialize_server_options(ServerOptions *options)
 	options->fingerprint_hash = -1;
 	options->disable_forwarding = -1;
 	options->expose_userauth_info = -1;
+	options->expose_session_id = -1;
 	options->required_rsa_size = -1;
 	options->channel_timeouts = NULL;
 	options->num_channel_timeouts = 0;
@@ -449,6 +450,8 @@ fill_default_server_options(ServerOptions *options)
 		options->disable_forwarding = 0;
 	if (options->expose_userauth_info == -1)
 		options->expose_userauth_info = 0;
+	if (options->expose_session_id == -1)
+		options->expose_session_id = 0;
 	if (options->sk_provider == NULL)
 		options->sk_provider = xstrdup("internal");
 	if (options->required_rsa_size == -1)
@@ -534,7 +537,8 @@ typedef enum {
 	sAuthenticationMethods, sHostKeyAgent, sPermitUserRC,
 	sStreamLocalBindMask, sStreamLocalBindUnlink,
 	sAllowStreamLocalForwarding, sFingerprintHash, sDisableForwarding,
-	sExposeAuthInfo, sRDomain, sPubkeyAuthOptions, sSecurityKeyProvider,
+	sExposeAuthInfo, sExposeSessionID, sRDomain, sPubkeyAuthOptions,
+	sSecurityKeyProvider,
 	sRequiredRSASize, sChannelTimeout, sUnusedConnectionTimeout,
 	sSshdSessionPath,
 	sDeprecated, sIgnore, sUnsupported
@@ -679,6 +683,7 @@ static struct {
 	{ "fingerprinthash", sFingerprintHash, SSHCFG_GLOBAL },
 	{ "disableforwarding", sDisableForwarding, SSHCFG_ALL },
 	{ "exposeauthinfo", sExposeAuthInfo, SSHCFG_ALL },
+	{ "exposesessionid", sExposeSessionID, SSHCFG_ALL },
 	{ "rdomain", sRDomain, SSHCFG_ALL },
 	{ "casignaturealgorithms", sCASignatureAlgorithms, SSHCFG_ALL },
 	{ "securitykeyprovider", sSecurityKeyProvider, SSHCFG_GLOBAL },
@@ -2515,6 +2520,10 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 		intptr = &options->expose_userauth_info;
 		goto parse_flag;
 
+	case sExposeSessionID:
+		intptr = &options->expose_session_id;
+		goto parse_flag;
+
 	case sRDomain:
 		charptr = &options->routing_domain;
 		arg = argv_next(&ac, &av);
@@ -2775,6 +2784,7 @@ copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 	M_CP_INTOPT(allow_agent_forwarding);
 	M_CP_INTOPT(disable_forwarding);
 	M_CP_INTOPT(expose_userauth_info);
+	M_CP_INTOPT(expose_session_id);
 	M_CP_INTOPT(permit_tun);
 	M_CP_INTOPT(fwd_opts.gateway_ports);
 	M_CP_INTOPT(fwd_opts.streamlocal_bind_unlink);
@@ -3116,6 +3126,7 @@ dump_config(ServerOptions *o)
 	dump_cfg_fmtint(sStreamLocalBindUnlink, o->fwd_opts.streamlocal_bind_unlink);
 	dump_cfg_fmtint(sFingerprintHash, o->fingerprint_hash);
 	dump_cfg_fmtint(sExposeAuthInfo, o->expose_userauth_info);
+	dump_cfg_fmtint(sExposeAuthInfo, o->expose_session_id);
 
 	/* string arguments */
 	dump_cfg_string(sPidFile, o->pid_file);

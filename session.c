@@ -935,6 +935,12 @@ do_setup_env(struct ssh *ssh, Session *s, const char *shell)
 	if (original_command)
 		child_set_env(&env, &envsize, "SSH_ORIGINAL_COMMAND",
 		    original_command);
+	if (options.expose_session_id) {
+		if ((cp = sshbuf_dtob16(ssh->kex->session_id)) == NULL)
+			fatal_f("failed to render session ID");
+		child_set_env(&env, &envsize, "SSH_SESSION_ID", cp);
+		free(cp);
+	}
 
 	if (debug_flag) {
 		/* dump the environment */
