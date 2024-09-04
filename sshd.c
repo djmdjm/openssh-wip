@@ -361,9 +361,9 @@ child_reap(struct early_child *child)
 			    child->early ? " (early)" : "");
 			break;
 		case EXIT_CONFIG_REFUSED:
-			penalty_type = SRCLIMIT_PENALTY_ADMIN_REFUSED;
-			debug_f("preauth child %ld for %s administatively "
-			    "refused %s",
+			penalty_type = SRCLIMIT_PENALTY_REFUSECONNECTION;
+			debug_f("preauth child %ld for %s prohibited by"
+			    "RefuseConnection %s",
 			    (long)child->pid, child->id,
 			    child->early ? " (early)" : "");
 			break;

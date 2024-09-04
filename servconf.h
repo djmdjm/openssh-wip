@@ -77,7 +77,7 @@ struct per_source_penalty {
 	int	penalty_grace;
 	int	penalty_authfail;
 	int	penalty_noauth;
-	int	penalty_admin_refused;
+	int	penalty_refuseconnection;
 	int	penalty_max;
 	int	penalty_min;
 };
