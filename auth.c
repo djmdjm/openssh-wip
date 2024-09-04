@@ -419,12 +419,9 @@ getpwnamallow(struct ssh *ssh, const char *user)
 	struct connection_info *ci;
 	u_int i;
 
-	if ((pw = getpwnam(user)) != NULL)
-		pw = pwcopy(pw);
-
 	ci = server_get_connection_info(ssh, 1, options.use_dns);
 	ci->user = user;
-	ci->user_invalid = pw == NULL;
+	ci->user_invalid = getpwnam(user) == NULL;
 	parse_server_match_config(&options, &includes, ci);
 	log_change_level(options.log_level);
 	log_verbose_reset();
@@ -451,7 +448,9 @@ getpwnamallow(struct ssh *ssh, const char *user)
 	}
 	if (as != NULL)
 		auth_close(as);
-	return pw;
+	if (pw != NULL)
+		return (pwcopy(pw));
+	return (NULL);
 }
 
 /* Returns 1 if key is revoked by revoked_keys_file, 0 otherwise */
