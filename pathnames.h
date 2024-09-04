@@ -41,6 +41,7 @@
 
 /* Binary paths for the sshd components */
 #define _PATH_SSHD_SESSION		"/usr/libexec/sshd-session"
+#define _PATH_SSHD_SESSION_AUTH		"/usr/libexec/sshd-session-auth"
 
 /*
  * The process id of the daemon listening for connections is saved here to
