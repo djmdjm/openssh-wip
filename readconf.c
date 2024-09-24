@@ -54,6 +54,7 @@
 #include "uidswap.h"
 #include "myproposal.h"
 #include "digest.h"
+#include "version.h"
 
 /* Format of the configuration file:
 
@@ -765,6 +766,7 @@ match_cfg_line(Options *options, const char *full_line, int *acp, char ***avp,
 		    strprefix(attrib, "user=", 1) != NULL ||
 		    strprefix(attrib, "localuser=", 1) != NULL ||
 		    strprefix(attrib, "localnetwork=", 1) != NULL ||
+		    strprefix(attrib, "version=", 1) != NULL ||
 		    strprefix(attrib, "tagged=", 1) != NULL ||
 		    strprefix(attrib, "command=", 1) != NULL ||
 		    strprefix(attrib, "exec=", 1) != NULL) {
@@ -815,6 +817,11 @@ match_cfg_line(Options *options, const char *full_line, int *acp, char ***avp,
 				goto out;
 			}
 			r = check_match_ifaddrs(arg) == 1;
+			if (r == (negate ? 1 : 0))
+				this_result = result = 0;
+		} else if (strcasecmp(attrib, "version") == 0) {
+			criteria = xstrdup(SSH_RELEASE);
+			r = match_pattern_list(SSH_RELEASE, arg, 0) == 1;
 			if (r == (negate ? 1 : 0))
 				this_result = result = 0;
 		} else if (strcasecmp(attrib, "tagged") == 0) {

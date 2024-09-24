@@ -1246,6 +1246,7 @@ The available criteria are
 .Cm Host ,
 .Cm LocalAddress ,
 .Cm LocalPort ,
+.Cm Version ,
 .Cm RDomain ,
 and
 .Cm Address
@@ -1270,6 +1271,13 @@ Note that the mask length provided must be consistent with the address -
 it is an error to specify a mask length that is too long for the address
 or one with bits set in this host portion of the address.
 For example, 192.0.2.0/33 and 192.0.2.0/8, respectively.
+.Pp
+The
+.Cm Version
+keyword matches against the version string of
+.Xr sshd 8 ,
+for example
+.Dq OpenSSH_10.0 .
 .Pp
 Only a subset of keywords may be used on the lines following a
 .Cm Match
