@@ -56,6 +56,7 @@ struct ForwardOptions {
 char	*chop(char *);
 void	 rtrim(char *);
 void	skip_space(char **);
+const char *strprefix(const char *, const char *, int);
 char	*strdelim(char **);
 char	*strdelimw(char **);
 int	 set_nonblock(int);
