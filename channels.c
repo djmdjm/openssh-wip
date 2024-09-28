@@ -2369,7 +2369,8 @@ channel_check_max_window(struct ssh *ssh, Channel *c)
 	int r, tcp_rwin;
 	u_int new_window_max;
 
-	if ((ssh->kex->flags & KEX_HAS_CHANNEL_MAX_WINDOW) == 0)
+	if (ssh->kex == NULL ||
+	    (ssh->kex->flags & KEX_HAS_CHANNEL_MAX_WINDOW) == 0)
 		return; /* no protocol extension support */
 	if (c->local_consumed == 0)
 		return; /* only modify window for active channels */
