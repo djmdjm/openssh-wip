@@ -1962,6 +1962,9 @@ client_input_channel_req(int type, u_int32_t seq, struct ssh *ssh)
 		if ((r = sshpkt_get_end(ssh)) != 0)
 			goto out;
 		chan_rcvd_eow(ssh, c);
+	} else if (strcmp(rtype, "max-window@openssh.com") == 0) {
+		if ((r = channel_input_max_window(ssh, c)) == 0)
+			success = 1;
 	} else if (strcmp(rtype, "exit-status") == 0) {
 		if ((r = sshpkt_get_u32(ssh, &exitval)) != 0)
 			goto out;

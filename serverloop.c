@@ -844,6 +844,9 @@ server_input_channel_req(int type, u_int32_t seq, struct ssh *ssh)
 		if ((r = sshpkt_get_end(ssh)) != 0)
 			sshpkt_fatal(ssh, r, "%s: parse packet", __func__);
 		chan_rcvd_eow(ssh, c);
+	} else if (strcmp(rtype, "max-window@openssh.com") == 0) {
+		if ((r = channel_input_max_window(ssh, c)) == 0)
+			success = 1;
 	} else if ((c->type == SSH_CHANNEL_LARVAL ||
 	    c->type == SSH_CHANNEL_OPEN) && strcmp(c->ctype, "session") == 0)
 		success = session_input_channel_req(ssh, c, rtype);

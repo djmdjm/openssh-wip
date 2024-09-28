@@ -166,6 +166,7 @@ struct Channel {
 	char   *remote_name;	/* remote hostname */
 
 	u_int	remote_window;
+	u_int	remote_window_max;
 	u_int	remote_maxpacket;
 	u_int	local_window;
 	u_int	local_window_exceeded;
@@ -325,6 +326,7 @@ int	 channel_input_open_confirmation(int, u_int32_t, struct ssh *);
 int	 channel_input_open_failure(int, u_int32_t, struct ssh *);
 int	 channel_input_window_adjust(int, u_int32_t, struct ssh *);
 int	 channel_input_status_confirm(int, u_int32_t, struct ssh *);
+int	 channel_input_max_window(struct ssh *ssh, Channel *c);
 
 /* file descriptor handling (read/write) */
 struct pollfd;
