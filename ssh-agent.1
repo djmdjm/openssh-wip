@@ -107,10 +107,11 @@ environment variable).
 .It Fl O Ar option
 Specify an option when starting
 .Nm .
-Currently two options are supported:
-.Cm allow-remote-pkcs11
+The supported options are:
+.Cm allow-remote-pkcs11 ,
+.Cm no-restrict-websafe
 and
-.Cm no-restrict-websafe .
+.Cm websafe-allow .
 .Pp
 The
 .Cm allow-remote-pkcs11
@@ -143,6 +144,15 @@ user authentication request or a
 signature.
 The default behaviour prevents forwarded access to a FIDO key from also
 implicitly forwarding the ability to authenticate to websites.
+.Pp
+Alternately the
+.Cm websafe-allow
+option allows specifying a pattern-list of key application strings that
+may be accepted in addition to ones starting with
+.Dq ssh: ,
+e.g.
+.Dq websafe-allow=example.org,*.example.com
+.
 .It Fl P Ar allowed_providers
 Specify a pattern-list of acceptable paths for PKCS#11 provider and FIDO
 authenticator middleware shared libraries that may be used with the
@@ -152,11 +162,12 @@ or
 options to
 .Xr ssh-add 1 .
 Libraries that do not match the pattern list will be refused.
-See PATTERNS in
-.Xr ssh_config 5
-for a description of pattern-list syntax.
 The default list is
 .Dq /usr/lib/*,/usr/local/lib/* .
+.Pp
+See PATTERNS in
+.Xr ssh_config 5
+for a description of pattern-list syntax as used in these options.
 .It Fl s
 Generate Bourne shell commands on
 .Dv stdout .
