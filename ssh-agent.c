@@ -185,6 +185,7 @@ static int fingerprint_hash = SSH_FP_HASH_DEFAULT;
 
 /* Refuse signing of non-SSH messages for web-origin FIDO keys */
 static int restrict_websafe = 1;
+static char *websafe_allowlist;
 
 static void
 close_socket(SocketEntry *e)
@@ -913,6 +914,9 @@ process_sign_request2(SocketEntry *e)
 	if (sshkey_is_sk(id->key)) {
 		if (restrict_websafe &&
 		    strncmp(id->key->sk_application, "ssh:", 4) != 0 &&
+		    (websafe_allowlist != NULL &&
+		    match_pattern_list(id->key->sk_application,
+		    websafe_allowlist, 0) != 1) &&
 		    !check_websafe_message_contents(key, data)) {
 			/* error already logged */
 			goto send;
@@ -2199,6 +2203,7 @@ main(int ac, char **av)
 	int c_flag = 0, d_flag = 0, D_flag = 0, k_flag = 0, s_flag = 0;
 	int sock, ch, result, saved_errno;
 	char *shell, *format, *pidstr, *agentsocket = NULL;
+	const char *ccp;
 	struct rlimit rlim;
 	extern int optind;
 	extern char *optarg;
@@ -2246,7 +2251,12 @@ main(int ac, char **av)
 				restrict_websafe = 0;
 			else if (strcmp(optarg, "allow-remote-pkcs11") == 0)
 				remote_add_provider = 1;
-			else
+			else if ((ccp = strprefix(optarg,
+			    "websafe-allow=", 0)) != NULL) {
+				if (websafe_allowlist != NULL)
+					fatal("websafe-allow already set");
+				websafe_allowlist = xstrdup(ccp);
+			} else
 				fatal("Unknown -O option");
 			break;
 		case 'P':
