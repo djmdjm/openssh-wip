@@ -57,7 +57,8 @@ int ssh_krl_revoke_key_explicit(struct ssh_krl *krl, const struct sshkey *key);
 int ssh_krl_revoke_key_sha1(struct ssh_krl *krl, const u_char *p, size_t len);
 int ssh_krl_revoke_key_sha256(struct ssh_krl *krl, const u_char *p, size_t len);
 int ssh_krl_revoke_key(struct ssh_krl *krl, const struct sshkey *key);
-int ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf);
+int ssh_krl_to_blob(struct ssh_krl *krl, struct sshbuf *buf,
+    int allow_exts, u_int bloom_fp_rate);
 int ssh_krl_from_blob(struct sshbuf *buf, struct ssh_krl **krlp);
 int ssh_krl_check_key(struct ssh_krl *krl, const struct sshkey *key);
 int ssh_krl_file_contains_key(const char *path, const struct sshkey *key);
