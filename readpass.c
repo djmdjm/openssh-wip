@@ -124,11 +124,20 @@ read_passphrase(const char *prompt, int flags)
 	const char *askpass_hint = NULL;
 	const char *s;
 
+	if ((askpass = getenv(SSH_ASKPASS_ENV)) == NULL)
+		askpass = _PATH_SSH_ASKPASS_DEFAULT;
+	if (access(askpass, X_OK) != 0)
+		askpass = NULL;
+
 	if (((s = getenv("DISPLAY")) != NULL && *s != '\0') ||
 	    ((s = getenv("WAYLAND_DISPLAY")) != NULL && *s != '\0'))
 		allow_askpass = 1;
 	if ((s = getenv(SSH_ASKPASS_REQUIRE_ENV)) != NULL) {
 		if (strcasecmp(s, "force") == 0) {
+			if (askpass == NULL) {
+				debug_f("askpass forced but no program found");
+				return xstrdup("");
+			}
 			use_askpass = 1;
 			allow_askpass = 1;
 		} else if (strcasecmp(s, "prefer") == 0)
@@ -138,6 +147,10 @@ read_passphrase(const char *prompt, int flags)
 	}
 
 	rppflags = (flags & RP_ECHO) ? RPP_ECHO_ON : RPP_ECHO_OFF;
+	if (askpass == NULL && allow_askpass) {
+		debug_f("no askpass program found");
+		allow_askpass = use_askpass = 0;
+	}
 	if (use_askpass)
 		debug_f("requested to askpass");
 	else if (flags & RP_USE_ASKPASS)
@@ -170,10 +183,6 @@ read_passphrase(const char *prompt, int flags)
 		return (flags & RP_ALLOW_EOF) ? NULL : xstrdup("");
 
 	if (use_askpass && allow_askpass) {
-		if (getenv(SSH_ASKPASS_ENV))
-			askpass = getenv(SSH_ASKPASS_ENV);
-		else
-			askpass = _PATH_SSH_ASKPASS_DEFAULT;
 		if ((flags & RP_ASK_PERMISSION) != 0)
 			askpass_hint = "confirm";
 		if ((ret = ssh_askpass(askpass, prompt, askpass_hint)) == NULL)
