@@ -240,9 +240,9 @@ int      fill_default_options(Options *);
 void	 fill_default_options_for_canonicalization(Options *);
 void	 free_options(Options *o);
 int	 process_config_line(Options *, struct passwd *, const char *,
-    const char *, char *, const char *, int, int *, int);
+    const char *, const char *, char *, const char *, int, int *, int);
 int	 read_config_file(const char *, struct passwd *, const char *,
-    const char *, Options *, int, int *);
+    const char *, const char *, Options *, int, int *);
 int	 parse_forward(struct Forward *, const char *, int, int);
 int	 parse_jump(const char *, Options *, int);
 int	 parse_ssh_uri(const char *, char **, char **, int *);

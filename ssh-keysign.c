@@ -215,7 +215,7 @@ main(int argc, char **argv)
 
 	/* verify that ssh-keysign is enabled by the admin */
 	initialize_options(&options);
-	(void)read_config_file(_PATH_HOST_CONFIG_FILE, pw, "", "",
+	(void)read_config_file(_PATH_HOST_CONFIG_FILE, pw, "", "", "",
 	    &options, 0, NULL);
 	(void)fill_default_options(&options);
 	if (options.enable_ssh_keysign != 1)
