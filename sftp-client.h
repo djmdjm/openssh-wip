@@ -66,6 +66,9 @@ struct sftp_limits {
  */
 struct sftp_conn *sftp_init(int, int, u_int, u_int, u_int64_t);
 
+/* Set compatibility flags */
+void sftp_set_compat(struct sftp_conn *, u_int);
+
 u_int sftp_proto_version(struct sftp_conn *);
 
 /* Query server limits */

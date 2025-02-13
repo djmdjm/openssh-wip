@@ -2394,6 +2394,7 @@ main(int argc, char **argv)
 	int r, in, out, ch, err, tmp, port = -1, noisy = 0;
 	char *host = NULL, *user, *cp, **cpp, *file2 = NULL;
 	int debug_level = 0;
+	u_int compat_flags = 0;
 	char *file1 = NULL, *sftp_server = NULL;
 	char *ssh_program = _PATH_SSH_PROGRAM, *sftp_direct = NULL;
 	const char *errstr;
@@ -2520,7 +2521,7 @@ main(int argc, char **argv)
 			replacearg(&args, 0, "%s", ssh_program);
 			break;
 		case 'X':
-			/* Please keep in sync with ssh.c -X */
+			/* Please keep in sync with scp.c -X */
 			if (strncmp(optarg, "buffer=", 7) == 0) {
 				r = scan_scaled(optarg + 7, &llv);
 				if (r == 0 && (llv <= 0 || llv > 256 * 1024)) {
@@ -2540,6 +2541,9 @@ main(int argc, char **argv)
 					    "\"%s\": %s", optarg + 10, errstr);
 				}
 				num_requests = (size_t)llv;
+			} else if (strcmp(optarg,
+			    "disable-attribute-extensions") == 0) {
+				compat_flags = SSH2_FILEXFER_COMPAT_ATTRIB_EXT;
 			} else {
 				fatal("Invalid -X option");
 			}
@@ -2625,6 +2629,8 @@ main(int argc, char **argv)
 	conn = sftp_init(in, out, copy_buffer_len, num_requests, limit_kbps);
 	if (conn == NULL)
 		fatal("Couldn't initialise connection to server");
+	if (compat_flags != 0)
+		sftp_set_compat(conn, compat_flags);
 
 	if (!quiet) {
 		if (sftp_direct == NULL)
