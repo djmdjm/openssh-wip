@@ -47,13 +47,16 @@ struct Attrib {
 /* Internal-use extension flags */
 #define SSH2_FILEXFER_XATTR_AMCTIMES	0x1
 
+/* Client/server compatibility flags */
+#define SSH2_FILEXFER_COMPAT_ATTRIB_EXT	0x1	/* disable attribute exts */
+
 void	 attrib_clear(Attrib *);
 void	 stat_to_attrib(const struct stat *, Attrib *);
 void	 attrib_to_stat(const Attrib *, struct stat *);
 struct timeval *attrib_to_tv(const Attrib *a);
 struct timespec *attrib_to_ts(const Attrib *a);
 int	 decode_attrib(struct sshbuf *, Attrib *);
-int	 encode_attrib(struct sshbuf *, const Attrib *);
+int	 encode_attrib(struct sshbuf *, const Attrib *, u_int compat);
 char	*ls_file(const char *, const struct stat *, int, int,
     const char *, const char *);
 

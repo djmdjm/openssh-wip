@@ -86,6 +86,7 @@ struct sftp_conn {
 #define SFTP_EXT_COPY_DATA		0x00000100
 #define SFTP_EXT_GETUSERSGROUPS_BY_ID	0x00000200
 	u_int exts;
+	u_int compat;	/* SSH2_FILEXFER_COMPAT_* flags from sftp-common.h */
 	u_int64_t limit_kbps;
 	struct bwlimit bwlimit_in, bwlimit_out;
 };
@@ -239,7 +240,7 @@ send_string_attrs_request(struct sftp_conn *conn, u_int id, u_int code,
 	if ((r = sshbuf_put_u8(msg, code)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_string(msg, s, len)) != 0 ||
-	    (r = encode_attrib(msg, a)) != 0)
+	    (r = encode_attrib(msg, a, conn->compat)) != 0)
 		fatal_fr(r, "compose");
 	send_msg(conn, msg);
 	debug3("Sent message fd %d T:%u I:%u F:0x%04x M:%05o",
@@ -589,6 +590,12 @@ sftp_init(int fd_in, int fd_out, u_int transfer_buflen, u_int num_requests,
 	}
 
 	return ret;
+}
+
+void
+sftp_set_compat(struct sftp_conn *conn, u_int compat)
+{
+	conn->compat = compat;
 }
 
 u_int
@@ -1128,7 +1135,7 @@ sftp_copy(struct sftp_conn *conn, const char *oldpath, const char *newpath)
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, oldpath)) != 0 ||
 	    (r = sshbuf_put_u32(msg, SSH2_FXF_READ)) != 0 ||
-	    (r = encode_attrib(msg, &junk)) != 0)
+	    (r = encode_attrib(msg, &junk, conn->compat)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	send_msg(conn, msg);
 	debug3("Sent message SSH2_FXP_OPEN I:%u P:%s", id, oldpath);
@@ -1149,7 +1156,7 @@ sftp_copy(struct sftp_conn *conn, const char *oldpath, const char *newpath)
 	    (r = sshbuf_put_cstring(msg, newpath)) != 0 ||
 	    (r = sshbuf_put_u32(msg, SSH2_FXF_WRITE|SSH2_FXF_CREAT|
 	    SSH2_FXF_TRUNC)) != 0 ||
-	    (r = encode_attrib(msg, &attr)) != 0)
+	    (r = encode_attrib(msg, &attr, conn->compat)) != 0)
 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
 	send_msg(conn, msg);
 	debug3("Sent message SSH2_FXP_OPEN I:%u P:%s", id, newpath);
@@ -1486,7 +1493,7 @@ sftp_lsetstat(struct sftp_conn *conn, const char *path, Attrib *a)
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, "lsetstat@openssh.com")) != 0 ||
 	    (r = sshbuf_put_cstring(msg, path)) != 0 ||
-	    (r = encode_attrib(msg, a)) != 0)
+	    (r = encode_attrib(msg, a, conn->compat)) != 0)
 		fatal_fr(r, "compose");
 	send_msg(conn, msg);
 	sshbuf_free(msg);
@@ -1545,7 +1552,7 @@ send_open(struct sftp_conn *conn, const char *path, const char *tag,
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, path)) != 0 ||
 	    (r = sshbuf_put_u32(msg, openmode)) != 0 ||
-	    (r = encode_attrib(msg, a)) != 0)
+	    (r = encode_attrib(msg, a, conn->compat)) != 0)
 		fatal_fr(r, "compose %s open", tag);
 	send_msg(conn, msg);
 	sshbuf_free(msg);

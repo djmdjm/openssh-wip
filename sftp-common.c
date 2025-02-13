@@ -242,11 +242,16 @@ ts_to_u64(const struct timespec *ts)
 
 /* Encode attributes to buffer */
 int
-encode_attrib(struct sshbuf *b, const Attrib *a)
+encode_attrib(struct sshbuf *b, const Attrib *a, u_int compat)
 {
 	int r;
 	struct sshbuf *ext;
-	u_int ext_flag = a->xflags != 0 ? SSH2_FILEXFER_ATTR_EXTENDED : 0;
+	u_int ext_flag = 0;
+
+	if ((compat & SSH2_FILEXFER_COMPAT_ATTRIB_EXT) == 0) {
+		if (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES)
+			ext_flag = SSH2_FILEXFER_ATTR_EXTENDED;
+	}
 
 	if ((r = sshbuf_put_u32(b, a->flags | ext_flag)) != 0)
 		return r;
@@ -269,7 +274,8 @@ encode_attrib(struct sshbuf *b, const Attrib *a)
 			return r;
 	}
 	/* extensions; only one supported so far */
-	if (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES) {
+	if ((compat & SSH2_FILEXFER_COMPAT_ATTRIB_EXT) == 0 &&
+	    (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES)) {
 		if ((r = sshbuf_put_u32(b, 1)) != 0) /* extension count */
 			return r;
 		if ((ext = sshbuf_new()) == NULL)

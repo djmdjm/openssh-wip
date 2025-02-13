@@ -66,6 +66,9 @@ struct sshbuf *oqueue;
 /* Version of client */
 static u_int version;
 
+/* Compatibility flags for client */
+static u_int compat_flags;
+
 /* SSH2_FXP_INIT received */
 static int init_done;
 
@@ -618,7 +621,7 @@ send_names(u_int32_t id, int count, const Stat *stats)
 	for (i = 0; i < count; i++) {
 		if ((r = sshbuf_put_cstring(msg, stats[i].name)) != 0 ||
 		    (r = sshbuf_put_cstring(msg, stats[i].long_name)) != 0 ||
-		    (r = encode_attrib(msg, &stats[i].attrib)) != 0)
+		    (r = encode_attrib(msg, &stats[i].attrib, compat_flags)) != 0)
 			fatal_fr(r, "compose filenames/attrib");
 	}
 	send_msg(msg);
@@ -636,7 +639,7 @@ send_attrib(u_int32_t id, const Attrib *a)
 		fatal_f("sshbuf_new failed");
 	if ((r = sshbuf_put_u8(msg, SSH2_FXP_ATTRS)) != 0 ||
 	    (r = sshbuf_put_u32(msg, id)) != 0 ||
-	    (r = encode_attrib(msg, a)) != 0)
+	    (r = encode_attrib(msg, a, compat_flags)) != 0)
 		fatal_fr(r, "compose");
 	send_msg(msg);
 	sshbuf_free(msg);
@@ -1927,6 +1930,18 @@ sftp_server_main(int argc, char **argv, struct passwd *user_pw)
 			    cp == optarg || (mask == 0 && errno != 0))
 				fatal("Invalid umask \"%s\"", optarg);
 			(void)umask((mode_t)mask);
+			break;
+		case 'X':
+			/*
+			 * Please keep in sync with scp.c -X as far as
+			 * makes sense.
+			 */
+			if (strcmp(optarg,
+			    "disable-attribute-extensions") == 0) {
+				compat_flags = SSH2_FILEXFER_COMPAT_ATTRIB_EXT;
+			} else {
+				fatal("Invalid -X option");
+			}
 			break;
 		case 'h':
 		default:
