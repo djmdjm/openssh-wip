@@ -949,30 +949,6 @@ process_fstat(u_int32_t id)
 		send_status(id, status);
 }
 
-static struct timeval *
-attrib_to_tv(const Attrib *a)
-{
-	static struct timeval tv[2];
-
-	tv[0].tv_sec = a->atime;
-	tv[0].tv_usec = 0;
-	tv[1].tv_sec = a->mtime;
-	tv[1].tv_usec = 0;
-	return tv;
-}
-
-static struct timespec *
-attrib_to_ts(const Attrib *a)
-{
-	static struct timespec ts[2];
-
-	ts[0].tv_sec = a->atime;
-	ts[0].tv_nsec = 0;
-	ts[1].tv_sec = a->mtime;
-	ts[1].tv_nsec = 0;
-	return ts;
-}
-
 static void
 process_setstat(u_int32_t id)
 {
@@ -998,13 +974,15 @@ process_setstat(u_int32_t id)
 		if (r == -1)
 			status = errno_to_portable(errno);
 	}
-	if (a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
+	if ((a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) ||
+	    (a.xflags & SSH2_FILEXFER_XATTR_AMCTIMES)) {
 		char buf[64];
-		time_t t = a.mtime;
+		time_t t = a.mtim.tv_sec;
 
 		strftime(buf, sizeof(buf), "%Y%m%d-%H:%M:%S",
 		    localtime(&t));
-		logit("set \"%s\" modtime %s", name, buf);
+		logit("set \"%s\" modtime %s.%9d", name, buf,
+		    (int)a.mtim.tv_nsec);
 		r = utimes(name, attrib_to_tv(&a));
 		if (r == -1)
 			status = errno_to_portable(errno);
@@ -1051,13 +1029,15 @@ process_fsetstat(u_int32_t id)
 			if (r == -1)
 				status = errno_to_portable(errno);
 		}
-		if (a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
+		if ((a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) ||
+		    (a.xflags & SSH2_FILEXFER_XATTR_AMCTIMES)) {
 			char buf[64];
-			time_t t = a.mtime;
+			time_t t = a.mtim.tv_sec;
 
 			strftime(buf, sizeof(buf), "%Y%m%d-%H:%M:%S",
 			    localtime(&t));
-			logit("set \"%s\" modtime %s", name, buf);
+			logit("set \"%s\" modtime %s.%09d", name, buf,
+			    (int)a.mtim.tv_nsec);
 			r = futimes(fd, attrib_to_tv(&a));
 			if (r == -1)
 				status = errno_to_portable(errno);
@@ -1459,13 +1439,15 @@ process_extended_lsetstat(u_int32_t id)
 		if (r == -1)
 			status = errno_to_portable(errno);
 	}
-	if (a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
+	if ((a.flags & SSH2_FILEXFER_ATTR_ACMODTIME) ||
+	    (a.xflags & SSH2_FILEXFER_XATTR_AMCTIMES)) {
 		char buf[64];
-		time_t t = a.mtime;
+		time_t t = a.mtim.tv_sec;
 
 		strftime(buf, sizeof(buf), "%Y%m%d-%H:%M:%S",
 		    localtime(&t));
-		logit("set \"%s\" modtime %s", name, buf);
+		logit("set \"%s\" modtime %s.%09d", name, buf,
+		    (int)a.mtim.tv_nsec);
 		r = utimensat(AT_FDCWD, name,
 		    attrib_to_ts(&a), AT_SYMLINK_NOFOLLOW);
 		if (r == -1)

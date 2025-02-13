@@ -1838,12 +1838,9 @@ sftp_download(struct sftp_conn *conn, const char *remote_path,
 			error("local chmod \"%s\": %s", local_path,
 			    strerror(errno));
 		if (preserve_flag &&
-		    (a->flags & SSH2_FILEXFER_ATTR_ACMODTIME)) {
-			struct timeval tv[2];
-			tv[0].tv_sec = a->atime;
-			tv[1].tv_sec = a->mtime;
-			tv[0].tv_usec = tv[1].tv_usec = 0;
-			if (utimes(local_path, tv) == -1)
+		    ((a->flags & SSH2_FILEXFER_ATTR_ACMODTIME) ||
+		    (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES))) {
+			if (utimes(local_path, attrib_to_tv(a)) == -1)
 				error("local set times \"%s\": %s",
 				    local_path, strerror(errno));
 		}
@@ -1962,12 +1959,9 @@ download_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 	free(new_src);
 
 	if (preserve_flag) {
-		if (dirattrib->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
-			struct timeval tv[2];
-			tv[0].tv_sec = dirattrib->atime;
-			tv[1].tv_sec = dirattrib->mtime;
-			tv[0].tv_usec = tv[1].tv_usec = 0;
-			if (utimes(dst, tv) == -1)
+		if ((dirattrib->flags & SSH2_FILEXFER_ATTR_ACMODTIME) ||
+		    (dirattrib->xflags & SSH2_FILEXFER_XATTR_AMCTIMES)) {
+			if (utimes(dst, attrib_to_tv(dirattrib)) == -1)
 				error("local set times on \"%s\": %s",
 				    dst, strerror(errno));
 		} else
@@ -2046,8 +2040,10 @@ sftp_upload(struct sftp_conn *conn, const char *local_path,
 	a.flags &= ~SSH2_FILEXFER_ATTR_SIZE;
 	a.flags &= ~SSH2_FILEXFER_ATTR_UIDGID;
 	a.perm &= 0777;
-	if (!preserve_flag)
+	if (!preserve_flag) {
 		a.flags &= ~SSH2_FILEXFER_ATTR_ACMODTIME;
+		a.xflags &= ~SSH2_FILEXFER_XATTR_AMCTIMES;
+	}
 
 	if (resume) {
 		/* Get remote file size if it exists */
@@ -2257,8 +2253,10 @@ upload_dir_internal(struct sftp_conn *conn, const char *src, const char *dst,
 	a.flags &= ~SSH2_FILEXFER_ATTR_SIZE;
 	a.flags &= ~SSH2_FILEXFER_ATTR_UIDGID;
 	a.perm &= 01777;
-	if (!preserve_flag)
+	if (!preserve_flag) {
 		a.flags &= ~SSH2_FILEXFER_ATTR_ACMODTIME;
+		a.xflags &= ~SSH2_FILEXFER_XATTR_AMCTIMES;
+	}
 
 	/*
 	 * sftp lacks a portable status value to match errno EEXIST,
@@ -2476,8 +2474,10 @@ sftp_crossload(struct sftp_conn *from, struct sftp_conn *to,
 	a->flags &= ~SSH2_FILEXFER_ATTR_SIZE;
 	a->flags &= ~SSH2_FILEXFER_ATTR_UIDGID;
 	a->perm &= 0777;
-	if (!preserve_flag)
+	if (!preserve_flag) {
 		a->flags &= ~SSH2_FILEXFER_ATTR_ACMODTIME;
+		a->xflags &= ~SSH2_FILEXFER_XATTR_AMCTIMES;
+	}
 	if (send_open(to, to_path, "dest",
 	    SSH2_FXF_WRITE|SSH2_FXF_CREAT|SSH2_FXF_TRUNC, a,
 	    &to_handle, &to_handle_len) != 0) {

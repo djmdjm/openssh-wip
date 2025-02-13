@@ -34,17 +34,24 @@ typedef struct Attrib Attrib;
 /* File attributes */
 struct Attrib {
 	u_int32_t	flags;
+	u_int32_t	xflags; /* internal only; not sent on wire */
 	u_int64_t	size;
 	u_int32_t	uid;
 	u_int32_t	gid;
 	u_int32_t	perm;
-	u_int32_t	atime;
-	u_int32_t	mtime;
+	struct timespec	atim;
+	struct timespec	mtim;
+	struct timespec	ctim;
 };
+
+/* Internal-use extension flags */
+#define SSH2_FILEXFER_XATTR_AMCTIMES	0x1
 
 void	 attrib_clear(Attrib *);
 void	 stat_to_attrib(const struct stat *, Attrib *);
 void	 attrib_to_stat(const Attrib *, struct stat *);
+struct timeval *attrib_to_tv(const Attrib *a);
+struct timespec *attrib_to_ts(const Attrib *a);
 int	 decode_attrib(struct sshbuf *, Attrib *);
 int	 encode_attrib(struct sshbuf *, const Attrib *);
 char	*ls_file(const char *, const struct stat *, int, int,

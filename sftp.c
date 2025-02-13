@@ -815,9 +815,11 @@ sdirent_comp(const void *aa, const void *bb)
 #define NCMP(a,b) (a == b ? 0 : (a < b ? 1 : -1))
 	if (sort_flag & LS_NAME_SORT)
 		return (rmul * strcmp(a->filename, b->filename));
-	else if (sort_flag & LS_TIME_SORT)
-		return (rmul * NCMP(a->a.mtime, b->a.mtime));
-	else if (sort_flag & LS_SIZE_SORT)
+	else if (sort_flag & LS_TIME_SORT) {
+		if (timespeccmp(&a->a.mtim, &b->a.mtim, ==))
+			return 0;
+		return rmul * timespeccmp(&a->a.mtim, &b->a.mtim, <);
+	} else if (sort_flag & LS_SIZE_SORT)
 		return (rmul * NCMP(a->a.size, b->a.size));
 
 	fatal("Unknown ls sort type");
