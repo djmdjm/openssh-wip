@@ -240,6 +240,16 @@ ts_to_u64(const struct timespec *ts)
 }
 
 
+static u_int
+time_to_u32(time_t t)
+{
+	if (t <= 0)
+		return 0;
+	if ((int64_t)t >= 0xFFFFFFFFLL)
+		return 0xFFFFFFFF;
+	return (u_int)t;
+}
+
 /* Encode attributes to buffer */
 int
 encode_attrib(struct sshbuf *b, const Attrib *a, u_int compat)
@@ -269,8 +279,8 @@ encode_attrib(struct sshbuf *b, const Attrib *a, u_int compat)
 			return r;
 	}
 	if (a->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
-		if ((r = sshbuf_put_u32(b, a->atim.tv_sec)) != 0 ||
-		    (r = sshbuf_put_u32(b, a->mtim.tv_sec)) != 0)
+		if ((r = sshbuf_put_u32(b, time_to_u32(a->atim.tv_sec))) != 0 ||
+		    (r = sshbuf_put_u32(b, time_to_u32(a->mtim.tv_sec))) != 0)
 			return r;
 	}
 	/* extensions; only one supported so far */
