@@ -66,6 +66,7 @@ SRCS_KEX+=	kexecdh.c
 SRCS_KEX+=	kexgex.c
 SRCS_KEXC+=	kexgexc.c
 SRCS_KEXS+=	kexgexs.c
+SRCS_KEX+=	kexmlkem768ecdh.c
 .endif
 SRCS_KEX+=	kexc25519.c
 SRCS_KEX+=	smult_curve25519_ref.c
