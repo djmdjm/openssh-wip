@@ -71,10 +71,11 @@ made available for server host key use only.
 
 # how are keys derived?
 
-This still uses the custom SSH hash-based KDF, but I want to switch to
-HKDF when a FTH KEX is in use.
+When full-transcript hash KEX modes are in use, the KDF used to derive
+the actual cipher/MAC keys is switched from the custom RFC4253 hash-based
+KDF to RFC5869 HKDF.
 
-Rationale: it's had much more study.
+Rationale: HKDF is a well-understood construct that has had a lot of scrutiny.
 
 **TODO**
 

@@ -56,6 +56,7 @@
 #include "ssherr.h"
 #include "sshbuf.h"
 #include "digest.h"
+#include "hkdf.h"
 #include "xmalloc.h"
 
 /* prototype */
@@ -1218,6 +1219,48 @@ derive_key(struct ssh *ssh, int id, u_int need, u_char *hash, u_int hashlen,
 	return r;
 }
 
+static int
+derive_key_hkdf(struct ssh *ssh, int id, u_int need,
+    u_char *hash, u_int hashlen,
+    const struct sshbuf *shared_secret, u_char **keyp)
+{
+	struct kex *kex = ssh->kex;
+	char c = id;
+	size_t mdsz;
+	u_char *key = NULL, *prk = NULL;
+	int r;
+
+	if ((mdsz = ssh_digest_bytes(kex->hash_alg)) == 0)
+		return SSH_ERR_INVALID_ARGUMENT;
+	if ((key = calloc(1, need)) == NULL ||
+	    (prk = calloc(1, mdsz)) == NULL) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+
+	/* use exchange hash as the salt */
+	if ((r = ssh_hkdf_extract(kex->hash_alg, hash, hashlen,
+	    sshbuf_ptr(shared_secret), sshbuf_len(shared_secret),
+	    prk, mdsz)) != 0)
+		goto out;
+
+	if ((r = ssh_hkdf_expand(kex->hash_alg, prk, mdsz,
+	    &c, 1, key, need)) != 0)
+		goto out;
+
+#ifdef DEBUG_KEX
+	fprintf(stderr, "%s: key '%c' == ", __func__, c);
+	dump_digest("key", key, need);
+#endif
+	*keyp = key;
+	key = NULL;
+	r = 0;
+ out:
+	free(prk);
+	free(key);
+	return r;
+}
+
 #define NKEYS	6
 int
 kex_derive_keys(struct ssh *ssh, u_char *hash, u_int hashlen,
@@ -1241,8 +1284,16 @@ kex_derive_keys(struct ssh *ssh, u_char *hash, u_int hashlen,
 		return SSH_ERR_INTERNAL_ERROR;
 	}
 	for (i = 0; i < NKEYS; i++) {
-		if ((r = derive_key(ssh, 'A'+i, kex->we_need, hash, hashlen,
-		    shared_secret, &keys[i])) != 0) {
+		if ((kex->flags & KEX_IS_FTH) != 0) {
+			/* Full-transcript hash KEXs use HKDF */
+			r = derive_key_hkdf(ssh, 'A'+i, kex->we_need,
+			    hash, hashlen, shared_secret, &keys[i]);
+		} else {
+			/* Other KEXs use RFC4253 s7.2 hash-based KDF */
+			r = derive_key(ssh, 'A'+i, kex->we_need,
+			    hash, hashlen, shared_secret, &keys[i]);
+		}
+		if (r != 0) {
 			for (j = 0; j < i; j++)
 				free(keys[j]);
 			return r;
