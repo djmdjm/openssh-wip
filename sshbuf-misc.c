@@ -67,7 +67,7 @@ sshbuf_dump(const struct sshbuf *buf, FILE *f)
 }
 
 char *
-sshbuf_dtob16(struct sshbuf *buf)
+sshbuf_dtob16(const struct sshbuf *buf)
 {
 	size_t i, j, len = sshbuf_len(buf);
 	const u_char *p = sshbuf_ptr(buf);

@@ -237,7 +237,7 @@ void	sshbuf_dump(const struct sshbuf *buf, FILE *f);
 void	sshbuf_dump_data(const void *s, size_t len, FILE *f);
 
 /* Return the hexadecimal representation of the contents of the buffer */
-char	*sshbuf_dtob16(struct sshbuf *buf);
+char	*sshbuf_dtob16(const struct sshbuf *buf);
 /* Make a sshbuf from a hex string */
 struct sshbuf *sshbuf_b16tod(const char *b16);
 
