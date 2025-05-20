@@ -66,6 +66,7 @@ SRCS_KEX+=	dh.c
 SRCS_KEX+=	kexdh.c
 SRCS_KEX+=	kexecdh.c
 SRCS_KEX+=	kexgex.c
+SRCS_KEX+=	hkdf.c
 SRCS_KEXC+=	kexgexc.c
 SRCS_KEXS+=	kexgexs.c
 .endif
