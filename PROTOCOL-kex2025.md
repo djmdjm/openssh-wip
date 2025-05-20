@@ -86,8 +86,6 @@ KDF to RFC5869 HKDF.
 
 Rationale: HKDF is a well-understood construct that has had a lot of scrutiny.
 
-**TODO**
-
 # do full-transcript KEX modes imply strict KEX?
 
 IMO yes.
@@ -101,7 +99,3 @@ IMO yes
 
 Rationale: it set us up for a future where a SSH implementation that
 offers only FTH modes doesn't need extra crap in kex_algoritms.
-
-**TODO**
-
-
