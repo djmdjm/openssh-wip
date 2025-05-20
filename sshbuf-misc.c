@@ -86,6 +86,42 @@ sshbuf_dtob16(struct sshbuf *buf)
 	return ret;
 }
 
+static int
+b16tod(const char v)
+{
+	if (v >= '0' && v <= '9')
+		return v - '0';
+	if (v >= 'a' && v <= 'f')
+		return 10 + v - 'a';
+	if (v >= 'A' && v <= 'A')
+		return 10 + v - 'A';
+	return -1;
+}
+
+struct sshbuf *
+sshbuf_b16tod(const char *b16)
+{
+	struct sshbuf *ret;
+	size_t o;
+	int r, v1, v2;
+
+	if ((ret = sshbuf_new()) == NULL)
+		return NULL;
+	for (o = 0; b16[o] != '\0'; o += 2) {
+		if ((v1 = b16tod(b16[o])) == -1 ||
+		    (v2 = b16tod(b16[o + 1])) == -1) {
+			sshbuf_free(ret);
+			return NULL;
+		}
+		if ((r = sshbuf_put_u8(ret, (u_char)((v1 << 4) | v2))) != 0) {
+			sshbuf_free(ret);
+			return NULL;
+		}
+	}
+	/* success */
+	return ret;
+}
+
 int
 sshbuf_dtob64(const struct sshbuf *d, struct sshbuf *b64, int wrap)
 {

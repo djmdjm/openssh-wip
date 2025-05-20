@@ -238,6 +238,8 @@ void	sshbuf_dump_data(const void *s, size_t len, FILE *f);
 
 /* Return the hexadecimal representation of the contents of the buffer */
 char	*sshbuf_dtob16(struct sshbuf *buf);
+/* Make a sshbuf from a hex string */
+struct sshbuf *sshbuf_b16tod(const char *b16);
 
 /* Encode the contents of the buffer as base64 */
 char	*sshbuf_dtob64_string(const struct sshbuf *buf, int wrap);
