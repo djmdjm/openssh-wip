@@ -35,8 +35,17 @@ I went with finalising the transcript in each endpoint immediately after
 it sends its final KEX message before it sends/expects the reply with the
 server's hostkey signature.
 
-Not sure about this. Maybe it should finalise a bit later. This is mostly
-a code organisation problem.
+I think what I'd like to do is update the transcript with each packet
+only after it has been dispatched. This would allow (say)
+`input_kex_gen_reply()`
+to finalize the transcript at the latest possible moment and so be able to
+lessen its reliance on strict-KEX ordering to ensure that no extra messages
+are slipped in.
+
+Unfortunately that
+is not so easy with the way that OpenSSH organises its code - I think I need
+to hang on to a copy of the packet and maybe make a `sshpkt_packet_done()` that
+can be called after dispatch to hash and flush this copy.
 
 **TODO**
 
