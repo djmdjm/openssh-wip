@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #include <sys/types.h>
 #include <errno.h>
 #include <signal.h>
@@ -1207,7 +1206,7 @@ derive_key(struct ssh *ssh, int id, u_int need, u_char *hash, u_int hashlen,
 		hashctx = NULL;
 	}
 #ifdef DEBUG_KEX
-	fprintf(stderr, "key '%c'== ", c);
+	fprintf(stderr, "%s: key '%c' == ", __func__, c);
 	dump_digest("key", digest, need);
 #endif
 	*keyp = digest;
@@ -1302,7 +1301,7 @@ kex_verify_host_key(struct ssh *ssh, struct sshkey *server_host_key)
 void
 dump_digest(const char *msg, const u_char *digest, int len)
 {
-	fprintf(stderr, "%s\n", msg);
+	fprintf(stderr, "%s (len %d)\n", msg, len);
 	sshbuf_dump_data(digest, len, stderr);
 }
 #endif
