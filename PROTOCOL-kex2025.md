@@ -88,7 +88,7 @@ exploit.
 
 # do full-transcript modes imply EXT_INFO
 
-IMO they should but I haven't implemented this yet.
+IMO yes
 
 Rationale: it set us up for a future where a SSH implementation that
 offers only FTH modes doesn't need extra crap in kex_algoritms.

@@ -1073,9 +1073,14 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 		peer[PROPOSAL_KEX_ALGS] = NULL;
 		goto out;
 	}
-	/* full-transcript hash KEX algorithms imply strict KEX */
-	if ((kex->flags & KEX_IS_FTH) != 0)
+	/*
+	 * Selection of a full-transcript hash KEX algorithm implies
+	 * both strict KEX and bi-directional support for EXT_INFO.
+	 */
+	if ((kex->flags & KEX_IS_FTH) != 0) {
 		kex->kex_strict = 1;
+		kex->ext_info_c = kex->ext_info_s = 1;
+	}
 
 	if ((r = choose_hostkeyalg(kex, cprop[PROPOSAL_SERVER_HOST_KEY_ALGS],
 	    sprop[PROPOSAL_SERVER_HOST_KEY_ALGS])) != 0) {
