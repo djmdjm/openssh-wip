@@ -1135,7 +1135,7 @@ ssh_packet_log_type(u_char type)
 /*
  * Finalize packet in SSH2 format (compress, mac, encrypt, enqueue)
  */
-int
+static int
 ssh_packet_send2_wrapped(struct ssh *ssh)
 {
 	struct session_state *state = ssh->state;
@@ -1239,6 +1239,19 @@ ssh_packet_send2_wrapped(struct ssh *ssh)
 	cp[4] = padlen;
 	DBG(debug("send: len %d (includes padlen %d, aadlen %d)",
 	    len, padlen, aadlen));
+
+	/*
+	 * During KEX, hash each outgoing sequence number and
+	 * cleartext packet, complete with length and padding, but
+	 * without MAC/AEAD tag (which should be empty).
+	 */
+	if (ssh->kex != NULL && ssh->kex->done == 0) {
+		if ((r = kex_update_transcript_out(ssh,
+		    state->p_send.seqnr, state->outgoing_packet)) != 0) {
+			error_fr(r, "update kex transcript");
+			goto out;
+		}
+	}
 
 	/* compute MAC over seqnr and packet(length fields, payload, padding) */
 	if (mac && mac->enabled && !mac->etm) {
@@ -1682,6 +1695,17 @@ ssh_packet_read_poll2(struct ssh *ssh, u_char *typep, u_int32_t *seqnr_p)
 			goto out;
 	}
 
+	/*
+	 * During KEX, prepare to hash each received sequence number and
+	 * cleartext packet, complete with length and padding, but without
+	 * MAC/AEAD tag.
+	 */
+	if (ssh->kex != NULL && ssh->kex->done == 0) {
+		if ((r = kex_update_transcript_in(ssh, state->p_read.seqnr,
+		    state->incoming_packet)) != 0)
+			goto out;
+	}
+
 	if (seqnr_p != NULL)
 		*seqnr_p = state->p_read.seqnr;
 	if (++state->p_read.seqnr == 0) {
@@ -1727,6 +1751,7 @@ ssh_packet_read_poll2(struct ssh *ssh, u_char *typep, u_int32_t *seqnr_p)
 		DBG(debug("input: len after de-compress %zd",
 		    sshbuf_len(state->incoming_packet)));
 	}
+
 	/*
 	 * get packet type, implies consume.
 	 * return length of payload (without type field)

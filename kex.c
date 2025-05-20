@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #include <sys/types.h>
 #include <errno.h>
 #include <signal.h>
@@ -57,6 +56,7 @@
 #include "ssherr.h"
 #include "sshbuf.h"
 #include "digest.h"
+#include "hkdf.h"
 #include "xmalloc.h"
 
 /* prototype */
@@ -250,6 +250,99 @@ kex_reset_dispatch(struct ssh *ssh)
 {
 	ssh_dispatch_range(ssh, SSH2_MSG_TRANSPORT_MIN,
 	    SSH2_MSG_TRANSPORT_MAX, &kex_protocol_error);
+}
+
+static void
+kex_start_transcript(struct ssh *ssh)
+{
+	struct kex *kex = ssh->kex;
+
+	debug3_f("start transcript using %s",
+	    ssh_digest_alg_name(kex->hash_alg));
+	kex->prekex_hash_len = ssh_digest_bytes(kex->hash_alg);
+	if (kex->prekex_hash_len == 0)
+		fatal_f("internal error: hashlen(alg %d) == 0", kex->hash_alg);
+	kex->prekex_hash_ctx_in = ssh_digest_start(kex->hash_alg);
+	kex->prekex_hash_ctx_out = ssh_digest_start(kex->hash_alg);
+	if (kex->prekex_hash_ctx_in == NULL || kex->prekex_hash_ctx_out == NULL)
+		fatal_f("internal error: init(alg %d) failed", kex->hash_alg);
+}
+
+static void
+kex_update_transcript_hash(struct ssh_digest_ctx *ctx, u_int seqnr,
+    const struct sshbuf *pkt)
+{
+	u_char seq[4];
+	int r;
+
+	/* extend hash with seqnr and packet (inc len + padlen) */
+	put_u32(seq, seqnr);
+	if ((r = ssh_digest_update(ctx, seq, sizeof(seq))) != 0 ||
+	    (r = ssh_digest_update_buffer(ctx, pkt)) != 0)
+		fatal_fr(r, "hash outgoing packet");
+}
+
+int
+kex_update_transcript_out(struct ssh *ssh, u_int seqnr,
+    const struct sshbuf *pkt)
+{
+	struct kex *kex = ssh->kex;
+
+	if (kex->prekex_hash_ctx_out == NULL)
+		return 0;
+	kex_update_transcript_hash(kex->prekex_hash_ctx_out, seqnr, pkt);
+
+	return 0;
+}
+
+int
+kex_update_transcript_in(struct ssh *ssh, u_int seqnr, const struct sshbuf *pkt)
+{
+	struct kex *kex = ssh->kex;
+
+	if (kex->prekex_hash_ctx_in == NULL)
+		return 0;
+	kex_update_transcript_hash(kex->prekex_hash_ctx_in, seqnr, pkt);
+	return 0;
+}
+
+static void
+kex_finalise_transcript_hash(const char *which, struct ssh_digest_ctx *ctx,
+    int hash_alg, u_char **hashp, size_t hash_len)
+{
+	u_char *hash = NULL;
+	int r;
+	char *hex;
+
+	*hashp = NULL;
+	if (ctx == NULL)
+		return;
+	hash = xcalloc(1, hash_len);
+	if ((r = ssh_digest_final(ctx, hash, hash_len)) != 0)
+		fatal_fr(r, "ssh_digest_final failed for %s transcript", which);
+	hex = tohex(hash, hash_len);
+	debug3_f("prekex hash %s: %s:%s", which,
+	    ssh_digest_alg_name(hash_alg), hex);
+	free(hex);
+	*hashp = hash;
+}
+
+int
+kex_finalise_transcript(struct ssh *ssh)
+{
+	struct kex *kex = ssh->kex;
+
+	kex_finalise_transcript_hash("in", kex->prekex_hash_ctx_in,
+	    kex->hash_alg, &kex->prekex_hash_in, kex->prekex_hash_len);
+	ssh_digest_free(kex->prekex_hash_ctx_in);
+
+	kex_finalise_transcript_hash("out", kex->prekex_hash_ctx_out,
+	    kex->hash_alg, &kex->prekex_hash_out, kex->prekex_hash_len);
+	ssh_digest_free(kex->prekex_hash_ctx_out);
+
+	kex->prekex_hash_ctx_in = kex->prekex_hash_ctx_out = NULL;
+
+	return 0;
 }
 
 void
@@ -560,6 +653,7 @@ kex_input_newkeys(int type, u_int32_t seq, struct ssh *ssh)
 	kex->flags &= ~KEX_INIT_SENT;
 	free(kex->name);
 	kex->name = NULL;
+
 	return 0;
 }
 
@@ -653,6 +747,8 @@ kex_input_kexinit(int type, u_int32_t seq, struct ssh *ssh)
 			return r;
 	if ((r = kex_choose_conf(ssh, seq)) != 0)
 		return r;
+	if ((kex->flags & KEX_IS_FTH) != 0)
+		kex_start_transcript(ssh);
 
 	if (kex->kex_type < KEX_MAX && kex->kex[kex->kex_type] != NULL)
 		return (kex->kex[kex->kex_type])(ssh);
@@ -735,6 +831,10 @@ kex_free(struct kex *kex)
 	free(kex->failed_choice);
 	free(kex->hostkey_alg);
 	free(kex->name);
+	ssh_digest_free(kex->prekex_hash_ctx_in);
+	ssh_digest_free(kex->prekex_hash_ctx_out);
+	free(kex->prekex_hash_in);
+	free(kex->prekex_hash_out);
 	free(kex);
 }
 
@@ -863,6 +963,8 @@ choose_kex(struct kex *k, char *client, char *server)
 	k->kex_type = kex_type_from_name(k->name);
 	k->hash_alg = kex_hash_from_name(k->name);
 	k->ec_nid = kex_nid_from_name(k->name);
+	if (kex_is_fth_from_name(k->name) != 0)
+		k->flags |= KEX_IS_FTH;
 	return 0;
 }
 
@@ -952,13 +1054,6 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 			kex->kex_strict = kexalgs_contains(peer,
 			    "kex-strict-s-v00@openssh.com");
 		}
-		if (kex->kex_strict) {
-			debug3_f("will use strict KEX ordering");
-			if (seq != 0)
-				ssh_packet_disconnect(ssh,
-				    "strict KEX violation: "
-				    "KEXINIT was not the first packet");
-		}
 	}
 
 	/* Check whether client supports rsa-sha2 algorithms */
@@ -978,6 +1073,15 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 		peer[PROPOSAL_KEX_ALGS] = NULL;
 		goto out;
 	}
+	/*
+	 * Selection of a full-transcript hash KEX algorithm implies
+	 * both strict KEX and bi-directional support for EXT_INFO.
+	 */
+	if ((kex->flags & KEX_IS_FTH) != 0) {
+		kex->kex_strict = 1;
+		kex->ext_info_c = kex->ext_info_s = 1;
+	}
+
 	if ((r = choose_hostkeyalg(kex, cprop[PROPOSAL_SERVER_HOST_KEY_ALGS],
 	    sprop[PROPOSAL_SERVER_HOST_KEY_ALGS])) != 0) {
 		kex->failed_choice = peer[PROPOSAL_SERVER_HOST_KEY_ALGS];
@@ -1037,6 +1141,14 @@ kex_choose_conf(struct ssh *ssh, uint32_t seq)
 	/* XXX need runden? */
 	kex->we_need = need;
 	kex->dh_need = dh_need;
+
+	if (kex->kex_strict) {
+		debug3_f("will use strict KEX ordering");
+		if ((kex->flags & KEX_INITIAL) != 0 && seq != 0)
+			ssh_packet_disconnect(ssh,
+			    "strict KEX violation: "
+			    "KEXINIT was not the first packet");
+	}
 
 	/* ignore the next message if the proposals do not match */
 	if (first_kex_follows && !proposals_match(my, peer))
@@ -1100,7 +1212,7 @@ derive_key(struct ssh *ssh, int id, u_int need, u_char *hash, u_int hashlen,
 		hashctx = NULL;
 	}
 #ifdef DEBUG_KEX
-	fprintf(stderr, "key '%c'== ", c);
+	fprintf(stderr, "%s: key '%c' == ", __func__, c);
 	dump_digest("key", digest, need);
 #endif
 	*keyp = digest;
@@ -1109,6 +1221,48 @@ derive_key(struct ssh *ssh, int id, u_int need, u_char *hash, u_int hashlen,
  out:
 	free(digest);
 	ssh_digest_free(hashctx);
+	return r;
+}
+
+static int
+derive_key_hkdf(struct ssh *ssh, int id, u_int need,
+    u_char *hash, u_int hashlen,
+    const struct sshbuf *shared_secret, u_char **keyp)
+{
+	struct kex *kex = ssh->kex;
+	char c = id;
+	size_t mdsz;
+	u_char *key = NULL, *prk = NULL;
+	int r;
+
+	if ((mdsz = ssh_digest_bytes(kex->hash_alg)) == 0)
+		return SSH_ERR_INVALID_ARGUMENT;
+	if ((key = calloc(1, need)) == NULL ||
+	    (prk = calloc(1, mdsz)) == NULL) {
+		r = SSH_ERR_ALLOC_FAIL;
+		goto out;
+	}
+
+	/* use exchange hash as the salt */
+	if ((r = ssh_hkdf_extract(kex->hash_alg, hash, hashlen,
+	    sshbuf_ptr(shared_secret), sshbuf_len(shared_secret),
+	    prk, mdsz)) != 0)
+		goto out;
+
+	if ((r = ssh_hkdf_expand(kex->hash_alg, prk, mdsz,
+	    &c, 1, key, need)) != 0)
+		goto out;
+
+#ifdef DEBUG_KEX
+	fprintf(stderr, "%s: key '%c' == ", __func__, c);
+	dump_digest("key", key, need);
+#endif
+	*keyp = key;
+	key = NULL;
+	r = 0;
+ out:
+	free(prk);
+	free(key);
 	return r;
 }
 
@@ -1135,8 +1289,16 @@ kex_derive_keys(struct ssh *ssh, u_char *hash, u_int hashlen,
 		return SSH_ERR_INTERNAL_ERROR;
 	}
 	for (i = 0; i < NKEYS; i++) {
-		if ((r = derive_key(ssh, 'A'+i, kex->we_need, hash, hashlen,
-		    shared_secret, &keys[i])) != 0) {
+		if ((kex->flags & KEX_IS_FTH) != 0) {
+			/* Full-transcript hash KEXs use HKDF */
+			r = derive_key_hkdf(ssh, 'A'+i, kex->we_need,
+			    hash, hashlen, shared_secret, &keys[i]);
+		} else {
+			/* Other KEXs use RFC4253 s7.2 hash-based KDF */
+			r = derive_key(ssh, 'A'+i, kex->we_need,
+			    hash, hashlen, shared_secret, &keys[i]);
+		}
+		if (r != 0) {
 			for (j = 0; j < i; j++)
 				free(keys[j]);
 			return r;
@@ -1195,7 +1357,7 @@ kex_verify_host_key(struct ssh *ssh, struct sshkey *server_host_key)
 void
 dump_digest(const char *msg, const u_char *digest, int len)
 {
-	fprintf(stderr, "%s\n", msg);
+	fprintf(stderr, "%s (len %d)\n", msg, len);
 	sshbuf_dump_data(digest, len, stderr);
 }
 #endif

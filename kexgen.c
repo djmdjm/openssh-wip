@@ -48,6 +48,9 @@ kex_gen_hash(
     const struct sshbuf *server_version,
     const struct sshbuf *client_kexinit,
     const struct sshbuf *server_kexinit,
+    const u_char *prekex_hash_c2s,
+    const u_char *prekex_hash_s2c,
+    size_t prekex_hash_len,
     const struct sshbuf *server_host_key_blob,
     const struct sshbuf *client_pub,
     const struct sshbuf *server_pub,
@@ -59,6 +62,9 @@ kex_gen_hash(
 
 	if (*hashlen < ssh_digest_bytes(hash_alg))
 		return SSH_ERR_INVALID_ARGUMENT;
+	if ((prekex_hash_c2s == NULL) != (prekex_hash_s2c == NULL) ||
+	    (prekex_hash_len == 0) != (prekex_hash_c2s == NULL))
+		return SSH_ERR_INTERNAL_ERROR;
 	if ((b = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	if ((r = sshbuf_put_stringb(b, client_version)) != 0 ||
@@ -69,8 +75,19 @@ kex_gen_hash(
 	    (r = sshbuf_putb(b, client_kexinit)) != 0 ||
 	    (r = sshbuf_put_u32(b, sshbuf_len(server_kexinit) + 1)) != 0 ||
 	    (r = sshbuf_put_u8(b, SSH2_MSG_KEXINIT)) != 0 ||
-	    (r = sshbuf_putb(b, server_kexinit)) != 0 ||
-	    (r = sshbuf_put_stringb(b, server_host_key_blob)) != 0 ||
+	    (r = sshbuf_putb(b, server_kexinit)) != 0)
+		return r;
+
+	/* If supplied a KEX transcript hash, it goes in here */
+	if (prekex_hash_len != 0) {
+		if ((r = sshbuf_put_string(b, prekex_hash_c2s,
+		    prekex_hash_len)) != 0 ||
+		    (r = sshbuf_put_string(b, prekex_hash_s2c,
+		    prekex_hash_len)) != 0)
+			return r;
+	}
+
+	if ((r = sshbuf_put_stringb(b, server_host_key_blob)) != 0 ||
 	    (r = sshbuf_put_stringb(b, client_pub)) != 0 ||
 	    (r = sshbuf_put_stringb(b, server_pub)) != 0 ||
 	    (r = sshbuf_putb(b, shared_secret)) != 0) {
@@ -108,16 +125,20 @@ kex_gen_client(struct ssh *ssh)
 		r = kex_dh_keypair(kex);
 		break;
 	case KEX_ECDH_SHA2:
+	case KEX_ECDH_SHA2_FTH:
 		r = kex_ecdh_keypair(kex);
 		break;
 #endif /* WITH_OPENSSL */
 	case KEX_C25519_SHA256:
+	case KEX_C25519_SHA256_FTH:
 		r = kex_c25519_keypair(kex);
 		break;
 	case KEX_KEM_SNTRUP761X25519_SHA512:
+	case KEX_KEM_SNTRUP761X25519_SHA512_FTH:
 		r = kex_kem_sntrup761x25519_keypair(kex);
 		break;
 	case KEX_KEM_MLKEM768X25519_SHA256:
+	case KEX_KEM_MLKEM768X25519_SHA256_FTH:
 		r = kex_kem_mlkem768x25519_keypair(kex);
 		break;
 	default:
@@ -132,6 +153,8 @@ kex_gen_client(struct ssh *ssh)
 		return r;
 	debug("expecting SSH2_MSG_KEX_ECDH_REPLY");
 	ssh_dispatch_set(ssh, SSH2_MSG_KEX_ECDH_REPLY, &input_kex_gen_reply);
+	if ((r = kex_finalise_transcript(ssh)) != 0)
+		return r;
 	return 0;
 }
 
@@ -182,17 +205,21 @@ input_kex_gen_reply(int type, u_int32_t seq, struct ssh *ssh)
 		r = kex_dh_dec(kex, server_blob, &shared_secret);
 		break;
 	case KEX_ECDH_SHA2:
+	case KEX_ECDH_SHA2_FTH:
 		r = kex_ecdh_dec(kex, server_blob, &shared_secret);
 		break;
 #endif /* WITH_OPENSSL */
 	case KEX_C25519_SHA256:
+	case KEX_C25519_SHA256_FTH:
 		r = kex_c25519_dec(kex, server_blob, &shared_secret);
 		break;
 	case KEX_KEM_SNTRUP761X25519_SHA512:
+	case KEX_KEM_SNTRUP761X25519_SHA512_FTH:
 		r = kex_kem_sntrup761x25519_dec(kex, server_blob,
 		    &shared_secret);
 		break;
 	case KEX_KEM_MLKEM768X25519_SHA256:
+	case KEX_KEM_MLKEM768X25519_SHA256_FTH:
 		r = kex_kem_mlkem768x25519_dec(kex, server_blob,
 		    &shared_secret);
 		break;
@@ -200,8 +227,20 @@ input_kex_gen_reply(int type, u_int32_t seq, struct ssh *ssh)
 		r = SSH_ERR_INVALID_ARGUMENT;
 		break;
 	}
-	if (r !=0 )
+	if (r != 0)
 		goto out;
+
+	/*
+	 * If this is a full-transcript KEX then ensure we have the hashes.
+	 * Conversely, if this isn't a full-transcript hash then they should
+	 * not be populated.
+	 */
+	if (((kex->flags & KEX_IS_FTH) == 0) != (kex->prekex_hash_len == 0) ||
+	    (kex->prekex_hash_len == 0) != (kex->prekex_hash_in == NULL) ||
+	    (kex->prekex_hash_out == NULL) != (kex->prekex_hash_in == NULL)) {
+		r = SSH_ERR_INTERNAL_ERROR;
+		goto out;
+	}
 
 	/* calc and verify H */
 	hashlen = sizeof(hash);
@@ -211,6 +250,7 @@ input_kex_gen_reply(int type, u_int32_t seq, struct ssh *ssh)
 	    kex->server_version,
 	    kex->my,
 	    kex->peer,
+	    kex->prekex_hash_out, kex->prekex_hash_in, kex->prekex_hash_len,
 	    server_host_key_blob,
 	    kex->client_pub,
 	    server_blob,
@@ -283,6 +323,8 @@ input_kex_gen_init(int type, u_int32_t seq, struct ssh *ssh)
 
 	debug("SSH2_MSG_KEX_ECDH_INIT received");
 	ssh_dispatch_set(ssh, SSH2_MSG_KEX_ECDH_INIT, &kex_protocol_error);
+	if ((r = kex_finalise_transcript(ssh)) != 0)
+		goto out;
 
 	if ((r = kex_load_hostkey(ssh, &server_host_private,
 	    &server_host_public)) != 0)
@@ -304,19 +346,23 @@ input_kex_gen_init(int type, u_int32_t seq, struct ssh *ssh)
 		    &shared_secret);
 		break;
 	case KEX_ECDH_SHA2:
+	case KEX_ECDH_SHA2_FTH:
 		r = kex_ecdh_enc(kex, client_pubkey, &server_pubkey,
 		    &shared_secret);
 		break;
 #endif /* WITH_OPENSSL */
 	case KEX_C25519_SHA256:
+	case KEX_C25519_SHA256_FTH:
 		r = kex_c25519_enc(kex, client_pubkey, &server_pubkey,
 		    &shared_secret);
 		break;
 	case KEX_KEM_SNTRUP761X25519_SHA512:
+	case KEX_KEM_SNTRUP761X25519_SHA512_FTH:
 		r = kex_kem_sntrup761x25519_enc(kex, client_pubkey,
 		    &server_pubkey, &shared_secret);
 		break;
 	case KEX_KEM_MLKEM768X25519_SHA256:
+	case KEX_KEM_MLKEM768X25519_SHA256_FTH:
 		r = kex_kem_mlkem768x25519_enc(kex, client_pubkey,
 		    &server_pubkey, &shared_secret);
 		break;
@@ -324,7 +370,7 @@ input_kex_gen_init(int type, u_int32_t seq, struct ssh *ssh)
 		r = SSH_ERR_INVALID_ARGUMENT;
 		break;
 	}
-	if (r !=0 )
+	if (r != 0)
 		goto out;
 
 	/* calc H */
@@ -341,6 +387,7 @@ input_kex_gen_init(int type, u_int32_t seq, struct ssh *ssh)
 	    kex->server_version,
 	    kex->peer,
 	    kex->my,
+	    kex->prekex_hash_in, kex->prekex_hash_out, kex->prekex_hash_len,
 	    server_host_key_blob,
 	    client_pubkey,
 	    server_pubkey,

@@ -114,6 +114,7 @@ SRCS_MAC+=	umac128.c
 SRCS_PKT+=	canohost.c
 SRCS_PKT+=	dispatch.c
 SRCS_PKT+=	kex.c
+SRCS_PKT+=	hkdf.c
 SRCS_PKT+=	kex-names.c
 SRCS_PKT+=	packet.c
 SRCS_PKT+=	${SRCS_MAC}
