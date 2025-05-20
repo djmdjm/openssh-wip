@@ -20,5 +20,5 @@
 
 int ssh_hkdf_extract(int, const u_char *, size_t, const u_char *, size_t,
     u_char *, size_t);
-int ssh_hdkf_expand(int hash_alg, const u_char *, size_t,
+int ssh_hkdf_expand(int hash_alg, const u_char *, size_t,
     const u_char *, size_t, u_char *, size_t);

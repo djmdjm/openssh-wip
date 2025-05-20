@@ -63,7 +63,7 @@ ssh_hkdf_extract(int hash_alg,
 }
 
 int
-ssh_hdkf_expand(int hash_alg,
+ssh_hkdf_expand(int hash_alg,
     const u_char *prk, size_t prk_len,
     const u_char *info, size_t info_len,
     u_char *out, size_t out_len)
@@ -115,7 +115,7 @@ ssh_hkdf_extract(int hash_alg,
 }
 
 int
-ssh_hdkf_expand(int hash_alg,
+ssh_hkdf_expand(int hash_alg,
     const u_char *prk, size_t prk_len,
     const u_char *info, size_t info_len,
     u_char *out, size_t out_len)
