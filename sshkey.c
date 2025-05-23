@@ -739,6 +739,8 @@ sshkey_free_contents(struct sshkey *k)
 
 	if (k == NULL)
 		return;
+	if ((k->flags & SSHKEY_FLAG_EXT) != 0)
+		pkcs11_key_free(k);
 	if ((impl = sshkey_impl_from_type(k->type)) != NULL &&
 	    impl->funcs->cleanup != NULL)
 		impl->funcs->cleanup(k);
@@ -861,20 +863,27 @@ sshkey_putb(const struct sshkey *key, struct sshbuf *b)
 	return to_blob_buf(key, b, 0, SSHKEY_SERIALIZE_DEFAULT);
 }
 
-int
-sshkey_puts_opts(const struct sshkey *key, struct sshbuf *b,
-    enum sshkey_serialize_rep opts)
+static int
+sshkey_puts_opts_internal(const struct sshkey *key, struct sshbuf *b,
+    enum sshkey_serialize_rep opts, int force_plain)
 {
 	struct sshbuf *tmp;
 	int r;
 
 	if ((tmp = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	r = to_blob_buf(key, tmp, 0, opts);
+	r = to_blob_buf(key, tmp, force_plain, opts);
 	if (r == 0)
 		r = sshbuf_put_stringb(b, tmp);
 	sshbuf_free(tmp);
 	return r;
+}
+
+int
+sshkey_puts_opts(const struct sshkey *key, struct sshbuf *b,
+    enum sshkey_serialize_rep opts)
+{
+	return sshkey_puts_opts_internal(key, b, opts, 0);
 }
 
 int
@@ -887,6 +896,12 @@ int
 sshkey_putb_plain(const struct sshkey *key, struct sshbuf *b)
 {
 	return to_blob_buf(key, b, 1, SSHKEY_SERIALIZE_DEFAULT);
+}
+
+int
+sshkey_puts_plain(const struct sshkey *key, struct sshbuf *b)
+{
+	return sshkey_puts_opts_internal(key, b, SSHKEY_SERIALIZE_DEFAULT, 1);
 }
 
 static int

@@ -542,7 +542,6 @@ pkcs11_sign_rsa(struct sshkey *key,
 	CK_ULONG		slen = 0;
 	CK_RV			rv;
 	int			hashalg, r, diff, siglen, ret = -1;
-	struct sshbuf		*b = NULL;
 	u_char			*oid_dgst = NULL, *sig = NULL;
 	size_t			dgst_len, oid_len, oid_dgst_len = 0;
 	const u_char		*oid;
@@ -607,27 +606,13 @@ pkcs11_sign_rsa(struct sshkey *key,
 	} else if (slen > (size_t)siglen)
 		fatal_f("bad C_Sign length");
 
-	/* encode signature */
-	if ((b = sshbuf_new()) == NULL)
-		fatal_f("sshbuf_new failed");
-	if ((ret = sshbuf_put_cstring(b,
-	     ssh_rsa_hash_alg_ident(hashalg))) != 0 ||
-	    (ret = sshbuf_put_string(b, sig, siglen)) != 0)
-		goto done;
-	if (sigp != NULL) {
-		if ((*sigp = malloc(sshbuf_len(b))) == NULL) {
-			ret = SSH_ERR_ALLOC_FAIL;
-			goto done;
-		}
-		memcpy(*sigp, sshbuf_ptr(b), sshbuf_len(b));
-	}
-	if (lenp != NULL)
-		*lenp = sshbuf_len(b);
+	if ((ret = ssh_rsa_encode_store_sig(hashalg, sig, siglen,
+	    sigp, lenp)) != 0)
+		fatal_fr(ret, "couldn't store signature");
 
 	/* success */
 	ret = 0;
  done:
-	sshbuf_free(b);
 	freezero(oid_dgst, oid_dgst_len);
 	free(sig);
 	return ret;
@@ -646,7 +631,6 @@ pkcs11_sign_ecdsa(struct sshkey *key,
 	CK_ULONG		slen = 0, bnlen;
 	CK_RV			rv;
 	BIGNUM			*sig_r = NULL, *sig_s = NULL;
-	struct sshbuf		*b = NULL, *bb = NULL;
 	u_char			*sig = NULL, *dgst = NULL;
 	size_t			dgst_len = 0;
 	int			hashalg, ret = -1, r, siglen;
@@ -703,26 +687,10 @@ pkcs11_sign_ecdsa(struct sshkey *key,
 		ossl_error("BN_bin2bn failed");
 		goto done;
 	}
-	/* XXX duplicate code with ssh_ecdsa_sign(); refactor */
-	if ((bb = sshbuf_new()) == NULL || (b = sshbuf_new()) == NULL) {
-		ret = SSH_ERR_ALLOC_FAIL;
-		goto done;
-	}
-	if ((ret = sshbuf_put_bignum2(bb, sig_r)) != 0 ||
-	    (ret = sshbuf_put_bignum2(bb, sig_s)) != 0)
-		goto done;
-	if ((ret = sshbuf_put_cstring(b, sshkey_ssh_name_plain(key))) != 0 ||
-	    (ret = sshbuf_put_stringb(b, bb)) != 0)
-		goto done;
-	if (sigp != NULL) {
-		if ((*sigp = malloc(sshbuf_len(b))) == NULL) {
-			ret = SSH_ERR_ALLOC_FAIL;
-			goto done;
-		}
-		memcpy(*sigp, sshbuf_ptr(b), sshbuf_len(b));
-	}
-	if (lenp != NULL)
-		*lenp = sshbuf_len(b);
+
+	if ((ret = ssh_ecdsa_encode_store_sig(key, sig_r, sig_s,
+	    sigp, lenp)) != 0)
+		fatal_fr(ret, "couldn't store signature");
 
 	/* success */
 	ret = 0;
@@ -731,8 +699,6 @@ pkcs11_sign_ecdsa(struct sshkey *key,
 	BN_free(sig_r);
 	BN_free(sig_s);
 	free(sig);
-	sshbuf_free(b);
-	sshbuf_free(bb);
 	return ret;
 }
 
@@ -1892,6 +1858,12 @@ pkcs11_sign(struct sshkey *key,
 	default:
 		return SSH_ERR_KEY_TYPE_UNKNOWN;
 	}
+}
+
+void
+pkcs11_key_free(struct sshkey *key)
+{
+	/* never called */
 }
 
 #ifdef WITH_PKCS11_KEYGEN
