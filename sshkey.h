@@ -334,6 +334,9 @@ int	sshkey_serialize_private_sk(const struct sshkey *key,
 int	sshkey_private_deserialize_sk(struct sshbuf *buf, struct sshkey *k);
 #ifdef WITH_OPENSSL
 int	check_rsa_length(const RSA *rsa); /* XXX remove */
+int	ssh_rsa_hash_id_from_keyname(const char *);
+const char *ssh_rsa_hash_alg_ident(int);
+
 #endif
 #endif
 

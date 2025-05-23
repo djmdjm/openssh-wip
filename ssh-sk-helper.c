@@ -43,6 +43,7 @@
 #include "uidswap.h"
 #include "ssherr.h"
 #include "ssh-sk.h"
+#include "ssh-pkcs11.h"
 
 extern char *__progname;
 
@@ -82,6 +83,17 @@ null_empty(char **s)
 
 	free(*s);
 	*s = NULL;
+}
+
+/* stub */
+int
+pkcs11_sign(struct sshkey *key,
+    u_char **sigp, size_t *lenp,
+    const u_char *data, size_t datalen,
+    const char *alg, const char *sk_provider,
+    const char *sk_pin, u_int compat)
+{
+	return SSH_ERR_INTERNAL_ERROR;
 }
 
 static struct sshbuf *
