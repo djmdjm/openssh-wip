@@ -266,6 +266,15 @@ int	sshbuf_cmp(const struct sshbuf *b, size_t offset,
     const void *s, size_t len);
 
 /*
+ * Test whether two buffers have identical contents.
+ * SSH_ERR_MESSAGE_INCOMPLETE indicates the buffers had differing size.
+ * SSH_ERR_INVALID_FORMAT indicates the buffers were the same size but
+ * had differing contents.
+ * Returns 0 on successful compare (comparing two empty buffers returns 0).
+ */
+int sshbuf_equals(const struct sshbuf *a, const struct sshbuf *b);
+
+/*
  * Searches the buffer for the specified string. Returns 0 on success
  * and updates *offsetp with the offset of the first match, relative to
  * the start of the buffer. Otherwise sshbuf_find will return a ssherr.h
