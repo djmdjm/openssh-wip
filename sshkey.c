@@ -55,6 +55,7 @@
 #include "sshkey.h"
 #include "match.h"
 #include "ssh-sk.h"
+#include "ssh-pkcs11.h"
 
 #ifdef WITH_XMSS
 #include "sshkey-xmss.h"
@@ -2160,6 +2161,9 @@ sshkey_sign(struct sshkey *key,
 	if (sshkey_is_sk(key)) {
 		r = sshsk_sign(sk_provider, key, sigp, lenp, data,
 		    datalen, compat, sk_pin);
+	} else if ((key->flags & SSHKEY_FLAG_EXT) != 0) {
+		r = pkcs11_sign(key, sigp, lenp, data, datalen,
+		    alg, sk_provider, sk_pin, compat);
 	} else {
 		if (impl->funcs->sign == NULL)
 			r = SSH_ERR_SIGN_ALG_UNSUPPORTED;

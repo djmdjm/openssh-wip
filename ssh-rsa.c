@@ -302,8 +302,8 @@ ssh_rsa_deserialize_private(const char *ktype, struct sshbuf *b,
 	return r;
 }
 
-static const char *
-rsa_hash_alg_ident(int hash_alg)
+const char *
+ssh_rsa_hash_alg_ident(int hash_alg)
 {
 	switch (hash_alg) {
 	case SSH_DIGEST_SHA1:
@@ -337,8 +337,8 @@ rsa_hash_id_from_ident(const char *ident)
  * all the cases of rsa_hash_id_from_ident() but also the certificate key
  * types.
  */
-static int
-rsa_hash_id_from_keyname(const char *alg)
+int
+ssh_rsa_hash_id_from_keyname(const char *alg)
 {
 	int r;
 
@@ -413,7 +413,7 @@ ssh_rsa_sign(struct sshkey *key,
 	if (alg == NULL || strlen(alg) == 0)
 		hash_alg = SSH_DIGEST_SHA1;
 	else
-		hash_alg = rsa_hash_id_from_keyname(alg);
+		hash_alg = ssh_rsa_hash_id_from_keyname(alg);
 
 	if (key == NULL || key->pkey == NULL || hash_alg == -1 ||
 	    sshkey_type_plain(key->type) != KEY_RSA)
@@ -441,7 +441,8 @@ ssh_rsa_sign(struct sshkey *key,
 		ret = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
-	if ((ret = sshbuf_put_cstring(b, rsa_hash_alg_ident(hash_alg))) != 0 ||
+	if ((ret = sshbuf_put_cstring(b,
+	    ssh_rsa_hash_alg_ident(hash_alg))) != 0 ||
 	    (ret = sshbuf_put_string(b, sig, slen)) != 0)
 		goto out;
 	len = sshbuf_len(b);
@@ -495,7 +496,7 @@ ssh_rsa_verify(const struct sshkey *key,
 	 * legacy reasons, but otherwise the signature type should match.
 	 */
 	if (alg != NULL && strcmp(alg, "ssh-rsa-cert-v01@openssh.com") != 0) {
-		if ((want_alg = rsa_hash_id_from_keyname(alg)) == -1) {
+		if ((want_alg = ssh_rsa_hash_id_from_keyname(alg)) == -1) {
 			ret = SSH_ERR_INVALID_ARGUMENT;
 			goto out;
 		}
