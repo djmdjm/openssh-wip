@@ -269,6 +269,7 @@ int	 sshkey_puts_opts(const struct sshkey *, struct sshbuf *,
     enum sshkey_serialize_rep);
 int	 sshkey_plain_to_blob(const struct sshkey *, u_char **, size_t *);
 int	 sshkey_putb_plain(const struct sshkey *, struct sshbuf *);
+int	 sshkey_puts_plain(const struct sshkey *, struct sshbuf *);
 
 int	 sshkey_sign(struct sshkey *, u_char **, size_t *,
     const u_char *, size_t, const char *, const char *, const char *, u_int);
@@ -336,7 +337,10 @@ int	sshkey_private_deserialize_sk(struct sshbuf *buf, struct sshkey *k);
 int	check_rsa_length(const RSA *rsa); /* XXX remove */
 int	ssh_rsa_hash_id_from_keyname(const char *);
 const char *ssh_rsa_hash_alg_ident(int);
-
+int	ssh_rsa_encode_store_sig(int, const u_char *, size_t,
+	    u_char **, size_t *);
+int	ssh_ecdsa_encode_store_sig(const struct sshkey *,
+	    const BIGNUM *, const BIGNUM *, u_char **, size_t *);
 #endif
 #endif
 

@@ -248,7 +248,7 @@ pkcs11_sign(struct sshkey *key,
 	if ((msg = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	if ((r = sshbuf_put_u8(msg, SSH2_AGENTC_SIGN_REQUEST)) != 0 ||
-	    (r = sshkey_puts(key, msg)) != 0 ||
+	    (r = sshkey_puts_plain(key, msg)) != 0 ||
 	    (r = sshbuf_put_string(msg, data, datalen)) != 0 ||
 	    (r = sshbuf_put_cstring(msg, alg == NULL ? "" : alg)) != 0 ||
 	    (r = sshbuf_put_u32(msg, compat)) != 0)
@@ -314,7 +314,7 @@ pkcs11_make_cert(const struct sshkey *priv,
 	    (r = sshkey_cert_copy(certpub, ret)) != 0)
 		fatal_fr(r, "graft certificate");
 
-	helper_add_key(helper, ret);	
+	helper_add_key(helper, ret);
 
 	debug3_f("provider %s: %zu remaining keys",
 	    helper->path, helper->nkeyblobs);
@@ -452,4 +452,40 @@ pkcs11_del_provider(char *name)
 	if ((helper = helper_by_provider(name)) != NULL)
 		helper_terminate(helper);
 	return 0;
+}
+
+void
+pkcs11_key_free(struct sshkey *key)
+{
+	struct helper *helper;
+	struct sshbuf *keyblob = NULL;
+	size_t i;
+	int r, found = 0;
+
+	debug3_f("free %s key", sshkey_type(key));
+
+	if ((helper = helper_by_key(key)) == NULL || helper->fd == -1)
+		fatal_f("no helper for %s key", sshkey_type(key));
+	if ((keyblob = sshbuf_new()) == NULL)
+		fatal_f("sshbuf_new failed");
+	if ((r = sshkey_putb(key, keyblob)) != 0)
+		fatal_fr(r, "serialise key");
+
+	/* repack keys */
+	for (i = 0; i < helper->nkeyblobs; i++) {
+		if (sshbuf_equals(keyblob, helper->keyblobs[i]) == 0) {
+			if (found)
+				fatal_f("key recorded more than once");
+			found = 1;
+		} else if (found)
+			helper->keyblobs[i - 1] = helper->keyblobs[i];
+	}
+	if (found) {
+		helper->keyblobs = xrecallocarray(helper->keyblobs,
+		    helper->nkeyblobs, helper->nkeyblobs - 1,
+		    sizeof(*helper->keyblobs));
+		helper->nkeyblobs--;
+	}
+	if (helper->nkeyblobs == 0)
+		helper_terminate(helper);
 }
