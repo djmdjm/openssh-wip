@@ -41,6 +41,7 @@
 #include "ssh-pkcs11.h"
 #include "digest.h"
 #include "xmalloc.h"
+#include "crypto_api.h"
 
 struct pkcs11_slotinfo {
 	CK_TOKEN_INFO		token;
@@ -702,6 +703,69 @@ pkcs11_sign_ecdsa(struct sshkey *key,
 	return ret;
 }
 
+static int
+pkcs11_sign_ed25519(struct sshkey *key,
+    u_char **sigp, size_t *lenp,
+    const u_char *data, size_t datalen,
+    const char *alg, const char *sk_provider,
+    const char *sk_pin, u_int compat)
+{
+	struct pkcs11_key	*k11;
+	struct pkcs11_slotinfo	*si;
+	CK_FUNCTION_LIST	*f;
+	CK_ULONG		slen = 0;
+	CK_RV			rv;
+	u_char			*sig = NULL;
+	CK_BYTE			*xdata = NULL;
+	int			ret = -1;
+
+	if (sigp != NULL)
+		*sigp = 0;
+	if (lenp != NULL)
+		*lenp = 0;
+
+	if ((k11 = pkcs11_lookup_key(key)) == NULL) {
+		error_f("no key found");
+		return SSH_ERR_KEY_NOT_FOUND;
+	}
+
+	if (pkcs11_get_key(k11, CKM_ECDSA) == -1) {
+		error("pkcs11_get_key failed");
+		return SSH_ERR_AGENT_FAILURE;
+	}
+
+	debug3_f("sign using provider %s slotidx %lu",
+	    k11->provider->name, (u_long)k11->slotidx);
+
+	f = k11->provider->function_list;
+	si = &k11->provider->slotinfo[k11->slotidx];
+
+	xdata = xmalloc(datalen);
+	memcpy(xdata, data, datalen);
+	sig = xmalloc(crypto_sign_ed25519_BYTES);
+	slen = crypto_sign_ed25519_BYTES;
+
+	rv = f->C_Sign(si->session, xdata, datalen, sig, &slen);
+	if (rv != CKR_OK) {
+		error("C_Sign failed: %lu", rv);
+		goto done;
+	}
+	if (slen != crypto_sign_ed25519_BYTES) {
+		error_f("bad signature length: %lu", (u_long)slen);
+		goto done;
+	}
+	if ((ret = ssh_ed25519_encode_store_sig(sig, slen, sigp, lenp)) != 0)
+		fatal_fr(ret, "couldn't store signature");
+
+	/* success */
+	ret = 0;
+ done:
+	if (xdata != NULL)
+		freezero(xdata, datalen);
+	free(sig);
+	return ret;
+}
+
 /* remove trailing spaces */
 static char *
 rmspace(u_char *buf, size_t len)
@@ -1012,6 +1076,101 @@ fail:
 	return key;
 }
 
+static struct sshkey *
+pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
+    CK_OBJECT_HANDLE *obj)
+{
+	CK_ATTRIBUTE		 key_attr[3];
+	CK_SESSION_HANDLE	 session;
+	CK_FUNCTION_LIST	*f = NULL;
+	CK_RV			 rv;
+	struct sshkey		*key = NULL;
+	const unsigned char	*attrp = NULL;
+	char			*hex = NULL;
+	int			 success = -1, i;
+
+	memset(&key_attr, 0, sizeof(key_attr));
+	key_attr[0].type = CKA_ID;
+	key_attr[1].type = CKA_EC_POINT;
+	key_attr[2].type = CKA_EC_PARAMS;
+
+	session = p->slotinfo[slotidx].session;
+	f = p->function_list;
+
+	/* figure out size of the attributes */
+	rv = f->C_GetAttributeValue(session, *obj, key_attr, 3);
+	if (rv != CKR_OK) {
+		error("C_GetAttributeValue failed: %lu", rv);
+		return (NULL);
+	}
+
+	/*
+	 * Allow CKA_ID (always first attribute) to be empty, but
+	 * ensure that none of the others are zero length.
+	 * XXX assumes CKA_ID is always first.
+	 */
+	if (key_attr[1].ulValueLen == 0 ||
+	    key_attr[2].ulValueLen == 0) {
+		error("invalid attribute length");
+		return (NULL);
+	}
+
+	/* allocate buffers for attributes */
+	for (i = 0; i < 3; i++)
+		if (key_attr[i].ulValueLen > 0)
+			key_attr[i].pValue = xcalloc(1, key_attr[i].ulValueLen);
+
+	/* retrieve ID, public point and curve parameters of EC key */
+	rv = f->C_GetAttributeValue(session, *obj, key_attr, 3);
+	if (rv != CKR_OK) {
+		error("C_GetAttributeValue failed: %lu", rv);
+		goto fail;
+	}
+
+	/* Expect PrintableString { "edwards25519" } in CKA_EC_PARAMS */
+	attrp = (u_char *)key_attr[2].pValue;
+	if (key_attr[2].ulValueLen != 12 + 2 ||
+	    attrp[0] != 0x13 ||			/* DER PrintableString */
+	    attrp[1] != 12 ||			/* string length */
+	    memcmp(attrp + 2, "edwards25519", 12) != 0) {
+		hex = tohex(attrp, key_attr[2].ulValueLen);
+		logit_f("CKA_EC_PARAMS not edwards25519: %s (len %lu)",
+		    hex, (u_long)key_attr[2].ulValueLen);
+		goto fail;
+	}
+
+	/* Expect an OCTET_STRING containing the pubkey in CKA_EC_POINT */
+	attrp = (u_char *)key_attr[1].pValue;
+	if (key_attr[1].ulValueLen != 32 + 2 ||
+	    attrp[0] != 0x04 ||			/* DER OCTET_STRING */
+	    attrp[1] != 32) {			/* key length */
+		hex = tohex(attrp, key_attr[1].ulValueLen);
+		logit_f("CKA_EC_POINT invalid format: %s (len %lu)",
+		    hex, (u_long)key_attr[1].ulValueLen);
+		goto fail;
+	}
+
+	if ((key = sshkey_new(KEY_UNSPEC)) == NULL)
+		fatal_f("sshkey_new failed");
+	key->ed25519_pk = xmalloc(ED25519_PK_SZ);
+	memcpy(key->ed25519_pk, attrp + 2, ED25519_PK_SZ);
+	key->type = KEY_ED25519;
+	key->flags |= SSHKEY_FLAG_EXT;
+	if (pkcs11_record_key(p, slotidx, &key_attr[0], key))
+		goto fail;
+	/* success */
+	success = 0;
+ fail:
+	if (success != 0) {
+		sshkey_free(key);
+		key = NULL;
+	}
+	free(hex);
+	for (i = 0; i < 3; i++)
+		free(key_attr[i].pValue);
+	return key;
+}
+
 static int
 pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
     CK_OBJECT_HANDLE *obj, struct sshkey **keyp, char **labelp)
@@ -1029,6 +1188,7 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	int			 r, i, nid, success = -1;
 	const u_char		*cp;
 	char			*subject = NULL;
+	size_t			len;
 
 	*keyp = NULL;
 	*labelp = NULL;
@@ -1156,6 +1316,26 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 			fatal("EVP_PKEY_set1_EC_KEY failed");
 		key->ecdsa_nid = nid;
 		key->type = KEY_ECDSA;
+		key->flags |= SSHKEY_FLAG_EXT;
+		if (pkcs11_record_key(p, slotidx, &cert_attr[0], key))
+			goto out;
+		/* success */
+		success = 0;
+	} else if (EVP_PKEY_base_id(evp) == EVP_PKEY_ED25519) {
+		if ((key = sshkey_new(KEY_UNSPEC)) == NULL ||
+		    (key->ed25519_pk = calloc(1, ED25519_PK_SZ)) == NULL)
+			fatal_f("allocation failed");
+		len = ED25519_PK_SZ;
+		if (!EVP_PKEY_get_raw_public_key(evp, key->ed25519_pk, &len)) {
+			ossl_error("EVP_PKEY_get_raw_public_key failed");
+			goto out;
+		}
+		if (len != ED25519_PK_SZ) {
+			error_f("incorrect returned public key "
+			    "length for ed25519");
+			goto out;
+		}
+		key->type = KEY_ED25519;
 		key->flags |= SSHKEY_FLAG_EXT;
 		if (pkcs11_record_key(p, slotidx, &cert_attr[0], key))
 			goto out;
@@ -1385,6 +1565,9 @@ pkcs11_fetch_keys(struct pkcs11_provider *p, CK_ULONG slotidx,
 			break;
 		case CKK_ECDSA:
 			key = pkcs11_fetch_ecdsa_pubkey(p, slotidx, &obj);
+			break;
+		case CKK_EC_EDWARDS:
+			key = pkcs11_fetch_ed25519_pubkey(p, slotidx, &obj);
 			break;
 		default:
 			/* XXX print key type? */
@@ -1855,6 +2038,10 @@ pkcs11_sign(struct sshkey *key,
 	case KEY_ECDSA_CERT:
 		return pkcs11_sign_ecdsa(key, sigp, lenp, data, datalen,
 		    alg, sk_provider, sk_pin, compat);
+	case KEY_ED25519:
+	case KEY_ED25519_CERT:
+		return pkcs11_sign_ed25519(key, sigp, lenp, data, datalen,
+		    alg, sk_provider, sk_pin, compat);
 	default:
 		return SSH_ERR_KEY_TYPE_UNKNOWN;
 	}
@@ -2009,16 +2196,27 @@ pkcs11_destroy_keypair(char *provider_id, char *pin, unsigned long slotidx,
 			*err = rv;
 			key_type = -1;
 		}
-		if (key_type == CKK_RSA)
+		switch (key_type) {
+		case CKK_RSA:
 			k = pkcs11_fetch_rsa_pubkey(p, slotidx, &obj);
-		else if (key_type == CKK_ECDSA)
+			break;
+		case CKK_ECDSA:
 			k = pkcs11_fetch_ecdsa_pubkey(p, slotidx, &obj);
+			break;
+		case CKK_EC_EDWARDS:
+			k = pkcs11_fetch_ed25519_pubkey(p, slotidx, &obj);
+			break;
+		default:
+			debug_f("unsupported key type %lu", (u_long)key_type);
+			continue;
+		}
 
 		if ((rv = f->C_DestroyObject(session, obj)) != CKR_OK) {
 			debug_f("could not destroy public key 0x%hhx", keyid);
 			*err = rv;
 			goto out;
 		}
+		sshkey_free(k);
 	}
 
 out:
