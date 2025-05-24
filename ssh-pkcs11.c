@@ -809,7 +809,7 @@ pkcs11_fetch_ecdsa_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	EC_GROUP		*group = NULL;
 	struct sshkey		*key = NULL;
 	const unsigned char	*attrp = NULL;
-	int			 r, i, nid;
+	int			 success = -1, r, i, nid;
 
 	memset(&key_attr, 0, sizeof(key_attr));
 	key_attr[0].type = CKA_ID;
@@ -911,7 +911,13 @@ pkcs11_fetch_ecdsa_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	key->flags |= SSHKEY_FLAG_EXT;
 	if (pkcs11_record_key(p, slotidx, &key_attr[0], key))
 		goto fail;
+	/* success */
+	success = 0;
 fail:
+	if (success != 0) {
+		sshkey_free(key);
+		key = NULL;
+	}
 	for (i = 0; i < 3; i++)
 		free(key_attr[i].pValue);
 	if (ec)
