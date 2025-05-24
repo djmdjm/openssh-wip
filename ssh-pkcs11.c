@@ -733,7 +733,7 @@ pkcs11_sign_ed25519(struct sshkey *key,
 		return SSH_ERR_KEY_NOT_FOUND;
 	}
 
-	if (pkcs11_get_key(k11, CKM_ECDSA) == -1) {
+	if (pkcs11_get_key(k11, CKM_EDDSA) == -1) {
 		error("pkcs11_get_key failed");
 		return SSH_ERR_AGENT_FAILURE;
 	}
@@ -1091,13 +1091,21 @@ pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	CK_FUNCTION_LIST	*f = NULL;
 	CK_RV			 rv;
 	struct sshkey		*key = NULL;
-	const unsigned char	*attrp = NULL;
+	const unsigned char	*d = NULL;
+	size_t			len;
 	char			*hex = NULL;
 	int			 success = -1, i;
+	const u_char		 oid1[14] = {
+		0x13, 0x0c, 0x65, 0x64, 0x77, 0x61, 0x72, 0x64,
+		0x73, 0x32, 0x35, 0x35, 0x31, 0x39,
+	}; /* PrintableString { "edwards25519" } */
+	const u_char		 oid2[5] = {
+		0x06, 0x03, 0x2b, 0x65, 0x70,
+	}; /* OBJECT_IDENTIFIER { 1.3.101.112 } */
 
 	memset(&key_attr, 0, sizeof(key_attr));
 	key_attr[0].type = CKA_ID;
-	key_attr[1].type = CKA_EC_POINT;
+	key_attr[1].type = CKA_EC_POINT; /* XXX or CKA_VALUE ? */
 	key_attr[2].type = CKA_EC_PARAMS;
 
 	session = p->slotinfo[slotidx].session;
@@ -1122,9 +1130,10 @@ pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	}
 
 	/* allocate buffers for attributes */
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < 3; i++) {
 		if (key_attr[i].ulValueLen > 0)
 			key_attr[i].pValue = xcalloc(1, key_attr[i].ulValueLen);
+	}
 
 	/* retrieve ID, public point and curve parameters of EC key */
 	rv = f->C_GetAttributeValue(session, *obj, key_attr, 3);
@@ -1133,25 +1142,29 @@ pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 		goto fail;
 	}
 
-	/* Expect PrintableString { "edwards25519" } in CKA_EC_PARAMS */
-	attrp = (u_char *)key_attr[2].pValue;
-	if (key_attr[2].ulValueLen != 12 + 2 ||
-	    attrp[0] != 0x13 ||			/* DER PrintableString */
-	    attrp[1] != 12 ||			/* string length */
-	    memcmp(attrp + 2, "edwards25519", 12) != 0) {
-		hex = tohex(attrp, key_attr[2].ulValueLen);
-		logit_f("CKA_EC_PARAMS not edwards25519: %s (len %lu)",
-		    hex, (u_long)key_attr[2].ulValueLen);
+	/* Expect one of the supported oids in CKA_EC_PARAMS */
+	d = (u_char *)key_attr[2].pValue;
+	len = key_attr[2].ulValueLen;
+	if ((len != sizeof(oid1) || memcmp(d, oid1, sizeof(oid1)) != 0) &&
+	    (len != sizeof(oid2) || memcmp(d, oid2, sizeof(oid2)) != 0)) {
+		hex = tohex(d, len);
+		logit_f("unsupported CKA_EC_PARAMS: %s (len %zu)", hex, len);
 		goto fail;
 	}
 
-	/* Expect an OCTET_STRING containing the pubkey in CKA_EC_POINT */
-	attrp = (u_char *)key_attr[1].pValue;
-	if (key_attr[1].ulValueLen != 32 + 2 ||
-	    attrp[0] != 0x04 ||			/* DER OCTET_STRING */
-	    attrp[1] != 32) {			/* key length */
-		hex = tohex(attrp, key_attr[1].ulValueLen);
-		logit_f("CKA_EC_POINT invalid format: %s (len %lu)",
+	/*
+	 * Expect an either a raw 32 byte pubkey or an OCTET_STRING with
+	 * a 32 byte pubkey in CKA_VALUE
+	 */
+	d = (u_char *)key_attr[1].pValue;
+	len = key_attr[1].ulValueLen;
+	if (len != ED25519_PK_SZ + 2 && d[0] == 0x04 && d[1] == ED25519_PK_SZ) {
+		d += 2;
+		len -= 2;
+	}
+	if (len != ED25519_PK_SZ) {
+		hex = tohex(key_attr[1].pValue, key_attr[1].ulValueLen);
+		logit_f("CKA_EC_POINT invalid octet str: %s (len %lu)",
 		    hex, (u_long)key_attr[1].ulValueLen);
 		goto fail;
 	}
@@ -1159,7 +1172,7 @@ pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	if ((key = sshkey_new(KEY_UNSPEC)) == NULL)
 		fatal_f("sshkey_new failed");
 	key->ed25519_pk = xmalloc(ED25519_PK_SZ);
-	memcpy(key->ed25519_pk, attrp + 2, ED25519_PK_SZ);
+	memcpy(key->ed25519_pk, d, ED25519_PK_SZ);
 	key->type = KEY_ED25519;
 	key->flags |= SSHKEY_FLAG_EXT;
 	if (pkcs11_record_key(p, slotidx, &key_attr[0], key))
