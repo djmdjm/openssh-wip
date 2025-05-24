@@ -342,6 +342,8 @@ int	ssh_rsa_encode_store_sig(int, const u_char *, size_t,
 int	ssh_ecdsa_encode_store_sig(const struct sshkey *,
 	    const BIGNUM *, const BIGNUM *, u_char **, size_t *);
 #endif
+int	ssh_ed25519_encode_store_sig(const u_char *, size_t,
+	    u_char **, size_t *);
 #endif
 
 #ifndef WITH_OPENSSL

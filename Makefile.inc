@@ -123,13 +123,12 @@ SRCS_PROT+=	monitor_fdpass.c
 SRCS_PROT+=	nchan.c
 SRCS_PROT+=	ttymodes.c
 
-.if (${OPENSSL:L} == "yes")
 SRCS_PKCS11+=		ssh-pkcs11.c
 SRCS_PKCS11_CLIENT+=	ssh-pkcs11-client.c
+
+.if (${OPENSSL:L} == "yes")
 SRCS_MODULI+=		moduli.c
 .else
-SRCS_PKCS11+=
-SRCS_PKCS11_CLIENT+=
 SRCS_MODULI+=
 .endif
 
