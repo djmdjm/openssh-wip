@@ -392,16 +392,37 @@ static int
 pkcs11_record_key(struct pkcs11_provider *provider, CK_ULONG slotidx,
     CK_ATTRIBUTE *keyid_attrib, struct sshkey *key)
 {
+	struct sshbuf *keyblob;
 	struct pkcs11_key *k11;
 	int r;
 	char *hex;
 
-	k11 = xcalloc(1, sizeof(*k11));
-	if ((k11->keyblob = sshbuf_new()) == NULL)
+	hex = tohex(keyid_attrib->pValue, keyid_attrib->ulValueLen);
+	debug_f("%s key: provider %s slot %lu keyid %s",
+	    sshkey_type(key), provider->name, (u_long)slotidx, hex);
+	free(hex);
+
+	if ((keyblob = sshbuf_new()) == NULL)
 		fatal_f("sshbuf_new failed");
-	if ((r = sshkey_putb(key, k11->keyblob)) != 0)
+	if ((r = sshkey_putb(key, keyblob)) != 0)
 		fatal_fr(r, "sshkey_putb");
+
+	/* Check if we've already recorded this key in a different slot */
+	TAILQ_FOREACH(k11, &pkcs11_keys, next) {
+		if (sshbuf_equals(k11->keyblob, keyblob) == 0) {
+			hex = tohex(k11->keyid, k11->keyid_len);
+			debug_f("Already seen this key at "
+			    "provider %s slot %lu keyid %s",
+			    k11->provider->name, k11->slotidx, hex);
+			free(hex);
+			sshbuf_free(keyblob);
+			return -1;
+		}
+	}
+
+	k11 = xcalloc(1, sizeof(*k11));
 	k11->provider = provider;
+	k11->keyblob = keyblob;
 	provider->refcount++;	/* provider referenced by RSA key */
 	k11->slotidx = slotidx;
 	/* identify key object on smartcard */
@@ -411,11 +432,6 @@ pkcs11_record_key(struct pkcs11_provider *provider, CK_ULONG slotidx,
 		memcpy(k11->keyid, keyid_attrib->pValue, k11->keyid_len);
 	}
 	TAILQ_INSERT_TAIL(&pkcs11_keys, k11, next);
-
-	hex = tohex(k11->keyid, k11->keyid_len);
-	debug3_f("recorded %s key: provider %s slot %lu keyid %s",
-	    sshkey_type(key), provider->name, (u_long)slotidx, hex);
-	free(hex);
 
 	return 0;
 }
@@ -1407,7 +1423,8 @@ pkcs11_fetch_keys(struct pkcs11_provider *p, CK_ULONG slotidx,
 		default:
 			/* XXX print key type? */
 			key = NULL;
-			error("skipping unsupported key type");
+			error("skipping unsupported key type 0x%lx",
+			    (u_long)ck_key_type);
 		}
 
 		if (key == NULL) {
