@@ -45,7 +45,3 @@ struct sshkey *
 /* Only available in ssh-pkcs11-client.c */
 int pkcs11_make_cert(const struct sshkey *,
     const struct sshkey *, struct sshkey **);
-
-#if !defined(WITH_OPENSSL) && defined(ENABLE_PKCS11)
-#undef ENABLE_PKCS11
-#endif
