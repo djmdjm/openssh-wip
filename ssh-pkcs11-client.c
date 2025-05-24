@@ -384,7 +384,7 @@ pkcs11_add_provider(char *name, char *pin, struct sshkey ***keysp,
 	struct sshkey *k;
 	int r, type;
 	char *label;
-	u_int nkeys, i;
+	u_int ret = -1, nkeys, i;
 	struct sshbuf *msg;
 	struct helper *helper;
 
@@ -404,9 +404,11 @@ pkcs11_add_provider(char *name, char *pin, struct sshkey ***keysp,
 	sshbuf_reset(msg);
 
 	type = recv_msg(helper->fd, msg);
+	debug3_f("response %d", type);
 	if (type == SSH2_AGENT_IDENTITIES_ANSWER) {
 		if ((r = sshbuf_get_u32(msg, &nkeys)) != 0)
 			fatal_fr(r, "parse nkeys");
+		debug3_f("helper return %u keys", nkeys);
 		*keysp = xcalloc(nkeys, sizeof(struct sshkey *));
 		if (labelsp)
 			*labelsp = xcalloc(nkeys, sizeof(char *));
@@ -423,14 +425,18 @@ pkcs11_add_provider(char *name, char *pin, struct sshkey ***keysp,
 			else
 				free(label);
 		}
+		/* success */
+		ret = 0;
 	} else if (type == SSH2_AGENT_FAILURE) {
 		if ((r = sshbuf_get_u32(msg, &nkeys)) != 0)
-			nkeys = -1;
-	} else {
-		nkeys = -1;
+			error_fr(r, "failed to parse failure response");
+	}
+	if (ret != 0) {
+		debug_f("no keys; terminate helper");
+		helper_terminate(helper);
 	}
 	sshbuf_free(msg);
-	return nkeys;
+	return ret == 0 ? nkeys : -1;
 }
 
 int
