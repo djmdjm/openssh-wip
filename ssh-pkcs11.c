@@ -25,9 +25,11 @@
 #include <string.h>
 #include <dlfcn.h>
 
+#ifdef WITH_OPENSSL
 #include <openssl/ecdsa.h>
 #include <openssl/x509.h>
 #include <openssl/err.h>
+#endif
 
 #define CRYPTOKI_COMPAT
 #include "pkcs11.h"
@@ -77,7 +79,7 @@ TAILQ_HEAD(, pkcs11_key) pkcs11_keys; /* XXX a tree would be better */
 
 int pkcs11_interactive = 0;
 
-#ifdef HAVE_DLOPEN
+#ifdef WITH_OPENSSL
 static void
 ossl_error(const char *msg)
 {
@@ -459,6 +461,7 @@ pkcs11_lookup_key(struct sshkey *key)
 	return found;
 }
 
+#ifdef WITH_OPENSSL
 /*
  * See:
  * http://www.rsasecurity.com/rsalabs/pkcs/pkcs-1/
@@ -702,6 +705,7 @@ pkcs11_sign_ecdsa(struct sshkey *key,
 	free(sig);
 	return ret;
 }
+#endif /* WITH_OPENSSL */
 
 static int
 pkcs11_sign_ed25519(struct sshkey *key,
@@ -842,6 +846,7 @@ pkcs11_key_included(struct sshkey ***keysp, int *nkeys, struct sshkey *key)
 	return (0);
 }
 
+#ifdef WITH_OPENSSL
 static struct sshkey *
 pkcs11_fetch_ecdsa_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
     CK_OBJECT_HANDLE *obj)
@@ -1075,6 +1080,7 @@ fail:
 	}
 	return key;
 }
+#endif /* WITH_OPENSSL */
 
 static struct sshkey *
 pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
@@ -1171,6 +1177,7 @@ pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	return key;
 }
 
+#ifdef WITH_OPENSSL
 static int
 pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
     CK_OBJECT_HANDLE *obj, struct sshkey **keyp, char **labelp)
@@ -1361,17 +1368,7 @@ pkcs11_fetch_x509_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	*labelp = subject;
 	return 0;
 }
-
-#if 0
-static int
-have_rsa_key(const RSA *rsa)
-{
-	const BIGNUM *rsa_n, *rsa_e;
-
-	RSA_get0_key(rsa, &rsa_n, &rsa_e, NULL);
-	return rsa_n != NULL && rsa_e != NULL;
-}
-#endif
+#endif /* WITH_OPENSSL */
 
 static void
 note_key(struct pkcs11_provider *p, CK_ULONG slotidx, const char *context,
@@ -1389,6 +1386,7 @@ note_key(struct pkcs11_provider *p, CK_ULONG slotidx, const char *context,
 	free(fp);
 }
 
+#ifdef WITH_OPENSSL /* libcrypto needed for certificate parsing */
 /*
  * lookup certificates for token in slot identified by slotidx,
  * add 'wrapped' public keys to the 'keysp' array and increment nkeys.
@@ -1493,6 +1491,7 @@ fail:
 
 	return (ret);
 }
+#endif /* WITH_OPENSSL */
 
 /*
  * lookup public keys for token in slot identified by slotidx,
@@ -1560,12 +1559,14 @@ pkcs11_fetch_keys(struct pkcs11_provider *p, CK_ULONG slotidx,
 		label[key_attr[1].ulValueLen] = '\0';
 
 		switch (ck_key_type) {
+#ifdef WITH_OPENSSL
 		case CKK_RSA:
 			key = pkcs11_fetch_rsa_pubkey(p, slotidx, &obj);
 			break;
 		case CKK_ECDSA:
 			key = pkcs11_fetch_ecdsa_pubkey(p, slotidx, &obj);
 			break;
+#endif /* WITH_OPENSSL */
 		case CKK_EC_EDWARDS:
 			key = pkcs11_fetch_ed25519_pubkey(p, slotidx, &obj);
 			break;
@@ -1926,7 +1927,9 @@ pkcs11_register_provider(char *provider_id, char *pin,
 		    keyp == NULL)
 			continue;
 		pkcs11_fetch_keys(p, i, keyp, labelsp, &nkeys);
+#ifdef WITH_OPENSSL
 		pkcs11_fetch_certs(p, i, keyp, labelsp, &nkeys);
+#endif
 		if (nkeys == 0 && !p->slotinfo[i].logged_in &&
 		    pkcs11_interactive) {
 			/*
@@ -1939,7 +1942,9 @@ pkcs11_register_provider(char *provider_id, char *pin,
 				continue;
 			}
 			pkcs11_fetch_keys(p, i, keyp, labelsp, &nkeys);
+#ifdef WITH_OPENSSL
 			pkcs11_fetch_certs(p, i, keyp, labelsp, &nkeys);
+#endif
 		}
 	}
 
@@ -2030,6 +2035,7 @@ pkcs11_sign(struct sshkey *key,
     const char *sk_pin, u_int compat)
 {
 	switch (key->type) {
+#ifdef WITH_OPENSSL
 	case KEY_RSA:
 	case KEY_RSA_CERT:
 		return pkcs11_sign_rsa(key, sigp, lenp, data, datalen,
@@ -2038,6 +2044,7 @@ pkcs11_sign(struct sshkey *key,
 	case KEY_ECDSA_CERT:
 		return pkcs11_sign_ecdsa(key, sigp, lenp, data, datalen,
 		    alg, sk_provider, sk_pin, compat);
+#endif /* WITH_OPENSSL */
 	case KEY_ED25519:
 	case KEY_ED25519_CERT:
 		return pkcs11_sign_ed25519(key, sigp, lenp, data, datalen,

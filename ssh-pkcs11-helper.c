@@ -35,10 +35,6 @@
 #include "ssh-pkcs11.h"
 #include "ssherr.h"
 
-#ifdef WITH_OPENSSL
-#include <openssl/ec.h>
-#include <openssl/rsa.h>
-
 /* borrows code from sftp-server and ssh-agent */
 
 static char *providername; /* Provider for this helper */
@@ -307,18 +303,3 @@ main(int argc, char **argv)
 			fatal_fr(r, "reserve");
 	}
 }
-
-#else /* WITH_OPENSSL */
-void
-cleanup_exit(int i)
-{
-	_exit(i);
-}
-
-int
-main(int argc, char **argv)
-{
-	fprintf(stderr, "PKCS#11 code is not enabled\n");
-	return 1;
-}
-#endif /* WITH_OPENSSL */
