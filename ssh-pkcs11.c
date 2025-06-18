@@ -1158,7 +1158,7 @@ pkcs11_fetch_ed25519_pubkey(struct pkcs11_provider *p, CK_ULONG slotidx,
 	 */
 	d = (u_char *)key_attr[1].pValue;
 	len = key_attr[1].ulValueLen;
-	if (len != ED25519_PK_SZ + 2 && d[0] == 0x04 && d[1] == ED25519_PK_SZ) {
+	if (len == ED25519_PK_SZ + 2 && d[0] == 0x04 && d[1] == ED25519_PK_SZ) {
 		d += 2;
 		len -= 2;
 	}
