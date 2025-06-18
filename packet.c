@@ -199,6 +199,9 @@ struct session_state {
 	/* One-off warning about weak ciphers */
 	int cipher_warning_done;
 
+	/* Last observed TCP receive window size */
+	int tcp_rwin;
+
 	/* Hook for fuzzing inbound packets */
 	ssh_packet_hook_fn *hook_in;
 	void *hook_in_ctx;
@@ -228,6 +231,7 @@ ssh_alloc_session_state(void)
 	state->max_packet_size = 32768;
 	state->packet_timeout_ms = -1;
 	state->p_send.packets = state->p_read.packets = 0;
+	state->tcp_rwin = -1;
 	state->initialized = 1;
 	/*
 	 * ssh_packet_send2() needs to queue packets until
@@ -642,6 +646,37 @@ ssh_packet_rdomain_in(struct ssh *ssh)
 		return NULL;
 	ssh->rdomain_in = get_rdomain(ssh->state->connection_in);
 	return ssh->rdomain_in;
+}
+
+static void
+ssh_packet_update_tcp_rwin(struct ssh *ssh)
+{
+	int rwin;
+	socklen_t len = sizeof(rwin);
+
+	if (ssh->state == NULL ||
+	    !ssh_packet_connection_is_on_socket(ssh))
+		return;
+	if (getsockopt(ssh->state->connection_in, SOL_SOCKET, SO_RCVBUF,
+	    &rwin, &len) != 0) {
+		debug_f("getsockopt(%d SO_RCVBUF): %s",
+		    ssh->state->connection_in, strerror(errno));
+		return;
+	}
+	if (ssh->state->tcp_rwin != -1 && rwin != ssh->state->tcp_rwin) {
+		debug3_f("TCP receive window %d -> %d (%+d)",
+		    ssh->state->tcp_rwin, rwin, rwin - ssh->state->tcp_rwin);
+	}
+	ssh->state->tcp_rwin = rwin;
+}
+
+int
+ssh_packet_get_tcp_rwin(struct ssh *ssh)
+{
+	if (ssh == NULL || ssh->state == NULL ||
+	    !ssh_packet_connection_is_on_socket(ssh))
+		return -1;
+	return ssh->state->tcp_rwin;
 }
 
 /* Closes the connection and clears and frees internal data structures. */
@@ -1475,6 +1510,8 @@ ssh_packet_read_seqnr(struct ssh *ssh, u_char *typep, u_int32_t *seqnr_p)
 		/* Append it to the buffer. */
 		if ((r = ssh_packet_process_incoming(ssh, buf, len)) != 0)
 			goto out;
+
+		ssh_packet_update_tcp_rwin(ssh);
 	}
  out:
 	return r;
@@ -1899,6 +1936,7 @@ ssh_packet_process_read(struct ssh *ssh, int fd)
 
 	if ((r = sshbuf_read(fd, state->input, PACKET_MAX_SIZE, &rlen)) != 0)
 		return r;
+	ssh_packet_update_tcp_rwin(ssh);
 
 	if (state->packet_discard) {
 		if ((r = sshbuf_consume_end(state->input, rlen)) != 0)
