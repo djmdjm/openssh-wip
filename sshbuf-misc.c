@@ -282,6 +282,20 @@ sshbuf_cmp(const struct sshbuf *b, size_t offset,
 }
 
 int
+sshbuf_equals(const struct sshbuf *a, const struct sshbuf *b)
+{
+	if (sshbuf_ptr(a) == NULL || sshbuf_ptr(b) == NULL)
+		return SSH_ERR_INTERNAL_ERROR;
+	if (sshbuf_len(a) != sshbuf_len(b))
+		return SSH_ERR_MESSAGE_INCOMPLETE;
+	if (sshbuf_len(a) == 0)
+		return 0;
+	if (memcmp(sshbuf_ptr(a), sshbuf_ptr(b), sshbuf_len(a)) != 0)
+		return SSH_ERR_INVALID_FORMAT;
+	return 0;
+}
+
+int
 sshbuf_find(const struct sshbuf *b, size_t start_offset,
     const void *s, size_t len, size_t *offsetp)
 {
