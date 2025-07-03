@@ -38,10 +38,6 @@
 #include "digest.h"
 #include "ssherr.h"
 
-static int
-kex_ecdh_dec_key_group(struct kex *, const struct sshbuf *, EC_KEY *key,
-    const EC_GROUP *, struct sshbuf **);
-
 int
 kex_ecdh_keypair(struct kex *kex)
 {
@@ -130,7 +126,7 @@ kex_ecdh_enc(struct kex *kex, const struct sshbuf *client_blob,
 	return r;
 }
 
-static int
+int
 kex_ecdh_dec_key_group(struct kex *kex, const struct sshbuf *ec_blob,
     EC_KEY *key, const EC_GROUP *group, struct sshbuf **shared_secretp)
 {

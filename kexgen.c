@@ -120,6 +120,9 @@ kex_gen_client(struct ssh *ssh)
 	case KEX_KEM_MLKEM768X25519_SHA256:
 		r = kex_kem_mlkem768x25519_keypair(kex);
 		break;
+	case KEX_KEM_MLKEM768ECDH_SHA256:
+		r = kex_kem_mlkem768ecdh_keypair(kex);
+		break;
 	default:
 		r = SSH_ERR_INVALID_ARGUMENT;
 		break;
@@ -194,6 +197,10 @@ input_kex_gen_reply(int type, u_int32_t seq, struct ssh *ssh)
 		break;
 	case KEX_KEM_MLKEM768X25519_SHA256:
 		r = kex_kem_mlkem768x25519_dec(kex, server_blob,
+		    &shared_secret);
+		break;
+	case KEX_KEM_MLKEM768ECDH_SHA256:
+		r = kex_kem_mlkem768ecdh_dec(kex, server_blob,
 		    &shared_secret);
 		break;
 	default:
@@ -318,6 +325,10 @@ input_kex_gen_init(int type, u_int32_t seq, struct ssh *ssh)
 		break;
 	case KEX_KEM_MLKEM768X25519_SHA256:
 		r = kex_kem_mlkem768x25519_enc(kex, client_pubkey,
+		    &server_pubkey, &shared_secret);
+		break;
+	case KEX_KEM_MLKEM768ECDH_SHA256:
+		r = kex_kem_mlkem768ecdh_enc(kex, client_pubkey,
 		    &server_pubkey, &shared_secret);
 		break;
 	default:
