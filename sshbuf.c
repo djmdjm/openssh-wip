@@ -423,3 +423,23 @@ sshbuf_consume_end(struct sshbuf *buf, size_t len)
 	return 0;
 }
 
+int
+sshbuf_consume_upto_child(struct sshbuf *buf, const struct sshbuf *child)
+{
+	int r;
+
+	if ((r = sshbuf_check_sanity(buf)) != 0 ||
+	    (r = sshbuf_check_sanity(child)) != 0)
+		return r;
+	/* This function is only used for parent/child buffers */
+	if (child->parent != buf)
+		return SSH_ERR_INVALID_ARGUMENT;
+	/* Shouldn't happen */
+	if (child->cd != buf->cd)
+		return SSH_ERR_INTERNAL_ERROR;
+	/* Nonsensical if the parent has advanced past the child */
+	if (sshbuf_len(child) > sshbuf_len(buf))
+		return SSH_ERR_INVALID_ARGUMENT;
+	/* Advance */
+	return sshbuf_consume(buf, sshbuf_len(buf) - sshbuf_len(child));
+}
