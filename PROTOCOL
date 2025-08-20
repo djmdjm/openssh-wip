@@ -755,6 +755,28 @@ be empty.
 This extension is advertised in the SSH_FXP_VERSION hello with version
 "1".
 
+4.13. sftp: File attribute extension "amctimes-0@openssh.com"
+
+OpenSSH 10.0 and later support a file attribute extension that allows
+communication of file access, modify and creation times with nanosecond
+precision. This extension uses the existing SSH2_FILEXFER_ATTR_EXTENDED
+signalling, and appears in the extension section of the attribute
+message (see section 5 of draft-ietf-secsh-filexfer-02) with the
+following format:
+
+	string		"amctimes-0@openssh.com"
+	string		extension_contents
+
+Where "extension_contents" consists of the following submessage:
+
+	uint64		atime_nanoseconds
+	uint64		mtime_nanoseconds
+	uint64		ctime_nanoseconds
+
+Where each value represents the nanoseconds since Unix epoch for the
+respective file time. Files with times before epoch are not supported
+and must be encoded with zero timestamp.
+
 5. Miscellaneous changes
 
 5.1 Public key format

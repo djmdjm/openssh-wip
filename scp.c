@@ -154,6 +154,7 @@ pid_t do_cmd_pid2 = -1;
 /* SFTP copy parameters */
 size_t sftp_copy_buflen;
 size_t sftp_nrequests;
+u_int sftp_compat;
 
 /* Needed for sftp */
 volatile sig_atomic_t interrupted = 0;
@@ -553,6 +554,9 @@ main(int argc, char **argv)
 					    "\"%s\": %s", optarg + 10, errstr);
 				}
 				sftp_nrequests = (size_t)llv;
+			} else if (strcmp(optarg,
+			    "disable-attribute-extensions") == 0) {
+				sftp_compat = SSH2_FILEXFER_COMPAT_ATTRIB_EXT;
 			} else {
 				fatal("Invalid -X option");
 			}
@@ -958,6 +962,8 @@ static struct sftp_conn *
 do_sftp_connect(char *host, char *user, int port, char *sftp_direct,
    int *reminp, int *remoutp, int *pidp)
 {
+	struct sftp_conn *conn;
+
 	if (sftp_direct == NULL) {
 		if (do_cmd(ssh_program, host, user, port, 1, "sftp",
 		    reminp, remoutp, pidp) < 0)
@@ -970,8 +976,12 @@ do_sftp_connect(char *host, char *user, int port, char *sftp_direct,
 		    reminp, remoutp, pidp) < 0)
 			return NULL;
 	}
-	return sftp_init(*reminp, *remoutp,
-	    sftp_copy_buflen, sftp_nrequests, limit_kbps);
+	if ((conn = sftp_init(*reminp, *remoutp,
+	    sftp_copy_buflen, sftp_nrequests, limit_kbps)) == NULL)
+		return NULL;
+	if (sftp_compat != 0)
+		sftp_set_compat(conn, sftp_compat);
+	return conn;
 }
 
 void

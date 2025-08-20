@@ -372,6 +372,11 @@ By default 64 requests may be active concurrently.
 Controls the maximum buffer size for a single SFTP read/write operation used
 during download or upload.
 By default a 32KB buffer is used.
+.It Cm disable-attribute-extensions
+Prevents
+.Nm
+from using protocol extensions to communicate addition information about
+files, such as nanosecond timestamps.
 .El
 .El
 .Sh INTERACTIVE COMMANDS
