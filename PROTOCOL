@@ -182,6 +182,34 @@ SSH2_MSG_USERAUTH_REQUEST, regardless of whether it succeed or fails.
 The client SHOULD be prepared to update the server-sig-algs that
 it received during an earlier SSH2_MSG_EXT_INFO with the later one.
 
+1.12 transport: mlkem768x25519-sm3
+
+This kex extends section 2.3 from
+https://datatracker.ietf.org/doc/html/draft-kampanakis-curdle-ssh-pq-ke-04
+as follows:
+
+	mlkem768x25519-sm3 defines that the traditional client and server
+	public keys C_PK1, S_PK1 belong to the Curve25519 curve [RFC7748].
+	Private and public keys are generated as described therein. The
+	public keys are defined as strings of 32 bytes as per [RFC8731].
+	The K_CL shared secret is generated from the exchanged C_PK1 and
+	S_PK1 public keys as defined in [RFC8731] (key agreement method
+	curve25519-sha256).
+
+	The post-quantum C_PK2 and S_CT2 represent ML-KEM-768 public key
+	and ciphertext from the client and server respectively which are
+	encoded as octet strings. The K_PQ shared secret is decapsulated
+	from the ciphertext S_CT2 using the client post-quantum KEM private
+	key as defined in [FIPS203].
+
+	The HASH function used in the key exchange [RFC4253] is
+	SM3 [GBT.32905-2016]
+
+	[GBT.32905-2016] Standardization Administration of China,
+	"Information security technology --- SM3 cryptographic hash algorithm",
+	GB/T 32905-2016, March 2017,
+	http://www.gmbz.org.cn/upload/2018-07-24/1532401392982079739.pdf.
+
 2. Connection protocol changes
 
 2.1. connection: Channel write close extension "eow@openssh.com"
