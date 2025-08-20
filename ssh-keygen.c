@@ -87,6 +87,10 @@ static int fingerprint_hash = SSH_FP_HASH_DEFAULT;
 static char identity_file[PATH_MAX];
 static int have_identity = 0;
 
+/* Some operations accept multiple files */
+static char **identity_files;
+static size_t nidentity_files;
+
 /* This is set to the passphrase if given on the command line. */
 static char *identity_passphrase = NULL;
 
@@ -2731,16 +2735,17 @@ done:
 
 static int
 sig_verify(const char *signature, const char *sig_namespace,
-    const char *principal, const char *allowed_keys, const char *revoked_keys,
-    char * const *opts, size_t nopts)
+    const char *principal, char **allowed_keys, size_t nallowed_keys,
+    const char *revoked_keys, char * const *opts, size_t nopts)
 {
-	int r, ret = -1;
+	int r, ret = -1, matched = 0;
 	int print_pubkey = 0;
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	struct sshkey *sign_key = NULL;
 	char *fp = NULL;
 	struct sshkey_sig_details *sig_details = NULL;
 	uint64_t verify_time = 0;
+	size_t i;
 
 	if (sig_process_opts(opts, nopts, NULL, &verify_time,
 	    &print_pubkey) != 0)
@@ -2778,9 +2783,23 @@ sig_verify(const char *signature, const char *sig_namespace,
 		}
 	}
 
-	if (allowed_keys != NULL && (r = sshsig_check_allowed_keys(allowed_keys,
-	    sign_key, principal, sig_namespace, verify_time)) != 0) {
-		debug3_fr(r, "sshsig_check_allowed_keys");
+	for (i = 0; i < nallowed_keys; i++) {
+		if ((r = sshsig_check_allowed_keys(allowed_keys[i], sign_key,
+		    principal, sig_namespace, verify_time)) != 0) {
+			/* don't attempt other files on hard errors */
+			if (r != SSH_ERR_KEY_NOT_FOUND) {
+				error_fr(r, "check allowed keys in %s",
+				    allowed_keys[i]);
+				goto done;
+			}
+			debug3_fr(r, "sshsig_check_allowed_keys in %s",
+			    allowed_keys[i]);
+			continue;
+		}
+		matched = 1;
+	}
+	if (!matched && nallowed_keys != 0) {
+		error_f("No key matched in allowed signers file(s)");
 		goto done;
 	}
 	/* success */
@@ -2822,14 +2841,15 @@ done:
 }
 
 static int
-sig_find_principals(const char *signature, const char *allowed_keys,
-    char * const *opts, size_t nopts)
+sig_find_principals(const char *signature, char **allowed_keys_files,
+    size_t nallowed_keys_files, char * const *opts, size_t nopts)
 {
 	int r, ret = -1;
 	struct sshbuf *sigbuf = NULL, *abuf = NULL;
 	struct sshkey *sign_key = NULL;
-	char *principals = NULL, *cp, *tmp;
+	char *principals = NULL, *output = NULL, *cp, *tmp;
 	uint64_t verify_time = 0;
+	size_t i;
 
 	if (sig_process_opts(opts, nopts, NULL, &verify_time, NULL) != 0)
 		goto done; /* error already logged */
@@ -2846,53 +2866,76 @@ sig_find_principals(const char *signature, const char *allowed_keys,
 		error_fr(r, "sshsig_get_pubkey");
 		goto done;
 	}
-	if ((r = sshsig_find_principals(allowed_keys, sign_key,
-	    verify_time, &principals)) != 0) {
-		if (r != SSH_ERR_KEY_NOT_FOUND)
-			error_fr(r, "sshsig_find_principal");
-		goto done;
-	}
-	ret = 0;
-done:
-	if (ret == 0 ) {
-		/* Emit matching principals one per line */
+
+	for (i = 0; i < nallowed_keys_files; i++) {
+		if ((r = sshsig_find_principals(allowed_keys_files[i], sign_key,
+		    verify_time, &principals)) != 0) {
+			/* don't attempt other files on hard errors */
+			if (r != SSH_ERR_KEY_NOT_FOUND) {
+				error_fr(r, "find principals in %s",
+				    allowed_keys_files[i]);
+				goto done;
+			}
+			debug_fr(r, "find principals in %s",
+			    allowed_keys_files[i]);
+			continue;
+		}
+		/* Record matching principals one per line */
 		tmp = principals;
 		while ((cp = strsep(&tmp, ",")) != NULL && *cp != '\0')
-			puts(cp);
-	} else {
-		fprintf(stderr, "No principal matched.\n");
+			xextendf(&output, "\n", "%s", cp);
+		free(principals);
 	}
+	if (output != NULL) {
+		printf("%s\n", output);
+		ret = 0;
+	} else
+		fprintf(stderr, "No principal matched.\n");
+done:
 	sshbuf_free(sigbuf);
 	sshbuf_free(abuf);
 	sshkey_free(sign_key);
-	free(principals);
+	free(output);
 	return ret;
 }
 
 static int
-sig_match_principals(const char *allowed_keys, char *principal,
-	char * const *opts, size_t nopts)
+sig_match_principals(char **allowed_keys, size_t nallowed_keys,
+    char *principal, char * const *opts, size_t nopts)
 {
-	int r;
-	char **principals = NULL;
-	size_t i, nprincipals = 0;
+	int r, ret = -1;
+	char **principals = NULL, *output = NULL;
+	size_t i, j, nprincipals = 0;
 
 	if ((r = sig_process_opts(opts, nopts, NULL, NULL, NULL)) != 0)
 		return r; /* error already logged */
 
-	if ((r = sshsig_match_principals(allowed_keys, principal,
-	    &principals, &nprincipals)) != 0) {
-		debug_f("match: %s", ssh_err(r));
+	for (i = 0; i < nallowed_keys; i++) {
+		if ((r = sshsig_match_principals(allowed_keys[i], principal,
+		    &principals, &nprincipals)) != 0) {
+			/* don't attempt other files on hard errors */
+			if (r != SSH_ERR_KEY_NOT_FOUND) {
+				error_fr(r, "match principals in %s",
+				    allowed_keys[i]);
+				goto done;
+			}
+			debug_fr(r, "match in %s", allowed_keys[i]);
+			continue;
+		}
+		for (j = 0; j < nprincipals; j++) {
+			xextendf(&output, "\n", "%s", principals[j]);
+			free(principals[j]);
+		}
+		free(principals);
+	}
+	if (output != NULL) {
+		printf("%s\n", output);
+		ret = 0;
+	} else
 		fprintf(stderr, "No principal matched.\n");
-		return r;
-	}
-	for (i = 0; i < nprincipals; i++) {
-		printf("%s\n", principals[i]);
-		free(principals[i]);
-	}
-	free(principals);
-
-	return 0;
+ done:
+	free(output);
+	return ret;
 }
 
 static void
@@ -3394,6 +3437,11 @@ main(int argc, char **argv)
 			    sizeof(identity_file)) >= sizeof(identity_file))
 				fatal("Identity filename too long");
 			have_identity = 1;
+			/* Some operations accept multiple filenames */
+			identity_files = xrecallocarray(identity_files,
+			    nidentity_files, nidentity_files + 1,
+			    sizeof(*identity_files));
+			identity_files[nidentity_files++] = xstrdup(optarg);
 			break;
 		case 'g':
 			print_generic = 1;
@@ -3533,8 +3581,8 @@ main(int argc, char **argv)
 				    "missing allowed keys file");
 				exit(1);
 			}
-			return sig_find_principals(ca_key_path, identity_file,
-			    opts, nopts);
+			return sig_find_principals(ca_key_path, identity_files,
+			    nidentity_files, opts, nopts);
 		} else if (strprefix(sign_op, "match-principals", 0) != NULL) {
 			if (!have_identity) {
 				error("Too few arguments for match-principals:"
@@ -3546,8 +3594,8 @@ main(int argc, char **argv)
 				    "missing principal ID");
 				exit(1);
 			}
-			return sig_match_principals(identity_file, cert_key_id,
-			    opts, nopts);
+			return sig_match_principals(identity_files,
+			    nidentity_files, cert_key_id, opts, nopts);
 		} else if (strprefix(sign_op, "sign", 0) != NULL) {
 			/* NB. cert_principals is actually namespace, via -n */
 			if (cert_principals == NULL ||
@@ -3559,6 +3607,10 @@ main(int argc, char **argv)
 			if (!have_identity) {
 				error("Too few arguments for sign: "
 				    "missing key");
+				exit(1);
+			}
+			if (nidentity_files > 1) {
+				error("Too many keys specified for sign");
 				exit(1);
 			}
 			return sig_sign(identity_file, cert_principals,
@@ -3576,8 +3628,13 @@ main(int argc, char **argv)
 				    "missing signature file");
 				exit(1);
 			}
+			if (nidentity_files > 0) {
+				error("Too many keys specified "
+				    "for check-novalidate");
+				exit(1);
+			}
 			return sig_verify(ca_key_path, cert_principals,
-			    NULL, NULL, NULL, opts, nopts);
+			    NULL, NULL, 0, NULL, opts, nopts);
 		} else if (strprefix(sign_op, "verify", 0) != NULL) {
 			/* NB. cert_principals is actually namespace, via -n */
 			if (cert_principals == NULL ||
@@ -3592,7 +3649,7 @@ main(int argc, char **argv)
 				exit(1);
 			}
 			if (!have_identity) {
-				error("Too few arguments for sign: "
+				error("Too few arguments for verify: "
 				    "missing allowed keys file");
 				exit(1);
 			}
@@ -3602,13 +3659,17 @@ main(int argc, char **argv)
 				exit(1);
 			}
 			return sig_verify(ca_key_path, cert_principals,
-			    cert_key_id, identity_file, rr_hostname,
-			    opts, nopts);
+			    cert_key_id, identity_files, nidentity_files,
+			    rr_hostname, opts, nopts);
 		}
 		error("Unsupported operation for -Y: \"%s\"", sign_op);
 		usage();
 		/* NOTREACHED */
 	}
+
+	/* All other operations accept only a single keyfile */
+	if (nidentity_files > 1)
+		fatal("Too many keys specified on commandline");
 
 	if (ca_key_path != NULL) {
 		if (argc < 1 && !gen_krl) {
