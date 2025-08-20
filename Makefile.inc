@@ -104,6 +104,7 @@ SRCS_KEYP+=	sshbuf-io.c
 SRCS_KEYP+=	atomicio.c
 
 SRCS_KRL+=	bitmap.c
+SRCS_KRL+=	bloom.c
 SRCS_KRL+=	krl.c
 
 SRCS_MAC+=	mac.c

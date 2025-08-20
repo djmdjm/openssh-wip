@@ -2365,8 +2365,8 @@ update_krl_from_file(struct passwd *pw, const char *file, int wild_ca,
 
 static void
 do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
-    unsigned long long krl_version, const char *krl_comment,
-    int argc, char **argv)
+    unsigned long long krl_version, const char *krl_comment, int krl_exts,
+    u_int bloom_fp_rate, int argc, char **argv)
 {
 	struct ssh_krl *krl;
 	struct stat sb;
@@ -2410,8 +2410,8 @@ do_gen_krl(struct passwd *pw, int updating, const char *ca_key_path,
 
 	if ((kbuf = sshbuf_new()) == NULL)
 		fatal("sshbuf_new failed");
-	if (ssh_krl_to_blob(krl, kbuf) != 0)
-		fatal("Couldn't generate KRL");
+	if ((r = ssh_krl_to_blob(krl, kbuf, krl_exts, bloom_fp_rate)) != 0)
+		fatal_r(r, "Couldn't generate KRL");
 	if ((r = sshbuf_write_file(identity_file, kbuf)) != 0)
 		fatal("write %s: %s", identity_file, strerror(errno));
 	sshbuf_free(kbuf);
@@ -3282,13 +3282,14 @@ main(int argc, char **argv)
 	int prefer_agent = 0, convert_to = 0, convert_from = 0;
 	int print_public = 0, print_generic = 0, cert_serial_autoinc = 0;
 	int do_gen_candidates = 0, do_screen_candidates = 0, download_sk = 0;
+	int krl_exts = 0;
 	unsigned long long cert_serial = 0;
 	char *identity_comment = NULL, *ca_key_path = NULL, **opts = NULL;
 	char *sk_application = NULL, *sk_device = NULL, *sk_user = NULL;
 	char *sk_attestation_path = NULL;
 	struct sshbuf *challenge = NULL, *attest = NULL;
 	size_t i, nopts = 0;
-	u_int32_t bits = 0;
+	u_int32_t bits = 0, krl_bloom_fp_rate = 0;
 	uint8_t sk_flags = SSH_SK_USER_PRESENCE_REQD;
 	const char *errstr, *p;
 	int log_level = SYSLOG_LEVEL_INFO;
@@ -3629,8 +3630,28 @@ main(int argc, char **argv)
 		usage();
 	}
 	if (gen_krl) {
+		for (i = 0; i < nopts; i++) {
+			if (strcasecmp(opts[i], "enable-extensions") == 0) {
+				krl_exts = 1;
+			} else if (strcasecmp(opts[i],
+			    "disable-extensions") == 0) {
+				krl_exts = 0;
+			} else if (strncasecmp(opts[i],
+			    "bloom-filter-false-pos-rate=", 28) == 0) {
+				krl_bloom_fp_rate = (u_int)strtonum(opts[i]+28,
+				    10, UINT_MAX/256, &errstr);
+				if (errstr) {
+					fatal("Invalid option %s: %s", opts[i],
+					    errstr);
+				}
+			} else {
+				fatal("Option \"%s\" is unsupported for "
+				    "KRL generation", opts[i]);
+			}
+		}
 		do_gen_krl(pw, update_krl, ca_key_path,
-		    cert_serial, identity_comment, argc, argv);
+		    cert_serial, identity_comment, krl_exts, krl_bloom_fp_rate,
+		    argc, argv);
 		return (0);
 	}
 	if (check_krl) {
