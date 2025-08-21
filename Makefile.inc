@@ -137,16 +137,4 @@ SRCS_SK+=		sk-usbhid.c
 SRCS_SK_CLIENT=		ssh-sk-client.c
 SRCS_SK_CLIENT+=	msg.c
 
-WITH_XMSS?=	no
-.if (${WITH_XMSS:L} == "yes")
-CFLAGS+=	-DWITH_XMSS
-SRCS_KEY+=	ssh-xmss.c
-SRCS_KEY+=	sshkey-xmss.c
-SRCS_KEY+=	xmss_commons.c
-SRCS_KEY+=	xmss_fast.c
-SRCS_KEY+=	xmss_hash.c
-SRCS_KEY+=	xmss_hash_address.c
-SRCS_KEY+=	xmss_wots.c
-.endif
-
 .include <bsd.obj.mk>

@@ -237,7 +237,6 @@ list_hostkey_types(void)
 		case KEY_ED25519:
 		case KEY_ECDSA_SK:
 		case KEY_ED25519_SK:
-		case KEY_XMSS:
 			append_hostkey_type(b, sshkey_ssh_name(key));
 			break;
 		}
@@ -257,7 +256,6 @@ list_hostkey_types(void)
 		case KEY_ED25519_CERT:
 		case KEY_ECDSA_SK_CERT:
 		case KEY_ED25519_SK_CERT:
-		case KEY_XMSS_CERT:
 			append_hostkey_type(b, sshkey_ssh_name(key));
 			break;
 		}
@@ -282,7 +280,6 @@ get_hostkey_public_by_type(int type, int nid, struct ssh *ssh)
 		case KEY_ED25519_CERT:
 		case KEY_ECDSA_SK_CERT:
 		case KEY_ED25519_SK_CERT:
-		case KEY_XMSS_CERT:
 			key = host_certificates[i];
 			break;
 		default:

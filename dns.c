@@ -92,9 +92,6 @@ dns_read_key(u_int8_t *algorithm, u_int8_t *digest_type,
 	case KEY_ED25519:
 		*algorithm = SSHFP_KEY_ED25519;
 		break;
-	case KEY_XMSS:
-		*algorithm = SSHFP_KEY_XMSS;
-		break;
 	default:
 		*algorithm = SSHFP_KEY_RESERVED; /* 0 */
 	}
