@@ -74,7 +74,9 @@ SRCS_KEX+=	smult_curve25519_ref.c
 SRCS_KEX+=	kexgen.c
 SRCS_KEX+=	kexsntrup761x25519.c
 SRCS_KEX+=	sntrup761.c
+SRCS_KEX+=	libcrux_mlkem768_sha3.c
 SRCS_KEX+=	kexmlkem768x25519.c
+SRCS_KEX+=	kexmlkem768ecdh.c
 
 SRCS_KEY+=	sshkey.c
 SRCS_KEY+=	cipher.c

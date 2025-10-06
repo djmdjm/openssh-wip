@@ -45,7 +45,7 @@ kex_kem_sntrup761x25519_keypair(struct kex *kex)
 	struct sshbuf *buf = NULL;
 	u_char *cp = NULL;
 	size_t need;
-	int r;
+	int r = SSH_ERR_INTERNAL_ERROR;
 
 	if ((buf = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
@@ -62,6 +62,8 @@ kex_kem_sntrup761x25519_keypair(struct kex *kex)
 #ifdef DEBUG_KEXECDH
 	dump_digest("client public key c25519:", cp, CURVE25519_SIZE);
 #endif
+	/* success */
+	r = 0;
 	kex->client_pub = buf;
 	buf = NULL;
  out:
@@ -81,7 +83,7 @@ kex_kem_sntrup761x25519_enc(struct kex *kex,
 	u_char server_key[CURVE25519_SIZE];
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
 	size_t need;
-	int r;
+	int r = SSH_ERR_INTERNAL_ERROR;
 
 	*server_blobp = NULL;
 	*shared_secretp = NULL;
@@ -118,7 +120,10 @@ kex_kem_sntrup761x25519_enc(struct kex *kex,
 	if ((r = sshbuf_reserve(server_blob, need, &ciphertext)) != 0)
 		goto out;
 	/* generate and encrypt KEM key with client key */
-	crypto_kem_sntrup761_enc(ciphertext, kem_key, client_pub);
+	if (crypto_kem_sntrup761_enc(ciphertext, kem_key, client_pub) != 0) {
+		r = SSH_ERR_SIGNATURE_INVALID;
+		goto out;
+	}
 	/* generate ECDH key pair, store server pubkey after ciphertext */
 	server_pub = ciphertext + crypto_kem_sntrup761_CIPHERTEXTBYTES;
 	kexc25519_keygen(server_key, server_pub);
@@ -144,6 +149,8 @@ kex_kem_sntrup761x25519_enc(struct kex *kex,
 #ifdef DEBUG_KEXECDH
 	dump_digest("encoded shared secret:", sshbuf_ptr(buf), sshbuf_len(buf));
 #endif
+	/* success */
+	r = 0;
 	*server_blobp = server_blob;
 	*shared_secretp = buf;
 	server_blob = NULL;
@@ -165,7 +172,8 @@ kex_kem_sntrup761x25519_dec(struct kex *kex,
 	const u_char *ciphertext, *server_pub;
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
 	size_t need;
-	int r, decoded;
+	int decoded;
+	int r = SSH_ERR_INTERNAL_ERROR;
 
 	*shared_secretp = NULL;
 
@@ -212,6 +220,8 @@ kex_kem_sntrup761x25519_dec(struct kex *kex,
 		r = SSH_ERR_SIGNATURE_INVALID;
 		goto out;
 	}
+	/* success */
+	r = 0;
 	*shared_secretp = buf;
 	buf = NULL;
  out:
