@@ -447,8 +447,11 @@ permitted_by_dest_constraints(const struct sshkey *fromkey,
 		return 0;
 	}
 	/* no match */
-	debug2_f("%s identity \"%s\" not permitted for this destination",
-	    sshkey_type(id->key), id->comment);
+	debug2_f("%s identity \"%s\" not permitted for this %s%s%s",
+	    sshkey_type(id->key), id->comment,
+	    fromkey ? "source" : "",
+	    fromkey && tokey ? "/": "",
+	    tokey ? "destination" : "");
 	return -1;
 }
 
@@ -459,7 +462,8 @@ permitted_by_dest_constraints(const struct sshkey *fromkey,
  */
 static int
 identity_permitted(Identity *id, SocketEntry *e, char *user,
-    const char **forward_hostnamep, const char **last_hostnamep)
+    const char **forward_hostnamep, const char **last_hostnamep,
+    const char **nouser_hostnamep)
 {
 	size_t i;
 	const char **hp;
@@ -548,7 +552,7 @@ identity_permitted(Identity *id, SocketEntry *e, char *user,
 	hks = &e->session_ids[e->nsession_ids - 1];
 	if (hks->forwarded && user == NULL &&
 	    permitted_by_dest_constraints(hks->key, NULL, id,
-	    NULL, NULL) != 0) {
+	    NULL, nouser_hostnamep) != 0) {
 		debug3_f("key permitted at host but not after");
 		return -1;
 	}
@@ -629,7 +633,7 @@ process_request_identities(SocketEntry *e)
 		    id->dest_constraints, id->ndest_constraints);
 		free(fp);
 		/* identity not visible, don't include in response */
-		if (identity_permitted(id, e, NULL, NULL, NULL) != 0)
+		if (identity_permitted(id, e, NULL, NULL, NULL, NULL) != 0)
 			continue;
 		if ((r = sshkey_puts_opts(id->key, keys,
 		    SSHKEY_SERIALIZE_INFO)) != 0 ||
@@ -831,10 +835,11 @@ process_sign_request2(SocketEntry *e)
 	u_char *signature = NULL;
 	size_t slen = 0;
 	u_int compat = 0, flags;
-	int r, ok = -1, retried = 0;
+	int r, ok = -1, retried = 0, parse_fail = 0;
 	char *fp = NULL, *pin = NULL, *prompt = NULL;
 	char *user = NULL, *sig_dest = NULL;
 	const char *fwd_host = NULL, *dest_host = NULL;
+	const char *nouser_host = NULL;
 	struct sshbuf *msg = NULL, *data = NULL, *sid = NULL;
 	struct sshkey *key = NULL, *hostkey = NULL;
 	struct identity *id;
@@ -867,15 +872,25 @@ process_sign_request2(SocketEntry *e)
 		}
 		if (parse_userauth_request(data, key, &user, &sid,
 		    &hostkey) != 0) {
-			logit_f("refusing use of destination-constrained key "
+			debug_f("found use of destination-constrained key "
 			   "to sign an unidentified signature");
-			goto send;
+			parse_fail = 1;
 		}
 		/* XXX logspam */
-		debug_f("user=%s", user);
-		if (identity_permitted(id, e, user, &fwd_host, &dest_host) != 0)
+		debug_f("user=%s", user ? user : "");
+		if (identity_permitted(id, e, user, &fwd_host, &dest_host, &nouser_host) != 0)
 			goto send;
 		/* XXX display fwd_host/dest_host in askpass UI */
+		if (parse_fail) {
+			if (nouser_host != NULL) {
+				logit_f("refusing use of destination-constrained key "
+				   "to sign an unidentified signature");
+				goto send;
+			}
+			xasprintf(&sig_dest, "signature request on "
+			    "listed host");
+			goto skip;
+		}
 		/*
 		 * Ensure that the session ID is the most recent one
 		 * registered on the socket - it should have been bound by
@@ -910,6 +925,7 @@ process_sign_request2(SocketEntry *e)
 		xasprintf(&sig_dest, "public key authentication request for "
 		    "user \"%s\" to listed host", user);
 	}
+ skip:
 	if (id->confirm && confirm_key(id, sig_dest) != 0) {
 		verbose_f("user refused key");
 		goto send;
@@ -999,7 +1015,7 @@ process_remove_identity(SocketEntry *e)
 		goto done;
 	}
 	/* identity not visible, cannot be removed */
-	if (identity_permitted(id, e, NULL, NULL, NULL) != 0)
+	if (identity_permitted(id, e, NULL, NULL, NULL, NULL) != 0)
 		goto done; /* error already logged */
 	/* We have this key, free it. */
 	if (idtab->nentries < 1)
@@ -1014,26 +1030,27 @@ process_remove_identity(SocketEntry *e)
 }
 
 static void
-remove_all_identities(void)
+remove_all_identities(SocketEntry *e)
 {
-	Identity *id;
+	Identity *id, *id2;
 
 	debug2_f("entering");
 	/* Loop over all identities and clear the keys. */
-	for (id = TAILQ_FIRST(&idtab->idlist); id;
-	    id = TAILQ_FIRST(&idtab->idlist)) {
+	TAILQ_FOREACH_SAFE(id, &idtab->idlist, next, id2) {
+		/* identity not visible, cannot be removed */
+		if (e != NULL &&
+		    identity_permitted(id, e, NULL, NULL, NULL, NULL) != 0)
+			continue;
 		TAILQ_REMOVE(&idtab->idlist, id, next);
 		free_identity(id);
+		idtab->nentries--;
 	}
-
-	/* Mark that there are no identities. */
-	idtab->nentries = 0;
 }
 
 static void
 process_remove_all_identities(SocketEntry *e)
 {
-	remove_all_identities();
+	remove_all_identities(e);
 
 	/* Send success. */
 	send_status(e, 1);
@@ -1159,9 +1176,12 @@ parse_dest_constraint(struct sshbuf *m, struct dest_constraint *dc)
 		goto out;
 	}
 	if (dc->to.hostname == NULL || dc->to.nkeys == 0) {
+#if 0
 		error_f("incomplete \"to\" specification");
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
+#endif
+		debug_f("any \"to\" specification");
 	}
 	/* success */
 	r = 0;
@@ -1420,7 +1440,7 @@ process_add_identity(SocketEntry *e)
 		idtab->nentries++;
 	} else {
 		/* identity not visible, do not update */
-		if (identity_permitted(id, e, NULL, NULL, NULL) != 0)
+		if (identity_permitted(id, e, NULL, NULL, NULL, NULL) != 0)
 			goto out; /* error already logged */
 		/* key state might have been updated */
 		sshkey_free(id->key);
@@ -2526,7 +2546,7 @@ skip:
 		if (signalled_keydrop) {
 			logit("signal %d received; removing all keys",
 			    (int)signalled_keydrop);
-			remove_all_identities();
+			remove_all_identities(NULL);
 			signalled_keydrop = 0;
 		}
 		ptimeout_init(&timeout);
