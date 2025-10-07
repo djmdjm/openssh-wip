@@ -1030,26 +1030,27 @@ process_remove_identity(SocketEntry *e)
 }
 
 static void
-remove_all_identities(void)
+remove_all_identities(SocketEntry *e)
 {
-	Identity *id;
+	Identity *id, *id2;
 
 	debug2_f("entering");
 	/* Loop over all identities and clear the keys. */
-	for (id = TAILQ_FIRST(&idtab->idlist); id;
-	    id = TAILQ_FIRST(&idtab->idlist)) {
+	TAILQ_FOREACH_SAFE(id, &idtab->idlist, next, id2) {
+		/* identity not visible, cannot be removed */
+		if (e != NULL &&
+		    identity_permitted(id, e, NULL, NULL, NULL, NULL) != 0)
+			continue;
 		TAILQ_REMOVE(&idtab->idlist, id, next);
 		free_identity(id);
+		idtab->nentries--;
 	}
-
-	/* Mark that there are no identities. */
-	idtab->nentries = 0;
 }
 
 static void
 process_remove_all_identities(SocketEntry *e)
 {
-	remove_all_identities();
+	remove_all_identities(e);
 
 	/* Send success. */
 	send_status(e, 1);
@@ -2545,7 +2546,7 @@ skip:
 		if (signalled_keydrop) {
 			logit("signal %d received; removing all keys",
 			    (int)signalled_keydrop);
-			remove_all_identities();
+			remove_all_identities(NULL);
 			signalled_keydrop = 0;
 		}
 		ptimeout_init(&timeout);
