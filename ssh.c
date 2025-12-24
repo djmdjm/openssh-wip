@@ -732,6 +732,7 @@ main(int ac, char **av)
 		fatal("Couldn't allocate session state");
 	channel_init_channels(ssh);
 
+
 	/* Parse command-line arguments. */
 	args = argv_assemble(ac, av); /* logged later */
 	host = NULL;
