@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 
 #include <grp.h>
+#include <limits.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,12 +51,14 @@ void
 attrib_clear(Attrib *a)
 {
 	a->flags = 0;
+	a->xflags = 0;
 	a->size = 0;
 	a->uid = 0;
 	a->gid = 0;
 	a->perm = 0;
-	a->atime = 0;
-	a->mtime = 0;
+	memset(&a->atim, 0, sizeof(a->atim));
+	memset(&a->mtim, 0, sizeof(a->mtim));
+	memset(&a->ctim, 0, sizeof(a->ctim));
 }
 
 /* Convert from struct stat to filexfer attribs */
@@ -72,8 +75,10 @@ stat_to_attrib(const struct stat *st, Attrib *a)
 	a->flags |= SSH2_FILEXFER_ATTR_PERMISSIONS;
 	a->perm = st->st_mode;
 	a->flags |= SSH2_FILEXFER_ATTR_ACMODTIME;
-	a->atime = st->st_atime;
-	a->mtime = st->st_mtime;
+	a->xflags |= SSH2_FILEXFER_XATTR_AMCTIMES;
+	a->atim = st->st_atim;
+	a->mtim = st->st_mtim;
+	a->ctim = st->st_ctim;
 }
 
 /* Convert from filexfer attribs to struct stat */
@@ -90,10 +95,69 @@ attrib_to_stat(const Attrib *a, struct stat *st)
 	}
 	if (a->flags & SSH2_FILEXFER_ATTR_PERMISSIONS)
 		st->st_mode = a->perm;
-	if (a->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
-		st->st_atime = a->atime;
-		st->st_mtime = a->mtime;
+	if (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES) {
+		st->st_atim = a->atim;
+		st->st_mtim = a->mtim;
+		st->st_ctim = a->ctim;
+	} else if (a->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
+		st->st_atime = a->atim.tv_sec;
+		st->st_mtime = a->mtim.tv_sec;
 	}
+}
+
+struct timeval *
+attrib_to_tv(const Attrib *a)
+{
+	static struct timeval tv[2];
+
+	tv[0].tv_sec = a->atim.tv_sec;
+	tv[0].tv_usec = a->atim.tv_nsec / 1000;
+	tv[1].tv_sec = a->mtim.tv_sec;
+	tv[1].tv_usec = a->mtim.tv_nsec / 1000;
+	return tv;
+}
+
+struct timespec *
+attrib_to_ts(const Attrib *a)
+{
+	static struct timespec ts[2];
+
+	ts[0] = a->atim;
+	ts[1] = a->mtim;
+	return ts;
+}
+
+static void
+u64_to_ts(uint64_t t, struct timespec *ts)
+{
+	ts->tv_nsec = (int)(t % 1000000000);
+	t /= 1000000000;
+	ts->tv_sec = (int64_t)t >= SSH_TIME_T_MAX ? SSH_TIME_T_MAX : (time_t)t;
+}
+
+static int
+decode_amctimes(struct sshbuf *b, Attrib *a)
+{
+	uint64_t at, mt, ct;
+	int r;
+
+	debug3_f("decode len=%zu", sshbuf_len(b));
+	if ((r = sshbuf_get_u64(b, &at)) != 0 ||
+	    (r = sshbuf_get_u64(b, &mt)) != 0 ||
+	    (r = sshbuf_get_u64(b, &ct)) != 0)
+		return r;
+	a->flags |= SSH2_FILEXFER_ATTR_ACMODTIME;
+	a->xflags |= SSH2_FILEXFER_XATTR_AMCTIMES;
+	u64_to_ts(at, &a->atim);
+	u64_to_ts(mt, &a->mtim);
+	u64_to_ts(ct, &a->ctim);
+	return 0;
+}
+
+static time_t
+u32_to_time(u_int t)
+{
+	return (int64_t)t > SSH_TIME_T_MAX ? SSH_TIME_T_MAX : (time_t)t;
 }
 
 /* Decode attributes in buffer */
@@ -101,6 +165,7 @@ int
 decode_attrib(struct sshbuf *b, Attrib *a)
 {
 	int r;
+	u_int at, mt;
 
 	attrib_clear(a);
 	if ((r = sshbuf_get_u32(b, &a->flags)) != 0)
@@ -119,41 +184,86 @@ decode_attrib(struct sshbuf *b, Attrib *a)
 			return r;
 	}
 	if (a->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
-		if ((r = sshbuf_get_u32(b, &a->atime)) != 0 ||
-		    (r = sshbuf_get_u32(b, &a->mtime)) != 0)
+		if ((r = sshbuf_get_u32(b, &at)) != 0 ||
+		    (r = sshbuf_get_u32(b, &mt)) != 0)
 			return r;
+		a->atim.tv_sec = u32_to_time(at);
+		a->mtim.tv_sec = u32_to_time(mt);
 	}
 	/* vendor-specific extensions */
 	if (a->flags & SSH2_FILEXFER_ATTR_EXTENDED) {
 		char *type;
-		u_char *data;
-		size_t dlen;
+		struct sshbuf *d;
 		u_int i, count;
 
+		if ((d = sshbuf_new()) == NULL)
+			return SSH_ERR_ALLOC_FAIL;
 		if ((r = sshbuf_get_u32(b, &count)) != 0)
 			return r;
 		if (count > 0x100000)
 			return SSH_ERR_INVALID_FORMAT;
 		for (i = 0; i < count; i++) {
+			sshbuf_reset(d);
+			type = NULL;
 			if ((r = sshbuf_get_cstring(b, &type, NULL)) != 0 ||
-			    (r = sshbuf_get_string(b, &data, &dlen)) != 0)
+			    (r = sshbuf_get_stringb(b, d)) != 0) {
+				free(type);
 				return r;
-			debug3("Got file attribute \"%.100s\" len %zu",
-			    type, dlen);
+			}
+			r = -1;
+			if (strcmp(type, "amctimes-0@openssh.com") == 0)
+				r = decode_amctimes(d, a);
+			else {
+				debug3("Unsupported file attribute \"%.100s\" "
+				    "len %zu", type, sshbuf_len(d));
+				r = 0; /* ignore */
+			}
 			free(type);
-			free(data);
+			if (r != 0) {
+				sshbuf_free(d);
+				return r;
+			}
 		}
+		sshbuf_free(d);
 	}
 	return 0;
 }
 
+static uint64_t
+ts_to_u64(const struct timespec *ts)
+{
+	if (ts->tv_sec < 0 || ts->tv_nsec < 0)
+		return 0;
+	if ((uint64_t)ts->tv_sec >= ((uint64_t)-1) / 1000000000)
+		return (uint64_t)-1;
+	return (uint64_t)ts->tv_nsec + (((uint64_t)ts->tv_sec) * 1000000000);
+}
+
+
+static u_int
+time_to_u32(time_t t)
+{
+	if (t <= 0)
+		return 0;
+	if ((int64_t)t >= 0xFFFFFFFFLL)
+		return 0xFFFFFFFF;
+	return (u_int)t;
+}
+
 /* Encode attributes to buffer */
 int
-encode_attrib(struct sshbuf *b, const Attrib *a)
+encode_attrib(struct sshbuf *b, const Attrib *a, u_int compat)
 {
 	int r;
+	struct sshbuf *ext;
+	u_int ext_flag = 0;
 
-	if ((r = sshbuf_put_u32(b, a->flags)) != 0)
+	if ((compat & SSH2_FILEXFER_COMPAT_ATTRIB_EXT) == 0) {
+		if (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES)
+			ext_flag = SSH2_FILEXFER_ATTR_EXTENDED;
+	}
+
+	if ((r = sshbuf_put_u32(b, a->flags | ext_flag)) != 0)
 		return r;
 	if (a->flags & SSH2_FILEXFER_ATTR_SIZE) {
 		if ((r = sshbuf_put_u64(b, a->size)) != 0)
@@ -169,10 +279,29 @@ encode_attrib(struct sshbuf *b, const Attrib *a)
 			return r;
 	}
 	if (a->flags & SSH2_FILEXFER_ATTR_ACMODTIME) {
-		if ((r = sshbuf_put_u32(b, a->atime)) != 0 ||
-		    (r = sshbuf_put_u32(b, a->mtime)) != 0)
+		if ((r = sshbuf_put_u32(b, time_to_u32(a->atim.tv_sec))) != 0 ||
+		    (r = sshbuf_put_u32(b, time_to_u32(a->mtim.tv_sec))) != 0)
 			return r;
 	}
+	/* extensions; only one supported so far */
+	if ((compat & SSH2_FILEXFER_COMPAT_ATTRIB_EXT) == 0 &&
+	    (a->xflags & SSH2_FILEXFER_XATTR_AMCTIMES)) {
+		if ((r = sshbuf_put_u32(b, 1)) != 0) /* extension count */
+			return r;
+		if ((ext = sshbuf_new()) == NULL)
+			return SSH_ERR_ALLOC_FAIL;
+		if ((r = sshbuf_put_u64(ext, ts_to_u64(&a->atim))) != 0 ||
+		    (r = sshbuf_put_u64(ext, ts_to_u64(&a->mtim))) != 0 ||
+		    (r = sshbuf_put_u64(ext, ts_to_u64(&a->ctim))) != 0 ||
+		    (r = sshbuf_put_cstring(b,
+		    "amctimes-0@openssh.com")) != 0 ||
+		    (r = sshbuf_put_stringb(b, ext)) != 0) {
+			sshbuf_free(ext);
+			return r;
+		}
+		sshbuf_free(ext);
+	}
+
 	return 0;
 }
 

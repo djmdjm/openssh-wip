@@ -138,6 +138,16 @@ Sets an explicit
 .Xr umask 2
 to be applied to newly-created files and directories, instead of the
 user's default mask.
+.It Fl X Ar sftp_option
+Specify an option that controls aspects of SFTP protocol behaviour.
+At present, only one option is supported:
+.Bl -tag -width Ds
+.It Cm disable-attribute-extensions
+Prevents
+.Nm
+from using protocol extensions to communicate addition information about
+files, such as nanosecond timestamps.
+.El
 .El
 .Pp
 On some systems,
