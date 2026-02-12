@@ -109,6 +109,13 @@ struct permission {
 	Channel *downstream;		/* Downstream mux*/
 };
 
+/* Context for non-blocking connects */
+struct channel_connect {
+	char *host;
+	int port;
+	struct addrinfo *ai, *aitop;
+};
+
 /*
  * Stores the forwarding permission state for a single direction (local or
  * remote).
@@ -213,7 +220,6 @@ static const char *channel_rfwd_bind_host(const char *listen_host);
 
 /* non-blocking connect helpers */
 static int connect_next(struct channel_connect *);
-static void channel_connect_ctx_free(struct channel_connect *);
 static Channel *rdynamic_connect_prepare(struct ssh *, char *, char *);
 static int rdynamic_connect_finish(struct ssh *, Channel *);
 
@@ -297,6 +303,29 @@ channel_lookup(struct ssh *ssh, int id)
 	}
 	logit("Non-public channel %d, type %d.", id, c->type);
 	return NULL;
+}
+
+static void
+free_connect_ctx(struct channel_connect *cctx)
+{
+	free(cctx->host);
+	if (cctx->aitop) {
+		if (cctx->aitop->ai_family == AF_UNIX)
+			free(cctx->aitop);
+		else
+			freeaddrinfo(cctx->aitop);
+	}
+	memset(cctx, 0, sizeof(*cctx));
+}
+
+static void
+channel_free_connect_ctx(Channel *c)
+{
+	if (c == NULL || c->connect_ctx)
+		return
+	free_connect_ctx(c->connect_ctx);
+	free(c->connect_ctx);
+	c->connect_ctx = NULL;
 }
 
 /*
@@ -809,6 +838,7 @@ channel_free(struct ssh *ssh, Channel *c)
 	c->listening_addr = NULL;
 	free(c->xctype);
 	c->xctype = NULL;
+	channel_free_connect_ctx(c);
 	while ((cc = TAILQ_FIRST(&c->status_confirms)) != NULL) {
 		if (cc->abandon_cb != NULL)
 			cc->abandon_cb(ssh, c, cc->ctx);
@@ -2116,6 +2146,9 @@ channel_post_connecting(struct ssh *ssh, Channel *c)
 		return;
 	if (!c->have_remote_id)
 		fatal_f("channel %d: no remote id", c->self);
+	if (c->connect_ctx == NULL)
+		fatal_f("channel %d: context missing", c->self);
+
 	/* for rdynamic the OPEN_CONFIRMATION has been sent already */
 	isopen = (c->type == SSH_CHANNEL_RDYNAMIC_FINISH);
 
@@ -2127,8 +2160,8 @@ channel_post_connecting(struct ssh *ssh, Channel *c)
 	if (err == 0) {
 		/* Non-blocking connection completed */
 		debug("channel %d: connected to %s port %d",
-		    c->self, c->connect_ctx.host, c->connect_ctx.port);
-		channel_connect_ctx_free(&c->connect_ctx);
+		    c->self, c->connect_ctx->host, c->connect_ctx->port);
+		channel_free_connect_ctx(c);
 		c->type = SSH_CHANNEL_OPEN;
 		channel_set_used_time(ssh, c);
 		if (isopen) {
@@ -2152,11 +2185,11 @@ channel_post_connecting(struct ssh *ssh, Channel *c)
 	debug("channel %d: connection failed: %s", c->self, strerror(err));
 
 	/* Try next address, if any */
-	if ((sock = connect_next(&c->connect_ctx)) == -1) {
+	if ((sock = connect_next(c->connect_ctx)) == -1) {
 		/* Exhausted all addresses for this destination */
 		error("connect_to %.100s port %d: failed.",
-		    c->connect_ctx.host, c->connect_ctx.port);
-		channel_connect_ctx_free(&c->connect_ctx);
+		    c->connect_ctx->host, c->connect_ctx->port);
+		channel_free_connect_ctx(c);
 		if (isopen) {
 			rdynamic_close(ssh, c);
 		} else {
@@ -4683,19 +4716,6 @@ connect_next(struct channel_connect *cctx)
 	return -1;
 }
 
-static void
-channel_connect_ctx_free(struct channel_connect *cctx)
-{
-	free(cctx->host);
-	if (cctx->aitop) {
-		if (cctx->aitop->ai_family == AF_UNIX)
-			free(cctx->aitop);
-		else
-			freeaddrinfo(cctx->aitop);
-	}
-	memset(cctx, 0, sizeof(*cctx));
-}
-
 /*
  * Return connecting socket to remote host:port or local socket path,
  * passing back the failure reason if appropriate.
@@ -4721,7 +4741,7 @@ connect_to_helper(struct ssh *ssh, const char *name, int port, int socktype,
 
 		/*
 		 * Fake up a struct addrinfo for AF_UNIX connections.
-		 * channel_connect_ctx_free() must check ai_family
+		 * free_connect_ctx() must check ai_family
 		 * and use free() not freeaddrinfo() for AF_UNIX.
 		 */
 		ai = xcalloc(1, sizeof(*ai) + sizeof(*sunaddr));
@@ -4777,14 +4797,15 @@ connect_to(struct ssh *ssh, const char *host, int port,
 	sock = connect_to_helper(ssh, host, port, SOCK_STREAM, ctype, rname,
 	    &cctx, NULL, NULL);
 	if (sock == -1) {
-		channel_connect_ctx_free(&cctx);
+		free_connect_ctx(&cctx);
 		return NULL;
 	}
 	c = channel_new(ssh, ctype, SSH_CHANNEL_CONNECTING, sock, sock, -1,
 	    CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT, 0, rname, 1);
 	c->host_port = port;
 	c->path = xstrdup(host);
-	c->connect_ctx = cctx;
+	c->connect_ctx = xmalloc(sizeof(cctx));
+	memcpy(c->connect_ctx, &cctx, sizeof(cctx));
 
 	return c;
 }
@@ -4891,7 +4912,7 @@ channel_connect_to_port(struct ssh *ssh, const char *host, u_short port,
 	sock = connect_to_helper(ssh, host, port, SOCK_STREAM, ctype, rname,
 	    &cctx, reason, errmsg);
 	if (sock == -1) {
-		channel_connect_ctx_free(&cctx);
+		free_connect_ctx(&cctx);
 		return NULL;
 	}
 
@@ -4899,7 +4920,8 @@ channel_connect_to_port(struct ssh *ssh, const char *host, u_short port,
 	    CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT, 0, rname, 1);
 	c->host_port = port;
 	c->path = xstrdup(host);
-	c->connect_ctx = cctx;
+	c->connect_ctx = xmalloc(sizeof(cctx));
+	memcpy(c->connect_ctx, &cctx, sizeof(cctx));
 
 	return c;
 }
@@ -5023,11 +5045,12 @@ rdynamic_connect_finish(struct ssh *ssh, Channel *c)
 	sock = connect_to_helper(ssh, c->path, c->host_port, SOCK_STREAM, NULL,
 	    NULL, &cctx, NULL, NULL);
 	if (sock == -1)
-		channel_connect_ctx_free(&cctx);
+		free_connect_ctx(&cctx);
 	else {
 		/* similar to SSH_CHANNEL_CONNECTING but we've already sent the open */
 		c->type = SSH_CHANNEL_RDYNAMIC_FINISH;
-		c->connect_ctx = cctx;
+		c->connect_ctx = xmalloc(sizeof(cctx));
+		memcpy(c->connect_ctx, &cctx, sizeof(cctx));
 		channel_register_fds(ssh, c, sock, sock, -1, 0, 1, 0);
 	}
 	return sock;

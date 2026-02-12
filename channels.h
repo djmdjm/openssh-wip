@@ -90,6 +90,7 @@
 struct ssh;
 struct Channel;
 typedef struct Channel Channel;
+struct channel_connect;
 
 typedef void channel_open_fn(struct ssh *, int, int, void *);
 typedef void channel_callback_fn(struct ssh *, int, int, void *);
@@ -108,13 +109,6 @@ struct channel_confirm {
 	void *ctx;
 };
 TAILQ_HEAD(channel_confirms, channel_confirm);
-
-/* Context for non-blocking connects */
-struct channel_connect {
-	char *host;
-	int port;
-	struct addrinfo *ai, *aitop;
-};
 
 /* Callbacks for mux channels back into client-specific code */
 typedef int mux_callback_fn(struct ssh *, struct Channel *);
@@ -203,8 +197,7 @@ struct Channel {
 	int			datagram;
 
 	/* non-blocking connect */
-	/* XXX make this a pointer so the structure can be opaque */
-	struct channel_connect	connect_ctx;
+	struct channel_connect	*connect_ctx;
 
 	/* multiplexing protocol hook, called for each packet received */
 	mux_callback_fn		*mux_rcb;
