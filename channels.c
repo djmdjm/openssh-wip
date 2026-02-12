@@ -202,6 +202,9 @@ struct ssh_channels {
 	/* AF_UNSPEC or AF_INET or AF_INET6 */
 	int IPv4or6;
 
+	/* Set SO_KEEPALIVE on TCP connections */
+	int want_tcp_keepalive;
+
 	/* Channel timeouts by type */
 	struct ssh_channel_timeout *timeouts;
 	size_t ntimeouts;
@@ -326,6 +329,13 @@ channel_free_connect_ctx(Channel *c)
 	free_connect_ctx(c->connect_ctx);
 	free(c->connect_ctx);
 	c->connect_ctx = NULL;
+}
+
+/* Enable/disable TCP keepalives for X11 and port-forwarding sockets */
+void
+channel_set_tcp_keepalives(struct ssh *ssh, int on)
+{
+	ssh->chanctxt->want_tcp_keepalive = on;
 }
 
 /*
@@ -1962,6 +1972,8 @@ channel_post_x11_listener(struct ssh *ssh, Channel *c)
 		return;
 	}
 	set_nodelay(newsock);
+	if (ssh->chanctxt->want_tcp_keepalive)
+		set_keepalive(newsock); /* logs errors */
 	remote_ipaddr = get_peer_ipaddr(newsock);
 	remote_port = get_peer_port(newsock);
 	snprintf(buf, sizeof buf, "X11 connection from %.200s port %d",
@@ -2090,8 +2102,11 @@ channel_post_port_listener(struct ssh *ssh, Channel *c)
 			c->notbefore = monotime() + 1;
 		return;
 	}
-	if (c->host_port != PORT_STREAMLOCAL)
+	if (c->host_port != PORT_STREAMLOCAL) {
 		set_nodelay(newsock);
+		if (ssh->chanctxt->want_tcp_keepalive)
+			set_keepalive(newsock); /* logs errors */
+	}
 	nc = channel_new(ssh, rtype, nextstate, newsock, newsock, -1,
 	    c->local_window_max, c->local_maxpacket, 0, rtype, 1);
 	nc->listening_port = c->listening_port;
@@ -4660,12 +4675,13 @@ channel_update_permission(struct ssh *ssh, int idx, int newport)
 static int
 connect_next(struct ssh *ssh, struct channel_connect *cctx)
 {
-	int sock, saved_errno;
+	int sock, sock_is_network, saved_errno;
 	struct sockaddr_un *sunaddr;
 	char ntop[NI_MAXHOST];
 	char strport[MAXIMUM(NI_MAXSERV, sizeof(sunaddr->sun_path))];
 
 	for (; cctx->ai; cctx->ai = cctx->ai->ai_next) {
+		sock_is_network = 0;
 		switch (cctx->ai->ai_family) {
 		case AF_UNIX:
 			/* unix:pathname instead of host:port */
@@ -4681,6 +4697,7 @@ connect_next(struct ssh *ssh, struct channel_connect *cctx)
 				error_f("getnameinfo failed");
 				continue;
 			}
+			sock_is_network = 1;
 			break;
 		default:
 			continue;
@@ -4697,6 +4714,8 @@ connect_next(struct ssh *ssh, struct channel_connect *cctx)
 		}
 		if (set_nonblock(sock) == -1)
 			fatal_f("set_nonblock(%d)", sock);
+		if (sock_is_network && ssh->chanctxt->want_tcp_keepalive)
+			set_keepalive(sock); /* logs errors */
 		if (connect(sock, cctx->ai->ai_addr,
 		    cctx->ai->ai_addrlen) == -1 && errno != EINPROGRESS) {
 			debug_f("host %.100s ([%.100s]:%s): %.100s",

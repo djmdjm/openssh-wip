@@ -309,6 +309,7 @@ void	 channel_cancel_cleanup(struct ssh *, int);
 int	 channel_close_fd(struct ssh *, Channel *, int *);
 void	 channel_send_window_changes(struct ssh *);
 int	 channel_has_bulk(struct ssh *);
+void	 channel_set_tcp_keepalives(struct ssh *, int);
 
 /* channel inactivity timeouts */
 void channel_add_timeout(struct ssh *, const char *, int);
