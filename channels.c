@@ -219,7 +219,7 @@ static void port_open_helper(struct ssh *ssh, Channel *c, char *rtype);
 static const char *channel_rfwd_bind_host(const char *listen_host);
 
 /* non-blocking connect helpers */
-static int connect_next(struct channel_connect *);
+static int connect_next(struct ssh *, struct channel_connect *);
 static Channel *rdynamic_connect_prepare(struct ssh *, char *, char *);
 static int rdynamic_connect_finish(struct ssh *, Channel *);
 
@@ -2185,7 +2185,7 @@ channel_post_connecting(struct ssh *ssh, Channel *c)
 	debug("channel %d: connection failed: %s", c->self, strerror(err));
 
 	/* Try next address, if any */
-	if ((sock = connect_next(c->connect_ctx)) == -1) {
+	if ((sock = connect_next(ssh, c->connect_ctx)) == -1) {
 		/* Exhausted all addresses for this destination */
 		error("connect_to %.100s port %d: failed.",
 		    c->connect_ctx->host, c->connect_ctx->port);
@@ -4658,7 +4658,7 @@ channel_update_permission(struct ssh *ssh, int idx, int newport)
 
 /* Try to start non-blocking connect to next host in cctx list */
 static int
-connect_next(struct channel_connect *cctx)
+connect_next(struct ssh *ssh, struct channel_connect *cctx)
 {
 	int sock, saved_errno;
 	struct sockaddr_un *sunaddr;
@@ -4775,7 +4775,7 @@ connect_to_helper(struct ssh *ssh, const char *name, int port, int socktype,
 	cctx->port = port;
 	cctx->ai = cctx->aitop;
 
-	if ((sock = connect_next(cctx)) == -1) {
+	if ((sock = connect_next(ssh, cctx)) == -1) {
 		error("connect to %.100s port %d failed: %s",
 		    name, port, strerror(errno));
 		return -1;
