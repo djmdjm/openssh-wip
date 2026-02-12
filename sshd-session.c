@@ -735,7 +735,7 @@ main(int ac, char **av)
 	struct ssh *ssh = NULL;
 	extern char *optarg;
 	extern int optind;
-	int devnull, r, opt, on = 1, remote_port;
+	int devnull, r, opt, remote_port;
 	int sock_in = -1, sock_out = -1, rexeced_flag = 0, have_key = 0;
 	const char *remote_ip, *rdomain;
 	char *line, *laddr, *logfile = NULL;
@@ -1085,9 +1085,8 @@ main(int ac, char **av)
 	server_process_permitopen(ssh);
 
 	/* Set SO_KEEPALIVE if requested. */
-	if (options.tcp_keep_alive && ssh_packet_connection_is_on_socket(ssh) &&
-	    setsockopt(sock_in, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)) == -1)
-		error("setsockopt SO_KEEPALIVE: %.100s", strerror(errno));
+	if (options.tcp_keep_alive && ssh_packet_connection_is_on_socket(ssh))
+		set_keepalive(sock_in); /* logs errors */
 
 	if ((remote_port = ssh_remote_port(ssh)) < 0) {
 		debug("ssh_remote_port failed");
