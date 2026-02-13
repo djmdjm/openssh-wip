@@ -511,7 +511,7 @@ encode_dest_constraint(struct sshbuf *m, const struct dest_constraint *dc)
 
 static int
 encode_constraints(struct sshbuf *m, u_int life, u_int confirm,
-    const char *provider,
+    const char *provider, const char *pin,
     struct dest_constraint **dest_constraints, size_t ndest_constraints,
     int cert_only, struct sshkey **certs, size_t ncerts)
 {
@@ -534,6 +534,13 @@ encode_constraints(struct sshbuf *m, u_int life, u_int confirm,
 		    (r = sshbuf_put_cstring(m,
 		    "sk-provider@openssh.com")) != 0 ||
 		    (r = sshbuf_put_cstring(m, provider)) != 0)
+			goto out;
+	}
+	if (pin != NULL && *pin != '\0') {
+		if ((r = sshbuf_put_u8(m,
+		    SSH_AGENT_CONSTRAIN_EXTENSION)) != 0 ||
+		    (r = sshbuf_put_cstring(m, "sk-pin@openssh.com")) != 0 ||
+		    (r = sshbuf_put_cstring(m, pin)) != 0)
 			goto out;
 	}
 	if (dest_constraints != NULL && ndest_constraints > 0) {
@@ -587,8 +594,8 @@ encode_constraints(struct sshbuf *m, u_int life, u_int confirm,
 int
 ssh_add_identity_constrained(int sock, struct sshkey *key,
     const char *comment, u_int life, u_int confirm,
-    const char *provider, struct dest_constraint **dest_constraints,
-    size_t ndest_constraints)
+    const char *provider, const char *pin,
+    struct dest_constraint **dest_constraints, size_t ndest_constraints)
 {
 	struct sshbuf *msg;
 	int r, constrained = (life || confirm || provider || dest_constraints);
@@ -623,7 +630,7 @@ ssh_add_identity_constrained(int sock, struct sshkey *key,
 		goto out;
 	}
 	if (constrained &&
-	    (r = encode_constraints(msg, life, confirm, provider,
+	    (r = encode_constraints(msg, life, confirm, provider, pin,
 	    dest_constraints, ndest_constraints, 0, NULL, 0)) != 0)
 		goto out;
 	if ((r = ssh_request_reply_decode(sock, msg)) != 0)
@@ -700,7 +707,7 @@ ssh_update_card(int sock, int add, const char *reader_id, const char *pin,
 	    (r = sshbuf_put_cstring(msg, pin)) != 0)
 		goto out;
 	if (constrained &&
-	    (r = encode_constraints(msg, life, confirm, NULL,
+	    (r = encode_constraints(msg, life, confirm, NULL, NULL,
 	    dest_constraints, ndest_constraints,
 	    cert_only, certs, ncerts)) != 0)
 		goto out;
