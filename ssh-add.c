@@ -252,9 +252,8 @@ check_cert_lifetime(const struct sshkey *cert, int cert_lifetime)
 
 static int
 add_file(int agent_fd, const char *filename, int key_only, int cert_only,
-    int qflag, int Nflag, const char *skprovider,
-    struct dest_constraint **dest_constraints,
-    size_t ndest_constraints)
+    int qflag, int Nflag, const char *skprovider, const char *pin,
+    struct dest_constraint **dest_constraints, size_t ndest_constraints)
 {
 	struct sshkey *private = NULL, *cert = NULL;
 	char *comment = NULL;
@@ -349,7 +348,7 @@ add_file(int agent_fd, const char *filename, int key_only, int cert_only,
 
 	if (!cert_only) {
 		if ((r = ssh_add_identity_constrained(agent_fd, private,
-		    comment, lifetime, confirm, skprovider,
+		    comment, lifetime, confirm, skprovider, pin,
 		    dest_constraints, ndest_constraints)) == 0) {
 			ret = 0;
 			if (!qflag) {
@@ -407,7 +406,7 @@ add_file(int agent_fd, const char *filename, int key_only, int cert_only,
 	}
 	/* send to agent */
 	if ((r = ssh_add_identity_constrained(agent_fd, private, comment,
-	    cert_lifetime, confirm, skprovider,
+	    cert_lifetime, confirm, skprovider, pin,
 	    dest_constraints, ndest_constraints)) != 0) {
 		error_r(r, "Certificate %s (%s) add failed", certpath,
 		    private->cert->key_id);
@@ -438,21 +437,14 @@ add_file(int agent_fd, const char *filename, int key_only, int cert_only,
 
 static int
 update_card(int agent_fd, int add, const char *id, int qflag,
-    int key_only, int cert_only,
+    int key_only, int cert_only, const char *pin,
     struct dest_constraint **dest_constraints, size_t ndest_constraints,
     struct sshkey **certs, size_t ncerts)
 {
-	char *pin = NULL;
 	int r, ret = -1;
 
 	if (key_only)
 		ncerts = 0;
-
-	if (add) {
-		if ((pin = read_passphrase("Enter passphrase for PKCS#11: ",
-		    RP_ALLOW_STDIN)) == NULL)
-			return -1;
-	}
 
 	if ((r = ssh_update_card(agent_fd, add, id, pin == NULL ? "" : pin,
 	    lifetime, confirm, dest_constraints, ndest_constraints,
@@ -467,7 +459,6 @@ update_card(int agent_fd, int add, const char *id, int qflag,
 		    add ? "add" : "remove", id, ssh_err(r));
 		ret = -1;
 	}
-	free(pin);
 	return ret;
 }
 
@@ -574,8 +565,9 @@ lock_agent(int agent_fd, int lock)
 }
 
 static int
-load_resident_keys(int agent_fd, const char *skprovider, int qflag,
-    struct dest_constraint **dest_constraints, size_t ndest_constraints)
+load_resident_keys(int agent_fd, const char *skprovider, const char *pin,
+    int qflag, struct dest_constraint **dest_constraints,
+    size_t ndest_constraints)
 {
 	struct sshsk_resident_key **srks;
 	size_t nsrks, i;
@@ -595,7 +587,7 @@ load_resident_keys(int agent_fd, const char *skprovider, int qflag,
 		    fingerprint_hash, SSH_FP_DEFAULT)) == NULL)
 			fatal_f("sshkey_fingerprint failed");
 		if ((r = ssh_add_identity_constrained(agent_fd, key,
-		    key->sk_application, lifetime, confirm, skprovider,
+		    key->sk_application, lifetime, confirm, skprovider, pin,
 		    dest_constraints, ndest_constraints)) != 0) {
 			error("Unable to add key %s %s",
 			    sshkey_type(key), fp);
@@ -627,7 +619,7 @@ load_resident_keys(int agent_fd, const char *skprovider, int qflag,
 
 static int
 do_file(int agent_fd, int deleting, int key_only, int cert_only,
-    char *file, int qflag, int Nflag, const char *skprovider,
+    char *file, int qflag, int Nflag, const char *skprovider, const char *pin,
     struct dest_constraint **dest_constraints, size_t ndest_constraints)
 {
 	if (deleting) {
@@ -636,7 +628,7 @@ do_file(int agent_fd, int deleting, int key_only, int cert_only,
 			return -1;
 	} else {
 		if (add_file(agent_fd, file, key_only, cert_only, qflag, Nflag,
-		    skprovider, dest_constraints, ndest_constraints) == -1)
+		    skprovider, pin, dest_constraints, ndest_constraints) == -1)
 			return -1;
 	}
 	return 0;
@@ -792,11 +784,11 @@ main(int argc, char **argv)
 	extern char *optarg;
 	extern int optind;
 	int agent_fd;
-	char *pkcs11provider = NULL, *skprovider = NULL;
+	char *pkcs11provider = NULL, *skprovider = NULL, *pin = NULL;
 	char **dest_constraint_strings = NULL, **hostkey_files = NULL;
 	int r, i, ch, deleting = 0, ret = 0, key_only = 0, cert_only = 0;
 	int do_download = 0, xflag = 0, lflag = 0, Dflag = 0;
-	int qflag = 0, Tflag = 0, Nflag = 0;
+	int qflag = 0, Tflag = 0, Nflag = 0, pin_requested = 0;
 	SyslogFacility log_facility = SYSLOG_FACILITY_AUTH;
 	LogLevel log_level = SYSLOG_LEVEL_INFO;
 	struct sshkey *k, **certs = NULL;
@@ -825,7 +817,7 @@ main(int argc, char **argv)
 
 	skprovider = getenv("SSH_SK_PROVIDER");
 
-	while ((ch = getopt(argc, argv, "vkKlLNCcdDTxXE:e:h:H:M:m:qs:S:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "vkKlLNCcdDPTxXE:e:h:H:M:m:qs:S:t:")) != -1) {
 		switch (ch) {
 		case 'v':
 			if (log_level == SYSLOG_LEVEL_INFO)
@@ -861,6 +853,9 @@ main(int argc, char **argv)
 			if (lflag != 0)
 				fatal("-%c flag already specified", lflag);
 			lflag = ch;
+			break;
+		case 'P':
+			pin_requested = 1;
 			break;
 		case 'x':
 		case 'X':
@@ -955,7 +950,17 @@ main(int argc, char **argv)
 		ret = r == 0 ? 0 : 1;
 		goto done;
 	}
+	if (pin_requested || (pkcs11provider != NULL && !deleting)) {
+		if ((pin = read_passphrase("Enter passphrase/PIN for token: ",
+		    RP_ALLOW_STDIN)) == NULL)
+			ret = 1;
+	}
+
 	if (pkcs11provider != NULL) {
+		if (pin == NULL) {
+			error("PKCS#11 PIN entry failed");
+			goto done;
+		}
 		for (i = 0; i < argc; i++) {
 			if ((r = sshkey_load_public(argv[i], &k, NULL)) != 0)
 				fatal_fr(r, "load certificate %s", argv[i]);
@@ -966,7 +971,7 @@ main(int argc, char **argv)
 		}
 		debug2_f("loaded %zu certificates", ncerts);
 		if (update_card(agent_fd, !deleting, pkcs11provider,
-		    qflag, key_only, cert_only,
+		    qflag, key_only, cert_only, pin,
 		    dest_constraints, ndest_constraints,
 		    certs, ncerts) == -1)
 			ret = 1;
@@ -978,7 +983,7 @@ main(int argc, char **argv)
 	if (do_download) {
 		if (skprovider == NULL)
 			fatal("Cannot download keys without provider");
-		if (load_resident_keys(agent_fd, skprovider, qflag,
+		if (load_resident_keys(agent_fd, skprovider, pin, qflag,
 		    dest_constraints, ndest_constraints) != 0)
 			ret = 1;
 		goto done;
@@ -1002,7 +1007,7 @@ main(int argc, char **argv)
 			if (stat(buf, &st) == -1)
 				continue;
 			if (do_file(agent_fd, deleting, key_only, cert_only,
-			    buf, qflag, Nflag, skprovider,
+			    buf, qflag, Nflag, skprovider, pin,
 			    dest_constraints, ndest_constraints) == -1)
 				ret = 1;
 			else
@@ -1013,12 +1018,14 @@ main(int argc, char **argv)
 	} else {
 		for (i = 0; i < argc; i++) {
 			if (do_file(agent_fd, deleting, key_only, cert_only,
-			    argv[i], qflag, Nflag, skprovider,
+			    argv[i], qflag, Nflag, skprovider, pin,
 			    dest_constraints, ndest_constraints) == -1)
 				ret = 1;
 		}
 	}
 done:
+	if (pin != NULL)
+		freezero(pin, strlen(pin));
 	clear_pass();
 	stringlist_free(hostkey_files);
 	stringlist_free(dest_constraint_strings);

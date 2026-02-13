@@ -267,6 +267,15 @@ library for the key. The format of this constraint extension would be:
 This constraint-based approach does not present any compatibility
 problems.
 
+Another constraint extension allows specification of a FIDO PIN at
+the time the key is loaded to the agent, rather than requiring it be
+entered each time the key is used.
+
+	byte		SSH_AGENT_CONSTRAIN_EXTENSION
+	string		sk-pin@openssh.com
+	string		pin
+
+
 OpenSSH integration
 -------------------
 

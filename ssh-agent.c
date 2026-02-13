@@ -135,6 +135,7 @@ typedef struct identity {
 	time_t death;
 	u_int confirm;
 	char *sk_provider;
+	char *sk_pin;
 	struct dest_constraint *dest_constraints;
 	size_t ndest_constraints;
 } Identity;
@@ -339,6 +340,7 @@ free_identity(Identity *id)
 	free(id->provider);
 	free(id->comment);
 	free(id->sk_provider);
+	free(id->sk_pin);
 	free_dest_constraints(id->dest_constraints, id->ndest_constraints);
 	free(id);
 }
@@ -933,7 +935,7 @@ process_sign_request2(SocketEntry *e)
  retry_pin:
 	if ((r = sshkey_sign(id->key, &signature, &slen,
 	    sshbuf_ptr(data), sshbuf_len(data), agent_decode_alg(key, flags),
-	    id->sk_provider, pin, compat)) != 0) {
+	    id->sk_provider, pin == NULL ? id->sk_pin : pin, compat)) != 0) {
 		debug_fr(r, "sshkey_sign");
 		if (pin == NULL && !retried && sshkey_is_sk(id->key) &&
 		    r == SSH_ERR_KEY_WRONG_PASSPHRASE) {
@@ -1174,8 +1176,8 @@ parse_dest_constraint(struct sshbuf *m, struct dest_constraint *dc)
 
 static int
 parse_key_constraint_extension(struct sshbuf *m, char **sk_providerp,
-    struct dest_constraint **dcsp, size_t *ndcsp, int *cert_onlyp,
-    struct sshkey ***certs, size_t *ncerts)
+    char **sk_pinp, struct dest_constraint **dcsp, size_t *ndcsp,
+    int *cert_onlyp, struct sshkey ***certs, size_t *ncerts)
 {
 	char *ext_name = NULL;
 	int r;
@@ -1200,6 +1202,21 @@ parse_key_constraint_extension(struct sshbuf *m, char **sk_providerp,
 			goto out;
 		}
 		if ((r = sshbuf_get_cstring(m, sk_providerp, NULL)) != 0) {
+			error_fr(r, "parse %s", ext_name);
+			goto out;
+		}
+	} else if (strcmp(ext_name, "sk-pin@openssh.com") == 0) {
+		if (sk_pinp == NULL) {
+			error_f("%s not valid here", ext_name);
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if (*sk_pinp != NULL) {
+			error_f("%s already set", ext_name);
+			r = SSH_ERR_INVALID_FORMAT;
+			goto out;
+		}
+		if ((r = sshbuf_get_cstring(m, sk_pinp, NULL)) != 0) {
 			error_fr(r, "parse %s", ext_name);
 			goto out;
 		}
@@ -1273,7 +1290,7 @@ parse_key_constraint_extension(struct sshbuf *m, char **sk_providerp,
 
 static int
 parse_key_constraints(struct sshbuf *m, struct sshkey *k, time_t *deathp,
-    u_int *secondsp, int *confirmp, char **sk_providerp,
+    u_int *secondsp, int *confirmp, char **sk_providerp, char **sk_pinp,
     struct dest_constraint **dcsp, size_t *ndcsp,
     int *cert_onlyp, size_t *ncerts, struct sshkey ***certs)
 {
@@ -1310,7 +1327,7 @@ parse_key_constraints(struct sshbuf *m, struct sshkey *k, time_t *deathp,
 			break;
 		case SSH_AGENT_CONSTRAIN_EXTENSION:
 			if ((r = parse_key_constraint_extension(m,
-			    sk_providerp, dcsp, ndcsp,
+			    sk_providerp, sk_pinp, dcsp, ndcsp,
 			    cert_onlyp, certs, ncerts)) != 0)
 				goto out; /* error already logged */
 			break;
@@ -1331,7 +1348,7 @@ process_add_identity(SocketEntry *e)
 {
 	Identity *id;
 	int success = 0, confirm = 0;
-	char *fp, *comment = NULL, *sk_provider = NULL;
+	char *fp, *comment = NULL, *sk_provider = NULL, *sk_pin = NULL;
 	char canonical_provider[PATH_MAX];
 	time_t death = 0;
 	u_int seconds = 0;
@@ -1348,7 +1365,7 @@ process_add_identity(SocketEntry *e)
 		goto out;
 	}
 	if (parse_key_constraints(e->request, k, &death, &seconds, &confirm,
-	    &sk_provider, &dest_constraints, &ndest_constraints,
+	    &sk_provider, &sk_pin, &dest_constraints, &ndest_constraints,
 	    NULL, NULL, NULL) != 0) {
 		error_f("failed to parse constraints");
 		sshbuf_reset(e->request);
@@ -1406,6 +1423,7 @@ process_add_identity(SocketEntry *e)
 		sshkey_free(id->key);
 		free(id->comment);
 		free(id->sk_provider);
+		free(id->sk_pin);
 		free_dest_constraints(id->dest_constraints,
 		    id->ndest_constraints);
 	}
@@ -1415,6 +1433,7 @@ process_add_identity(SocketEntry *e)
 	id->death = death;
 	id->confirm = confirm;
 	id->sk_provider = sk_provider;
+	id->sk_pin = sk_pin;
 	id->dest_constraints = dest_constraints;
 	id->ndest_constraints = ndest_constraints;
 
@@ -1430,11 +1449,13 @@ process_add_identity(SocketEntry *e)
 	k = NULL;
 	comment = NULL;
 	sk_provider = NULL;
+	sk_pin = NULL;
 	dest_constraints = NULL;
 	ndest_constraints = 0;
 	success = 1;
  out:
 	free(sk_provider);
+	free(sk_pin);
 	free(comment);
 	sshkey_free(k);
 	free_dest_constraints(dest_constraints, ndest_constraints);
@@ -1557,7 +1578,7 @@ process_add_smartcard_key(SocketEntry *e)
 		goto send;
 	}
 	if (parse_key_constraints(e->request, NULL, &death, &seconds, &confirm,
-	    NULL, &dest_constraints, &ndest_constraints, &cert_only,
+	    NULL, NULL, &dest_constraints, &ndest_constraints, &cert_only,
 	    &ncerts, &certs) != 0) {
 		error_f("failed to parse constraints");
 		goto send;

@@ -43,7 +43,7 @@
 .Nd adds private key identities to the OpenSSH authentication agent
 .Sh SYNOPSIS
 .Nm ssh-add
-.Op Fl CcDdKkLlNqvXx
+.Op Fl CcDdKkLlNPqvXx
 .Op Fl E Ar fingerprint_hash
 .Op Fl H Ar hostkey_file
 .Op Fl h Ar destination_constraint
@@ -230,6 +230,14 @@ will request that the agent automatically delete the certificate shortly
 after the certificate's expiry date.
 This flag suppresses this behaviour and does not specify a lifetime for
 certificates added to an agent.
+.It Fl P
+Causes
+.Nm
+to request a PIN for a FIDO key at the time it is added to the agent,
+where it will be used by default for the life of the key.
+This overrides the usual behaviour of
+.Xr ssh-agent 1
+requesting a PIN at each use of the key.
 .It Fl q
 Be quiet after a successful operation.
 .It Fl S Ar provider
