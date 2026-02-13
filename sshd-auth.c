@@ -659,6 +659,8 @@ main(int ac, char **av)
 	/* Prepare the channels layer */
 	channel_init_channels(ssh);
 	channel_set_af(ssh, options.address_family);
+	channel_set_tcp_keepalives(ssh,
+	    options.tcp_keep_alive == SSH_KEEPALIVES_ALL);
 	server_process_channel_timeouts(ssh);
 	server_process_permitopen(ssh);
 

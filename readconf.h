@@ -235,6 +235,10 @@ typedef struct {
 #define SSH_KEYSTROKE_CHAFF_MIN_MS		1024
 #define SSH_KEYSTROKE_CHAFF_RNG_MS		2048
 
+#define SSH_KEEPALIVES_OFF		0
+#define SSH_KEEPALIVES_TRANSPORT	1
+#define SSH_KEEPALIVES_ALL		2
+
 const char *kex_default_pk_alg(void);
 char	*ssh_connection_hash(const char *thishost, const char *host,
     const char *portstr, const char *user, const char *jump_host);

@@ -1068,6 +1068,15 @@ static const struct multistate multistate_tcpfwd[] = {
 	{ "local",			FORWARD_LOCAL },
 	{ NULL, -1 }
 };
+static const struct multistate multistate_keepalives[] = {
+	{ "true",			SSH_KEEPALIVES_TRANSPORT },
+	{ "false",			SSH_KEEPALIVES_OFF },
+	{ "yes",			SSH_KEEPALIVES_TRANSPORT },
+	{ "no",				SSH_KEEPALIVES_OFF },
+	{ "transport",			SSH_KEEPALIVES_TRANSPORT },
+	{ "all",			SSH_KEEPALIVES_ALL },
+	{ NULL, -1 }
+};
 
 static int
 process_server_config_line_depth(ServerOptions *options, char *line,
@@ -1460,7 +1469,8 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 
 	case sTCPKeepAlive:
 		intptr = &options->tcp_keep_alive;
-		goto parse_flag;
+		multistate_ptr = multistate_keepalives;
+		goto parse_multistate;
 
 	case sPermitEmptyPasswords:
 		intptr = &options->permit_empty_passwd;
@@ -4001,6 +4011,8 @@ fmt_intarg(ServerOpCodes code, int val)
 		return fmt_multistate_int(val, multistate_tcpfwd);
 	case sIgnoreRhosts:
 		return fmt_multistate_int(val, multistate_ignore_rhosts);
+	case sTCPKeepAlive:
+		return fmt_multistate_int(val, multistate_keepalives);
 	case sFingerprintHash:
 		return ssh_digest_alg_name(val);
 	default:
