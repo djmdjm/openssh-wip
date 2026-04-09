@@ -72,6 +72,8 @@ ssh_err(int n)
 	case SSH_ERR_LIBCRYPTO_ERROR:
 		msg = ssherr_libcrypto();
 		return msg != NULL ? msg : "error in libcrypto";
+	case SSH_ERR_INTERNAL_CRYPTO_ERROR:
+		return "cryptographic operation failed";
 	case SSH_ERR_UNEXPECTED_TRAILING_DATA:
 		return "unexpected bytes remain after decoding";
 	case SSH_ERR_SYSTEM_ERROR:

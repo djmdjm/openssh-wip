@@ -1,4 +1,4 @@
-/*  $OpenBSD: ed25519.c,v 1.7 2026/06/07 08:50:17 dtucker Exp $ */
+/*  $OpenBSD: $ */
 
 /*
  * Public Domain, Authors:
