@@ -1,4 +1,4 @@
-/*  $OpenBSD: ed25519.c,v 1.5 2026/06/04 04:26:51 djm Exp $ */
+/*  $OpenBSD: $ */
 
 /*
  * Public Domain, Authors:
