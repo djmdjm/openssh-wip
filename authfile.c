@@ -317,6 +317,7 @@ sshkey_load_private_cert(int type, const char *filename, const char *passphrase,
 	case KEY_ECDSA:
 #endif /* WITH_OPENSSL */
 	case KEY_ED25519:
+	case KEY_MLDSA65_ED25519:
 	case KEY_UNSPEC:
 		break;
 	default:

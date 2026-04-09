@@ -1908,13 +1908,13 @@ static void ge25519_scalarmult_base(ge25519_p3 *r, const sc25519 *s)
 }
 /* from supercop-20221122/crypto_sign/ed25519/ref/keypair.c */
 
-int crypto_sign_ed25519_keypair(unsigned char *pk,unsigned char *sk)
+int crypto_sign_ed25519_keypair_from_seed(unsigned char *pk,unsigned char *sk, const unsigned char *seed)
 {
   unsigned char az[64];
   sc25519 scsk;
   ge25519 gepk;
 
-  randombytes(sk,32);
+  memcpy(sk, seed, 32);
   crypto_hash_sha512(az,sk,32);
   az[0] &= 248;
   az[31] &= 127;
@@ -1926,6 +1926,17 @@ int crypto_sign_ed25519_keypair(unsigned char *pk,unsigned char *sk)
   ge25519_pack(pk, &gepk);
   memmove(sk + 32,pk,32);
   return 0;
+}
+
+int crypto_sign_ed25519_keypair(unsigned char *pk,unsigned char *sk)
+{
+  unsigned char seed[32];
+  int r;
+
+  randombytes(seed, 32);
+  r = crypto_sign_ed25519_keypair_from_seed(pk, sk, seed);
+  explicit_bzero(seed, sizeof(seed));
+  return r;
 }
 /* from supercop-20221122/crypto_sign/ed25519/ref/sign.c */
 

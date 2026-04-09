@@ -67,7 +67,8 @@ for i in $FILES; do
 	    ;;
 	*/crypto_sign/ed25519/ref/keypair.c)
 	    # rename key generation function to the name OpenSSH expects
-	    sed -e "s/crypto_sign_keypair/crypto_sign_ed25519_keypair/g"
+	    sed -e "s/crypto_sign_keypair(unsigned char \*pk,unsigned char \*sk)/crypto_sign_ed25519_keypair_from_seed(unsigned char *pk,unsigned char *sk, const unsigned char *seed)/g" \
+	        -e "s/randombytes(sk,32);/memcpy(sk, seed, 32);/g"
 	    ;;
 	*/crypto_sign/ed25519/ref/open.c)
 	    # rename verification function to the name OpenSSH expects
@@ -117,3 +118,18 @@ for i in $FILES; do
 	esac | \
 	sed -e 's/[	 ]*$//'
 done
+
+cat << _EOF
+
+int
+crypto_sign_ed25519_keypair(unsigned char *pk, unsigned char *sk)
+{
+	unsigned char seed[32];
+	int r;
+
+	randombytes(seed, 32);
+	r = crypto_sign_ed25519_keypair_from_seed(pk, sk, seed);
+	explicit_bzero(seed, sizeof(seed));
+	return r;
+}
+_EOF

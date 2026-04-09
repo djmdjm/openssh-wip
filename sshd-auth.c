@@ -236,6 +236,7 @@ list_hostkey_types(void)
 			/* FALLTHROUGH */
 		case KEY_ECDSA:
 		case KEY_ED25519:
+		case KEY_MLDSA65_ED25519:
 		case KEY_ECDSA_SK:
 		case KEY_ED25519_SK:
 			append_hostkey_type(b, sshkey_ssh_name(key));
@@ -255,6 +256,7 @@ list_hostkey_types(void)
 			/* FALLTHROUGH */
 		case KEY_ECDSA_CERT:
 		case KEY_ED25519_CERT:
+		case KEY_MLDSA65_ED25519_CERT:
 		case KEY_ECDSA_SK_CERT:
 		case KEY_ED25519_SK_CERT:
 			append_hostkey_type(b, sshkey_ssh_name(key));
@@ -279,6 +281,7 @@ get_hostkey_public_by_type(int type, int nid, struct ssh *ssh)
 		case KEY_RSA_CERT:
 		case KEY_ECDSA_CERT:
 		case KEY_ED25519_CERT:
+		case KEY_MLDSA65_ED25519_CERT:
 		case KEY_ECDSA_SK_CERT:
 		case KEY_ED25519_SK_CERT:
 			key = host_certificates[i];

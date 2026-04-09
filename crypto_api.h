@@ -61,6 +61,8 @@ int	crypto_sign_ed25519(unsigned char *, unsigned long long *,
 int	crypto_sign_ed25519_open(unsigned char *, unsigned long long *,
     const unsigned char *, unsigned long long, const unsigned char *);
 int	crypto_sign_ed25519_keypair(unsigned char *, unsigned char *);
+int	crypto_sign_ed25519_keypair_from_seed(unsigned char *, unsigned char *,
+    const unsigned char *);
 
 #define crypto_kem_sntrup761_PUBLICKEYBYTES 1158
 #define crypto_kem_sntrup761_SECRETKEYBYTES 1763
@@ -77,5 +79,36 @@ int	crypto_kem_sntrup761_keypair(unsigned char *pk, unsigned char *sk);
 #define crypto_kem_mlkem768_SECRETKEYBYTES 2400
 #define crypto_kem_mlkem768_CIPHERTEXTBYTES 1088
 #define crypto_kem_mlkem768_BYTES 32
+
+/* Aliases for MLKEM768 */
+#define MLKEM768_PUBLICKEYBYTES crypto_kem_mlkem768_PUBLICKEYBYTES
+#define MLKEM768_SECRETKEYBYTES crypto_kem_mlkem768_SECRETKEYBYTES
+#define MLKEM768_CIPHERTEXTBYTES crypto_kem_mlkem768_CIPHERTEXTBYTES
+#define MLKEM768_BYTES crypto_kem_mlkem768_BYTES
+
+/* ML-DSA-65 */
+#define MLDSA65_PUBLICKEYBYTES 1952
+#define MLDSA65_SECRETKEYBYTES 4032
+#define MLDSA65_SIGBYTES 3309
+#define MLDSA65_SEEDBYTES 32
+
+/* MLDSA65-Ed25519-SHA512 */
+#define MLDSA65_ED25519_PK_SZ (MLDSA65_PUBLICKEYBYTES + crypto_sign_ed25519_PUBLICKEYBYTES)
+#define MLDSA65_ED25519_SK_SZ (MLDSA65_SEEDBYTES + 32)
+#define MLDSA65_ED25519_SIG_SZ (MLDSA65_SIGBYTES + crypto_sign_ed25519_BYTES)
+
+int raw_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
+    uint8_t sk[MLDSA65_ED25519_SK_SZ]);
+int raw_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
+    uint8_t sk[MLDSA65_ED25519_SK_SZ], const uint8_t mldsa_seed[32],
+    const uint8_t ed25519_seed[32]);
+int raw_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
+    const uint8_t *msg, size_t msglen,
+    const uint8_t *ctx, size_t ctxlen,
+    const uint8_t sk[MLDSA65_ED25519_SK_SZ]);
+int raw_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
+    const uint8_t *msg, size_t msglen,
+    const uint8_t *ctx, size_t ctxlen,
+    const uint8_t pk[MLDSA65_ED25519_PK_SZ]);
 
 #endif /* crypto_api_h */
