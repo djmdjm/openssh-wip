@@ -73,130 +73,111 @@ void
 initialize_server_options(ServerOptions *options)
 {
 	memset(options, 0, sizeof(*options));
-	options->num_ports = 0;
-	options->ports_from_cmdline = 0;
-	options->queued_listen_addrs = NULL;
-	options->num_queued_listens = 0;
-	options->listen_addrs = NULL;
-	options->num_listen_addrs = 0;
-	options->address_family = -1;
-	options->routing_domain = NULL;
-	options->num_host_key_files = 0;
-	options->num_host_cert_files = 0;
-	options->host_key_agent = NULL;
-	options->pid_file = NULL;
-	options->login_grace_time = -1;
-	options->permit_root_login = PERMIT_NOT_SET;
-	options->ignore_rhosts = -1;
-	options->ignore_user_known_hosts = -1;
-	options->print_motd = -1;
-	options->print_lastlog = -1;
-	options->x11_forwarding = -1;
-	options->x11_display_offset = -1;
-	options->x11_use_localhost = -1;
-	options->permit_tty = -1;
-	options->permit_user_rc = -1;
-	options->xauth_location = NULL;
-	options->strict_modes = -1;
-	options->tcp_keep_alive = -1;
-	options->log_facility = SYSLOG_FACILITY_NOT_SET;
-	options->log_level = SYSLOG_LEVEL_NOT_SET;
-	options->num_log_verbose = 0;
-	options->log_verbose = NULL;
-	options->hostbased_authentication = -1;
-	options->hostbased_uses_name_from_packet_only = -1;
-	options->hostbased_accepted_algos = NULL;
-	options->hostkeyalgorithms = NULL;
-	options->pubkey_authentication = -1;
-	options->pubkey_auth_options = -1;
-	options->pubkey_accepted_algos = NULL;
-	options->kerberos_authentication = -1;
-	options->kerberos_or_local_passwd = -1;
-	options->kerberos_ticket_cleanup = -1;
-	options->kerberos_get_afs_token = -1;
-	options->gss_authentication=-1;
-	options->gss_cleanup_creds = -1;
-	options->gss_deleg_creds = -1;
-	options->gss_strict_acceptor = -1;
-	options->password_authentication = -1;
-	options->kbd_interactive_authentication = -1;
-	options->permit_empty_passwd = -1;
-	options->permit_user_env = -1;
-	options->permit_user_env_allowlist = NULL;
-	options->compression = -1;
-	options->rekey_limit = -1;
-	options->rekey_interval = -1;
-	options->allow_tcp_forwarding = -1;
-	options->allow_streamlocal_forwarding = -1;
-	options->allow_agent_forwarding = -1;
-	options->num_allow_users = 0;
-	options->num_deny_users = 0;
-	options->num_allow_groups = 0;
-	options->num_deny_groups = 0;
-	options->ciphers = NULL;
-	options->macs = NULL;
-	options->kex_algorithms = NULL;
-	options->ca_sign_algorithms = NULL;
-	options->fwd_opts.gateway_ports = -1;
-	options->fwd_opts.streamlocal_bind_mask = (mode_t)-1;
-	options->fwd_opts.streamlocal_bind_unlink = -1;
-	options->num_subsystems = 0;
-	options->max_startups_begin = -1;
-	options->max_startups_rate = -1;
-	options->max_startups = -1;
-	options->per_source_max_startups = -1;
-	options->per_source_masklen_ipv4 = -1;
-	options->per_source_masklen_ipv6 = -1;
-	options->per_source_penalty_exempt = NULL;
-	options->per_source_penalty.enabled = -1;
-	options->per_source_penalty.max_sources4 = -1;
-	options->per_source_penalty.max_sources6 = -1;
-	options->per_source_penalty.overflow_mode = -1;
-	options->per_source_penalty.overflow_mode6 = -1;
-	options->per_source_penalty.penalty_crash = -1.0;
-	options->per_source_penalty.penalty_authfail = -1.0;
-	options->per_source_penalty.penalty_invaliduser = -1.0;
-	options->per_source_penalty.penalty_noauth = -1.0;
-	options->per_source_penalty.penalty_grace = -1.0;
-	options->per_source_penalty.penalty_refuseconnection = -1.0;
-	options->per_source_penalty.penalty_max = -1.0;
-	options->per_source_penalty.penalty_min = -1.0;
-	options->max_authtries = -1;
-	options->max_sessions = -1;
-	options->banner = NULL;
-	options->use_dns = -1;
-	options->client_alive_interval = -1;
-	options->client_alive_count_max = -1;
-	options->num_authkeys_files = 0;
-	options->num_accept_env = 0;
-	options->num_setenv = 0;
-	options->permit_tun = -1;
-	options->permitted_opens = NULL;
-	options->permitted_listens = NULL;
-	options->adm_forced_command = NULL;
-	options->chroot_directory = NULL;
-	options->authorized_keys_command = NULL;
-	options->authorized_keys_command_user = NULL;
-	options->revoked_keys_files = NULL;
-	options->num_revoked_keys_files = 0;
-	options->sk_provider = NULL;
-	options->trusted_user_ca_keys = NULL;
-	options->authorized_principals_file = NULL;
-	options->authorized_principals_command = NULL;
-	options->authorized_principals_command_user = NULL;
-	options->ip_qos_interactive = -1;
+#define SSHCONF_INT(var, conf, flags, ms, def)		options->var = -1;
+#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def)		options->var = -1;
+#define SSHCONF_STRING(var, conf, flags)		options->var = NULL;
+#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+	options->nvar = 0; \
+	options->var = NULL;
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+	init_##funcsuffix(options)
+#define SSHCONF_NONCONF(funcsuffix) \
+	init_##funcsuffix(options)
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
+	/* Using macros for these is a bit overkill but forces consistency */
+#define init_hostkeyfile(options) \
+	options->host_key_files = 0; \
+	options->num_host_key_files = 0; \
+	options->host_key_file_userprovided = NULL;
+#define init_ipqos(options) \
+	options->ip_qos_interactive = -1; \
 	options->ip_qos_bulk = -1;
-	options->version_addendum = NULL;
-	options->fingerprint_hash = -1;
-	options->disable_forwarding = -1;
-	options->expose_userauth_info = -1;
-	options->required_rsa_size = -1;
-	options->channel_timeouts = NULL;
-	options->num_channel_timeouts = 0;
-	options->unused_connection_timeout = -1;
-	options->sshd_session_path = NULL;
-	options->sshd_auth_path = NULL;
-	options->refuse_connection = -1;
+#define init_listenaddress(options) \
+	options->queued_listen_addrs = NULL; \
+	options->num_queued_listens = 0; \
+	options->listen_addrs = NULL; \
+	options->num_listen_addrs = 0;
+#define init_logfacility(options) \
+	options->log_facility = SYSLOG_FACILITY_NOT_SET;
+#define init_loglevel(options) \
+	options->log_level = SYSLOG_LEVEL_NOT_SET;
+#define init_port(options) \
+	options->num_ports = 0; \
+	options->ports_from_cmdline = 0;
+#define init_pubkeyauthopts(options) \
+	options->pubkey_auth_options = -1;
+#define init_gatewayports(options) \
+	options->fwd_opts.gateway_ports = -1;
+#define init_streamlocalbindmask(options) \
+	options->fwd_opts.streamlocal_bind_mask = (mode_t)-1;
+#define init_streamlocalbindunlink(options) \
+	options->fwd_opts.streamlocal_bind_unlink = -1;
+#define init_maxstartups(options) \
+	options->max_startups_begin = -1; \
+	options->max_startups_rate = -1; \
+	options->max_startups = -1;
+#define init_permituserenv(options) \
+	options->permit_user_env = -1; \
+	options->permit_user_env_allowlist = NULL;
+#define init_persourcenetblocksize(options) \
+	options->per_source_masklen_ipv4 = -1; \
+	options->per_source_masklen_ipv6 = -1;
+#define init_persourcepenalties(options) \
+	options->per_source_penalty_exempt = NULL; \
+	options->per_source_penalty.enabled = -1; \
+	options->per_source_penalty.max_sources4 = -1; \
+	options->per_source_penalty.max_sources6 = -1; \
+	options->per_source_penalty.overflow_mode = -1; \
+	options->per_source_penalty.overflow_mode6 = -1; \
+	options->per_source_penalty.penalty_crash = -1.0; \
+	options->per_source_penalty.penalty_authfail = -1.0; \
+	options->per_source_penalty.penalty_invaliduser = -1.0; \
+	options->per_source_penalty.penalty_noauth = -1.0; \
+	options->per_source_penalty.penalty_grace = -1.0; \
+	options->per_source_penalty.penalty_refuseconnection = -1.0; \
+	options->per_source_penalty.penalty_max = -1.0; \
+	options->per_source_penalty.penalty_min = -1.0;
+#define init_rekeylimit(options) \
+	options->rekey_limit = -1; \
+	options->rekey_interval = -1;
+#define init_subsystem(options) \
+	options->num_subsystems = 0; \
+	options->subsystem_name = NULL; \
+	options->subsystem_command = NULL; \
+	options->subsystem_args = NULL;
+#define init_timingsuffix(options) /* empty */
+
+	SSHD_CONFIG_ENTRIES
+
+#undef init_hostkeyfile
+#undef init_ipqos
+#undef init_listenaddress
+#undef init_logfacility
+#undef init_loglevel
+#undef init_port
+#undef init_pubkeyauthopts
+#undef init_gatewayports
+#undef init_streamlocalbindmask
+#undef init_streamlocalbindunlink
+#undef init_maxstartups
+#undef init_permituserenv
+#undef init_persourcenetblocksize
+#undef init_persourcepenalties
+#undef init_rekeylimit
+#undef init_subsystem
+#undef init_timingsuffix
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
 }
 
 /* Returns 1 if a string option is unset or set to "none" or 0 otherwise. */
@@ -277,6 +258,32 @@ fill_default_server_options(ServerOptions *options)
 {
 	u_int i;
 
+#define SSHCONF_INT(var, conf, flags, ms, def) \
+	if (options->var == -1) \
+		options->var = def;
+#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def) \
+	if (options->var == -1) \
+		options->var = def;
+#define SSHCONF_STRING(var, conf, flags)		/* done manually */
+#define SSHCONF_STRARRAY(var, nvar, conf, flags)	/* done manually */
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags)		/* done manually */
+#define SSHCONF_NONCONF(funcsuffix)			/* done manually */
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
+	SSHD_CONFIG_ENTRIES
+
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
+
 	if (options->num_host_key_files == 0) {
 		/* fill default hostkeys */
 		servconf_add_hostkey("[default]", 0, options,
@@ -289,97 +296,26 @@ fill_default_server_options(ServerOptions *options)
 	/* No certificates by default */
 	if (options->num_ports == 0)
 		options->ports[options->num_ports++] = SSH_DEFAULT_PORT;
-	if (options->address_family == -1)
-		options->address_family = AF_UNSPEC;
 	if (options->listen_addrs == NULL)
 		add_listen_addr(options, NULL, NULL, 0);
 	if (options->pid_file == NULL)
 		options->pid_file = xstrdup(_PATH_SSH_DAEMON_PID_FILE);
 	if (options->moduli_file == NULL)
 		options->moduli_file = xstrdup(_PATH_DH_MODULI);
-	if (options->login_grace_time == -1)
-		options->login_grace_time = 120;
-	if (options->permit_root_login == PERMIT_NOT_SET)
-		options->permit_root_login = PERMIT_NO_PASSWD;
-	if (options->ignore_rhosts == -1)
-		options->ignore_rhosts = 1;
-	if (options->ignore_user_known_hosts == -1)
-		options->ignore_user_known_hosts = 0;
-	if (options->print_motd == -1)
-		options->print_motd = 1;
-	if (options->print_lastlog == -1)
-		options->print_lastlog = 1;
-	if (options->x11_forwarding == -1)
-		options->x11_forwarding = 0;
-	if (options->x11_display_offset == -1)
-		options->x11_display_offset = 10;
-	if (options->x11_use_localhost == -1)
-		options->x11_use_localhost = 1;
 	if (options->xauth_location == NULL)
 		options->xauth_location = xstrdup(_PATH_XAUTH);
-	if (options->permit_tty == -1)
-		options->permit_tty = 1;
-	if (options->permit_user_rc == -1)
-		options->permit_user_rc = 1;
-	if (options->strict_modes == -1)
-		options->strict_modes = 1;
-	if (options->tcp_keep_alive == -1)
-		options->tcp_keep_alive = 1;
 	if (options->log_facility == SYSLOG_FACILITY_NOT_SET)
 		options->log_facility = SYSLOG_FACILITY_AUTH;
 	if (options->log_level == SYSLOG_LEVEL_NOT_SET)
 		options->log_level = SYSLOG_LEVEL_INFO;
-	if (options->hostbased_authentication == -1)
-		options->hostbased_authentication = 0;
-	if (options->hostbased_uses_name_from_packet_only == -1)
-		options->hostbased_uses_name_from_packet_only = 0;
-	if (options->pubkey_authentication == -1)
-		options->pubkey_authentication = 1;
-	if (options->pubkey_auth_options == -1)
-		options->pubkey_auth_options = 0;
-	if (options->kerberos_authentication == -1)
-		options->kerberos_authentication = 0;
-	if (options->kerberos_or_local_passwd == -1)
-		options->kerberos_or_local_passwd = 1;
-	if (options->kerberos_ticket_cleanup == -1)
-		options->kerberos_ticket_cleanup = 1;
-	if (options->kerberos_get_afs_token == -1)
-		options->kerberos_get_afs_token = 0;
-	if (options->gss_authentication == -1)
-		options->gss_authentication = 0;
-	if (options->gss_cleanup_creds == -1)
-		options->gss_cleanup_creds = 1;
-	if (options->gss_deleg_creds == -1)
-		options->gss_deleg_creds = 1;
-	if (options->gss_strict_acceptor == -1)
-		options->gss_strict_acceptor = 1;
-	if (options->password_authentication == -1)
-		options->password_authentication = 1;
-	if (options->kbd_interactive_authentication == -1)
-		options->kbd_interactive_authentication = 1;
-	if (options->permit_empty_passwd == -1)
-		options->permit_empty_passwd = 0;
 	if (options->permit_user_env == -1) {
 		options->permit_user_env = 0;
 		options->permit_user_env_allowlist = NULL;
 	}
-	if (options->compression == -1)
-#ifdef WITH_ZLIB
-		options->compression = COMP_DELAYED;
-#else
-		options->compression = COMP_NONE;
-#endif
-
 	if (options->rekey_limit == -1)
 		options->rekey_limit = 0;
 	if (options->rekey_interval == -1)
 		options->rekey_interval = 0;
-	if (options->allow_tcp_forwarding == -1)
-		options->allow_tcp_forwarding = FORWARD_ALLOW;
-	if (options->allow_streamlocal_forwarding == -1)
-		options->allow_streamlocal_forwarding = FORWARD_ALLOW;
-	if (options->allow_agent_forwarding == -1)
-		options->allow_agent_forwarding = 1;
 	if (options->fwd_opts.gateway_ports == -1)
 		options->fwd_opts.gateway_ports = 0;
 	if (options->max_startups == -1)
@@ -388,8 +324,6 @@ fill_default_server_options(ServerOptions *options)
 		options->max_startups_rate = 30;		/* 30% */
 	if (options->max_startups_begin == -1)
 		options->max_startups_begin = 10;
-	if (options->per_source_max_startups == -1)
-		options->per_source_max_startups = INT_MAX;
 	if (options->per_source_masklen_ipv4 == -1)
 		options->per_source_masklen_ipv4 = 32;
 	if (options->per_source_masklen_ipv6 == -1)
@@ -420,16 +354,6 @@ fill_default_server_options(ServerOptions *options)
 		options->per_source_penalty.penalty_min = 15.0;
 	if (options->per_source_penalty.penalty_max < 0.0)
 		options->per_source_penalty.penalty_max = 600.0;
-	if (options->max_authtries == -1)
-		options->max_authtries = DEFAULT_AUTH_FAIL_MAX;
-	if (options->max_sessions == -1)
-		options->max_sessions = DEFAULT_SESSIONS_MAX;
-	if (options->use_dns == -1)
-		options->use_dns = 0;
-	if (options->client_alive_interval == -1)
-		options->client_alive_interval = 0;
-	if (options->client_alive_count_max == -1)
-		options->client_alive_count_max = 3;
 	if (options->num_authkeys_files == 0) {
 		opt_array_append("[default]", 0, "AuthorizedKeysFiles",
 		    &options->authorized_keys_files,
@@ -440,8 +364,6 @@ fill_default_server_options(ServerOptions *options)
 		    &options->num_authkeys_files,
 		    _PATH_SSH_USER_PERMITTED_KEYS2);
 	}
-	if (options->permit_tun == -1)
-		options->permit_tun = SSH_TUNMODE_NO;
 	if (options->ip_qos_interactive == -1)
 		options->ip_qos_interactive = IPTOS_DSCP_EF;
 	if (options->ip_qos_bulk == -1)
@@ -452,24 +374,12 @@ fill_default_server_options(ServerOptions *options)
 		options->fwd_opts.streamlocal_bind_mask = 0177;
 	if (options->fwd_opts.streamlocal_bind_unlink == -1)
 		options->fwd_opts.streamlocal_bind_unlink = 0;
-	if (options->fingerprint_hash == -1)
-		options->fingerprint_hash = SSH_FP_HASH_DEFAULT;
-	if (options->disable_forwarding == -1)
-		options->disable_forwarding = 0;
-	if (options->expose_userauth_info == -1)
-		options->expose_userauth_info = 0;
 	if (options->sk_provider == NULL)
 		options->sk_provider = xstrdup("internal");
-	if (options->required_rsa_size == -1)
-		options->required_rsa_size = SSH_RSA_MINIMUM_MODULUS_SIZE;
-	if (options->unused_connection_timeout == -1)
-		options->unused_connection_timeout = 0;
 	if (options->sshd_session_path == NULL)
 		options->sshd_session_path = xstrdup(_PATH_SSHD_SESSION);
 	if (options->sshd_auth_path == NULL)
 		options->sshd_auth_path = xstrdup(_PATH_SSHD_AUTH);
-	if (options->refuse_connection == -1)
-		options->refuse_connection = 0;
 
 	assemble_algorithms(options);
 
@@ -516,10 +426,9 @@ fill_default_server_options(ServerOptions *options)
 }
 
 /* Macros to declare ServerOpCodes enum values */
-#define SSHCONF_INT(var, conf, flags, ms)		s##conf,
+#define SSHCONF_INT(var, conf, flags, ms, def)		s##conf,
 #define SSHCONF_INT_UNSUP(var, conf, flags)		s##conf,
-#define SSHCONF_INTFLAG(var, conf, flags)		s##conf,
-#define SSHCONF_UINT(var, conf, flags, ms)		s##conf,
+#define SSHCONF_INTFLAG(var, conf, flags, def)		s##conf,
 #define SSHCONF_STRING(var, conf, flags)		s##conf,
 #define SSHCONF_STRARRAY(var, nvar, conf, flags)	s##conf,
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags) 	s##conf,
@@ -537,7 +446,6 @@ typedef enum {
 #undef SSHCONF_INT
 #undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
-#undef SSHCONF_UINT
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
@@ -553,9 +461,8 @@ typedef enum {
 
 /* Macros to define keywords[] entries */
 #define SSHCONF_KW(conf, flags)		{ #conf, s##conf, flags },
-#define SSHCONF_INT(var, conf, flags, ms)		SSHCONF_KW(conf, flags)
-#define SSHCONF_INTFLAG(var, conf, flags)		SSHCONF_KW(conf, flags)
-#define SSHCONF_UINT(var, conf, flags, ms)		SSHCONF_KW(conf, flags)
+#define SSHCONF_INT(var, conf, flags, ms, def)		SSHCONF_KW(conf, flags)
+#define SSHCONF_INTFLAG(var, conf, flags, def)		SSHCONF_KW(conf, flags)
 #define SSHCONF_STRING(var, conf, flags)		SSHCONF_KW(conf, flags)
 #define SSHCONF_STRARRAY(var, nvar, conf, flags)	SSHCONF_KW(conf, flags)
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags)		SSHCONF_KW(conf, flags)
@@ -581,7 +488,6 @@ static struct {
 #undef SSHCONF_INT
 #undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
-#undef SSHCONF_UINT
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
@@ -1312,7 +1218,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			*intptr = value;
 		break;
 
-	case sHostKeyFile:
+	case sHostKey:
 		arg = argv_next(&ac, &av);
 		if (!arg || *arg == '\0')
 			fatal("%s line %d: missing file name.",
@@ -1602,7 +1508,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 		intptr = &options->use_dns;
 		goto parse_flag;
 
-	case sLogFacility:
+	case sSyslogFacility:
 		log_facility_ptr = &options->log_facility;
 		arg = argv_next(&ac, &av);
 		value = log_facility_number(arg);
@@ -3152,15 +3058,14 @@ dump_config(ServerOptions *o)
 
 	/* string arguments requiring a lookup */
 	dump_cfg_string(sLogLevel, log_level_name(o->log_level));
-	dump_cfg_string(sLogFacility, log_facility_name(o->log_facility));
+	dump_cfg_string(sSyslogFacility, log_facility_name(o->log_facility));
 
 	/* string array arguments */
 	dump_cfg_strarray_oneline(sAuthorizedKeysFile, o->num_authkeys_files,
 	    o->authorized_keys_files);
 	dump_cfg_strarray_oneline(sRevokedKeys, o->num_revoked_keys_files,
 	    o->revoked_keys_files);
-	dump_cfg_strarray(sHostKeyFile, o->num_host_key_files,
-	    o->host_key_files);
+	dump_cfg_strarray(sHostKey, o->num_host_key_files, o->host_key_files);
 	dump_cfg_strarray(sHostCertificate, o->num_host_cert_files,
 	    o->host_cert_files);
 	dump_cfg_strarray(sAllowUsers, o->num_allow_users, o->allow_users);
