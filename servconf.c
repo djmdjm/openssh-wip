@@ -3054,12 +3054,6 @@ deserialise_double(struct sshbuf *buf, double *v)
 	return sshbuf_get(buf, v, sizeof(*v));
 }
 
-
-/*
- * NB. all these assume a zero-filled ServerOptions.
- *     all will modify buf.
- */
-
 static int
 deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 {
@@ -3180,6 +3174,7 @@ deserialise_port(ServerOptions *options, struct sshbuf *buf)
 		return r;
 	}
 	options->num_ports = n;
+	memset(options->ports, 0, sizeof(options->ports));
 	for (i = 0; i < options->num_ports; i++) {
 		if ((r = deserialise_s32(buf, options->ports + i)) != 0) {
 			error_fr(r, "deserialise port");
@@ -3333,7 +3328,7 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 	names = xcalloc(n, sizeof(*names));
 	commands = xcalloc(n, sizeof(*names));
 	args = xcalloc(n, sizeof(*args));
-	for (i = 0; i < options->num_subsystems; i++) {
+	for (i = 0; i < n; i++) {
 		if ((r = sshbuf_get_cstring(buf, names + i, NULL)) != 0 ||
 		    (r = sshbuf_get_cstring(buf, commands + i, NULL)) != 0 ||
 		    (r = sshbuf_get_cstring(buf, args + i, NULL)) != 0) {
@@ -3368,27 +3363,28 @@ deserialise_timingsecret(ServerOptions *options, struct sshbuf *buf)
 	return 0;
 }
 
-
 int
 deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 {
 	u_int i, j, n;
 	char **arr;
 	int r = SSH_ERR_INTERNAL_ERROR;
+	ServerOptions new_options;
 
+	initialize_server_options(&new_options);
 #define SSHCONF_INT(var, conf, flags, ms, def) \
-	if ((r = deserialise_s32(buf, &options->var)) != 0) { \
+	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deseserialise %s", #var); \
 		goto out; \
 	}
 #define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def) \
-	if ((r = deserialise_s32(buf, &options->var)) != 0) { \
+	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deserialise %s", #var); \
 		goto out; \
 	}
 #define SSHCONF_STRING(var, conf, flags) \
-	if ((r = sshbuf_get_cstring(buf, &options->var, NULL)) != 0) { \
+	if ((r = sshbuf_get_cstring(buf, &new_options.var, NULL)) != 0) { \
 		error_fr(r, "deserialise %s", #var); \
 		goto out; \
 	}
@@ -3407,13 +3403,13 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 			goto out; \
 		} \
 	} \
-	options->nvar = n; \
-	options->var = arr;
+	new_options.nvar = n; \
+	new_options.var = arr;
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
-	if ((r = deserialise_##funcsuffix(options, buf)) != 0) \
+	if ((r = deserialise_##funcsuffix(&new_options, buf)) != 0) \
 		goto out;
 #define SSHCONF_NONCONF(funcsuffix) \
-	if ((r = deserialise_##funcsuffix(options, buf)) != 0) \
+	if ((r = deserialise_##funcsuffix(&new_options, buf)) != 0) \
 		goto out;
 #define SSHCONF_DEPRECATED(conf)			/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
@@ -3432,9 +3428,125 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 
 	/* success */
 	r = 0;
+	free_server_options(options);
+	*options = new_options;
+	memset(&new_options, 0, sizeof(new_options));
  out:
-	/* XXX free partial contents */
+	free_server_options(&new_options);
 	return r;
+}
+
+static void
+free_hostkeyfile(ServerOptions *options)
+{
+	u_int i;
+
+	for (i = 0; i < options->num_host_key_files; i++)
+		free(options->host_key_files[i]);
+	free(options->host_key_files);
+	free(options->host_key_file_userprovided);
+}
+
+static void
+free_listenaddress(ServerOptions *options)
+{
+	u_int i;
+
+	for (i = 0; i < options->num_queued_listens; i++) {
+		free(options->queued_listen_addrs[i].addr);
+		free(options->queued_listen_addrs[i].rdomain);
+	}
+	free(options->queued_listen_addrs);
+
+	for (i = 0; i < options->num_listen_addrs; i++) {
+		free(options->listen_addrs[i].rdomain);
+		if (options->listen_addrs[i].addrs != NULL)
+			freeaddrinfo(options->listen_addrs[i].addrs);
+	}
+	free(options->listen_addrs);
+}
+
+static void
+free_permituserenv(ServerOptions *options)
+{
+	free(options->permit_user_env_allowlist);
+}
+
+static int
+free_subsystem(ServerOptions *options)
+{
+	u_int i;
+
+	for (i = 0; i < options->num_subsystems; i++) {
+		free(options->subsystem_name[i]);
+		free(options->subsystem_command[i]);
+		free(options->subsystem_args[i]);
+	}
+	free(options->subsystem_name);
+	free(options->subsystem_command);
+	free(options->subsystem_args);
+	return 0;
+}
+
+void
+free_server_options(ServerOptions *options)
+{
+	u_int i;
+
+#define SSHCONF_INT(var, conf, flags, ms, def)		/* empty */
+#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def)		/* empty */
+#define SSHCONF_STRING(var, conf, flags)		free(options->var);
+#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+	for (i = 0; i < options->nvar; i++) \
+		free(options->var[i]); \
+	free(options->var);
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+	free_##funcsuffix(options);
+#define SSHCONF_NONCONF(funcsuffix) \
+	free_##funcsuffix(options);
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
+#define free_ipqos(options)
+#define free_logfacility(options)
+#define free_loglevel(options)
+#define free_port(options)
+#define free_gatewayports(options)
+#define free_streamlocalbindmask(options)
+#define free_streamlocalbindunlink(options)
+#define free_maxstartups(options)
+#define free_persourcenetblocksize(options)
+#define free_persourcepenalties(options)
+#define free_rekeylimit(options)
+#define free_timingsecret(options)
+
+	SSHD_CONFIG_ENTRIES
+
+#undef free_ipqos
+#undef free_logfacility
+#undef free_loglevel
+#undef free_port
+#undef free_gatewayports
+#undef free_streamlocalbindmask
+#undef free_streamlocalbindunlink
+#undef free_maxstartups
+#undef free_persourcenetblocksize
+#undef free_persourcepenalties
+#undef free_rekeylimit
+#undef free_timingsecret
+
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
+
+	initialize_server_options(options);
 }
 
 /*
