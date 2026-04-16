@@ -18,6 +18,8 @@
 
 #include <sys/queue.h>
 
+struct sshbuf;
+
 #define MAX_PORTS		256	/* Max # ports. */
 
 /* permit_root_login */
@@ -136,7 +138,7 @@ SSHCONF_CUSTOM(MaxStartups, maxstartups, SSHCFG_GLOBAL) \
 SSHCONF_CUSTOM(PerSourceNetBlockSize, persourcenetblocksize, SSHCFG_GLOBAL) \
 SSHCONF_CUSTOM(PerSourcePenalties, persourcepenalties, SSHCFG_GLOBAL) \
 SSHCONF_CUSTOM(RekeyLimit, rekeylimit, SSHCFG_ALL) \
-SSHCONF_NONCONF(timingsuffix) \
+SSHCONF_NONCONF(timingsecret) \
 \
 SSHCONF_INT(address_family, AddressFamily, SSHCFG_GLOBAL, multistate_addressfamily, AF_UNSPEC) \
 SSHCONF_STRING(routing_domain, RDomain, SSHCFG_ALL) \
@@ -303,7 +305,6 @@ typedef struct {
 	int	ip_qos_interactive;	/* IP ToS/DSCP/class for interactive */
 	int	ip_qos_bulk;		/* IP ToS/DSCP/class for bulk traffic */
 	/* GatewayPorts, StreamLocalBindMask, StreamLocalBindUnlink */
-	/* XXX could be simplified */
 	struct ForwardOptions fwd_opts;	/* forwarding options */
 	/* LogFacility */
 	SyslogFacility log_facility;	/* Facility for system logging. */
@@ -425,5 +426,8 @@ void	 servconf_add_hostkey(const char *, const int,
 	    ServerOptions *, const char *path, int);
 void	 servconf_add_hostcert(const char *, const int,
 	    ServerOptions *, const char *path);
+
+int	 serialise_server_options(const ServerOptions *, struct sshbuf **);
+int	 deserialise_server_options(struct sshbuf *, ServerOptions *);
 
 #endif				/* SERVCONF_H */
