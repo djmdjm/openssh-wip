@@ -286,7 +286,7 @@ SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL)
 #define SSHCONF_DEPRECATED(conf)			/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
-typedef struct {
+typedef struct ServerOptions {
 	SSHD_CONFIG_ENTRIES
 	/* Ports */
 	u_int	num_ports;
@@ -429,5 +429,6 @@ void	 servconf_add_hostcert(const char *, const int,
 
 int	 serialise_server_options(const ServerOptions *, struct sshbuf **);
 int	 deserialise_server_options(struct sshbuf *, ServerOptions *);
+void	 free_server_options(ServerOptions *);
 
 #endif				/* SERVCONF_H */
