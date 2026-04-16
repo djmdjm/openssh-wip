@@ -114,8 +114,8 @@ struct per_source_penalty {
  *
  * Unsupported options use SSHCONF_INT_UNSUP. This leaves the placeholder
  * variable in ServerOptions but marks the keyword as unsupported in the
- * parser. Deprecated options get SSHCONF_DEPRECATED. Deprecated aliases that
- * still work use SSHCONF_ALIAS.
+ * parser. Deprecated options get SSHCONF_DEPRECATED or SSHCONFIG_IGNORE for
+ * silent deprecation. Deprecated aliases that still work use SSHCONF_ALIAS.
  *
  * Why go to all this trouble? It ensures a level of consistency between
  * the configuration structure and the parsing code and helps us write
@@ -230,6 +230,7 @@ SSHCONF_DEPRECATED(VerifyReverseMapping) \
 SSHCONF_DEPRECATED(ReverseMappingCheck) \
 SSHCONF_DEPRECATED(AuthorizedKeysFile2) \
 SSHCONF_DEPRECATED(UsePrivilegeSeparation) \
+SSHCONF_IGNORE(Protocol) \
 \
 SSHCONF_ALIAS(HostDSAKey, HostKey, SSHCFG_GLOBAL) \
 SSHCONF_ALIAS(HostBasedAcceptedKeyTypes, HostbasedAcceptedAlgorithms, SSHCFG_ALL) \
@@ -283,6 +284,7 @@ SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL)
 	u_int nvar;
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags)		/* empty */
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
+#define SSHCONF_IGNORE(conf)				/* empty */
 #define SSHCONF_DEPRECATED(conf)			/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
@@ -340,6 +342,7 @@ typedef struct ServerOptions {
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
+#undef SSHCONF_IGNORE
 #undef SSHCONF_DEPRECATED
 #undef SSHCONF_ALIAS
 
