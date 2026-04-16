@@ -83,176 +83,232 @@ struct per_source_penalty {
 	double	penalty_min;
 };
 
+/*
+ * This macro is used to generate most of ServerOptions and some of the
+ * parsing and de/serialisation code in servconf.c. Every variable in
+ * ServerOptions *must* be represented here.
+ *
+ * Variables and configuration options that need special handling (e.g.
+ * those that represent a struct or use a single option to populate multiple
+ * values) use the SSHCONF_CUSTOM macro and get manual variable entries in
+ * ServerOptions below.
+ *
+ * Variables that exist in ServerOptions but aren't populated by a keyword
+ * use the SSHCONF_NONCONF macro and also get manual entries in ServerOptions.
+ *
+ * Everything else uses one of the SSHCONF_INT, SSHCONF_STRING, or
+ * SSHCONF_STRARRAY macros. These automatically populate their corresponding
+ * variable definitions in ServerOptions.
+ *
+ * Unsupported options use SSHCONF_INT_UNSUP. This leaves the placeholder
+ * variable in ServerOptions but marks the keyword as unsupported in the
+ * parser.
+ *
+ * Why go to all this trouble? It ensures a level of consistency between
+ * the configuration structure and the parsing code and helps us write
+ * serialisation/deserialisation functions that we can be pretty sure will
+ * capture every value in the configuration file.
+ */
+#define SSHD_CONFIG_ENTRIES_BASE \
+SSHCONF_CUSTOM(Port, port, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(ListenAddress, listenaddress, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(HostKeyFile, hostkeyfile, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(IPQoS, ipqos, SSHCFG_ALL) \
+SSHCONF_CUSTOM(GatewayPorts, gatewayports, SSHCFG_ALL) \
+SSHCONF_CUSTOM(StreamLocalBindMask, streamlocalbindmask, SSHCFG_ALL) \
+SSHCONF_CUSTOM(StreamLocalBindUnlink, streamlocalbindunlink, SSHCFG_ALL) \
+SSHCONF_CUSTOM(LogFacility, logfacility, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(LogLevel, loglevel, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(PubkeyAuthOptions, pubkeyauthopts, SSHCFG_ALL) \
+SSHCONF_CUSTOM(PermitUserEnvironment, permituserenv, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(Subsystem, subsystem, SSHCFG_ALL) \
+SSHCONF_CUSTOM(MaxStartups, maxstartups, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(PerSourceNetBlockSize, persourcenetblocksize, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(PerSourcePenalties, persourcepenalties, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(RekeyLimit, rekeylimit, SSHCFG_ALL) \
+SSHCONF_NONCONF(timingsuffix) \
+SSHCONF_CUSTOM(ChannelTimeout, channeltimeout, SSHCFG_ALL) \
+\
+SSHCONF_INT(address_family, AddressFamily, SSHCFG_GLOBAL, multistate_addressfamily) \
+SSHCONF_STRING(routing_domain, RDomain, SSHCFG_ALL) \
+SSHCONF_STRARRAY(host_cert_files, num_host_cert_files, HostCertificate, SSHCFG_GLOBAL) \
+SSHCONF_STRING(host_key_agent, HostKeyAgent, SSHCFG_GLOBAL) \
+SSHCONF_STRING(pid_file, PidFile, SSHCFG_GLOBAL) \
+SSHCONF_STRING(moduli_file, ModuliFile, SSHCFG_GLOBAL) \
+SSHCONF_INT(login_grace_time, LoginGraceTime, SSHCFG_GLOBAL, NULL) \
+SSHCONF_INT(permit_root_login, PermitRootLogin, SSHCFG_ALL, multistate_permitrootlogin) \
+SSHCONF_INT(ignore_rhosts, IgnoreRhosts, SSHCFG_ALL, multistate_ignore_rhosts) \
+SSHCONF_INTFLAG(ignore_user_known_hosts, IgnoreUserKnownHosts, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(print_motd, PrintMotd, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(print_lastlog, PrintLastLog, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(x11_forwarding, X11Forwarding, SSHCFG_ALL) \
+SSHCONF_INT(x11_display_offset, X11DisplayOffset, SSHCFG_ALL, NULL) \
+SSHCONF_INTFLAG(x11_use_localhost, X11UseLocalhost, SSHCFG_ALL) \
+SSHCONF_STRING(xauth_location, XAuthLocation, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(permit_tty, PermitTTY, SSHCFG_ALL) \
+SSHCONF_INTFLAG(permit_user_rc, PermitUserRC, SSHCFG_ALL) \
+SSHCONF_INTFLAG(strict_modes, StrictModes, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(tcp_keep_alive, TCPKeepAlive, SSHCFG_GLOBAL) \
+SSHCONF_STRING(ciphers, Ciphers, SSHCFG_GLOBAL) \
+SSHCONF_STRING(macs, Macs, SSHCFG_GLOBAL) \
+SSHCONF_STRING(kex_algorithms, KexAlgorithms, SSHCFG_GLOBAL) \
+SSHCONF_STRARRAY(log_verbose, num_log_verbose, LogVerbose, SSHCFG_ALL) \
+SSHCONF_INTFLAG(hostbased_authentication, HostbasedAuthentication, SSHCFG_ALL) \
+SSHCONF_INTFLAG(hostbased_uses_name_from_packet_only, HostbasedUsesNameFromPacketOnly, SSHCFG_ALL) \
+SSHCONF_STRING(hostbased_accepted_algos, HostbasedAcceptedAlgorithms, SSHCFG_ALL) \
+SSHCONF_STRING(hostkeyalgorithms, HostKeyAlgorithms, SSHCFG_GLOBAL) \
+SSHCONF_STRING(ca_sign_algorithms, CASignatureAlgorithms, SSHCFG_ALL) \
+SSHCONF_INTFLAG(pubkey_authentication, PubkeyAuthentication, SSHCFG_ALL) \
+SSHCONF_STRING(pubkey_accepted_algos, PubkeyAcceptedAlgorithms, SSHCFG_ALL) \
+SSHCONF_INTFLAG(password_authentication, PasswordAuthentication, SSHCFG_ALL) \
+SSHCONF_INTFLAG(kbd_interactive_authentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
+SSHCONF_INTFLAG(permit_empty_passwd, PermitEmptyPasswd, SSHCFG_ALL) \
+SSHCONF_INT(compression, Compression, SSHCFG_GLOBAL, multistate_compression) \
+SSHCONF_INT(allow_tcp_forwarding, AllowTcpForwarding, SSHCFG_ALL, multistate_tcpfwd) \
+SSHCONF_INT(allow_streamlocal_forwarding, AllowStreamLocalForwarding, SSHCFG_ALL, multistate_tcpfwd) \
+SSHCONF_INTFLAG(allow_agent_forwarding, AllowAgentForwarding, SSHCFG_ALL) \
+SSHCONF_INTFLAG(disable_forwarding, DisableForwarding, SSHCFG_ALL) \
+SSHCONF_STRARRAY(allow_users, num_allow_users, AllowUsers, SSHCFG_ALL) \
+SSHCONF_STRARRAY(deny_users, num_deny_users, DenyUsers, SSHCFG_ALL) \
+SSHCONF_STRARRAY(allow_groups, num_allow_groups, AllowGroups, SSHCFG_ALL) \
+SSHCONF_STRARRAY(deny_groups, num_deny_groups, DenyGroups, SSHCFG_ALL) \
+SSHCONF_STRARRAY(accept_env, num_accept_env, AcceptEnv, SSHCFG_ALL) \
+SSHCONF_STRARRAY(setenv, num_setenv, SetEnv, SSHCFG_ALL) \
+SSHCONF_INT(per_source_max_startups, PerSourceMaxStartups, SSHCFG_GLOBAL, NULL) \
+SSHCONF_STRING(per_source_penalty_exempt, PerSourcePenaltyExemptList, SSHCFG_GLOBAL) \
+SSHCONF_INT(max_authtries, MaxAuthTries, SSHCFG_ALL, NULL) \
+SSHCONF_INT(max_sessions, MaxSessions, SSHCFG_ALL, NULL) \
+SSHCONF_STRING(banner, Banner, SSHCFG_ALL) \
+SSHCONF_INTFLAG(use_dns, UseDNS, SSHCFG_GLOBAL) \
+SSHCONF_INT(client_alive_interval, ClientAliveInterval, SSHCFG_ALL, NULL) \
+SSHCONF_INT(client_alive_count_max, ClientAliveCountMax, SSHCFG_ALL, NULL) \
+SSHCONF_STRARRAY(authorized_keys_files, num_authkeys_files, AuthorizedKeysFile, SSHCFG_ALL) \
+SSHCONF_STRING(adm_forced_command, ForceCommand, SSHCFG_ALL) \
+SSHCONF_INTFLAG(permit_tun, PermitTunnel, SSHCFG_ALL) SSHCONF_STRARRAY(permitted_opens, num_permitted_opens, PermitOpen, SSHCFG_ALL) \
+SSHCONF_STRARRAY(permitted_listens, num_permitted_listens, PermitListen, SSHCFG_ALL) \
+SSHCONF_STRING(chroot_directory, ChrootDirectory, SSHCFG_ALL) \
+SSHCONF_STRARRAY(revoked_keys_files, num_revoked_keys_files, RevokedKeys, SSHCFG_ALL) \
+SSHCONF_STRING(trusted_user_ca_keys, TrustedUserCAKeys, SSHCFG_ALL) \
+SSHCONF_STRING(authorized_keys_command, AuthorizedKeysCommand, SSHCFG_ALL) \
+SSHCONF_STRING(authorized_keys_command_user, AuthorizedKeysCommandUser, SSHCFG_ALL) \
+SSHCONF_STRING(authorized_principals_file, AuthorizedPrincipalsFile, SSHCFG_ALL) \
+SSHCONF_STRING(authorized_principals_command, AuthorizedPrincipalsCommand, SSHCFG_ALL) \
+SSHCONF_STRING(authorized_principals_command_user, AuthorizedPrincipalsCommandUser, SSHCFG_ALL) \
+SSHCONF_STRING(version_addendum, VersionAddendum, SSHCFG_GLOBAL) \
+SSHCONF_STRARRAY(auth_methods, num_auth_methods, AuthenticationMethods, SSHCFG_ALL) \
+SSHCONF_INT(fingerprint_hash, FingerprintHash, SSHCFG_GLOBAL, NULL) \
+SSHCONF_INTFLAG(expose_userauth_info, ExposeAuthInfo, SSHCFG_ALL) \
+SSHCONF_STRING(sk_provider, SecurityKeyProvider, SSHCFG_GLOBAL) \
+SSHCONF_INT(required_rsa_size, RequiredRSASize, SSHCFG_ALL, NULL) \
+SSHCONF_INT(unused_connection_timeout, UnusedConnectionTimeout, SSHCFG_ALL, NULL) \
+SSHCONF_STRING(sshd_session_path, SshdSessionPath, SSHCFG_GLOBAL) \
+SSHCONF_STRING(sshd_auth_path, SshdAuthPath, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(refuse_connection, ExposeAuthInfo, SSHCFG_ALL)
+
+#ifdef KRB5
+#define SSHD_CONFIG_ENTRIES_KRB5 \
+SSHCONF_INTFLAG(kerberos_authentication, KerberosAuthentication, SSHCFG_ALL) \
+SSHCONF_INTFLAG(kerberos_or_local_passwd, KerberosOrLocalPasswd, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(kerberos_ticket_cleanup, KerberosTicketCleanup, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(kerberos_get_afs_token, KerberosGetAFSToken, SSHCFG_GLOBAL)
+#else /* KRB5 */
+#define SSHD_CONFIG_ENTRIES_KRB5 \
+SSHCONF_INT_UNSUP(kerberos_authentication, KerberosAuthentication, SSHCFG_ALL) \
+SSHCONF_INT_UNSUP(kerberos_or_local_passwd, KerberosOrLocalPasswd, SSHCFG_GLOBAL) \
+SSHCONF_INT_UNSUP(kerberos_ticket_cleanup, KerberosTicketCleanup, SSHCFG_GLOBAL) \
+SSHCONF_INT_UNSUP(kerberos_get_afs_token, KerberosGetAFSToken, SSHCFG_GLOBAL)
+#endif /* KRB5 */
+
+#ifdef GSSAPI
+#define SSHD_CONFIG_ENTRIES_GSS \
+SSHCONF_INTFLAG(gss_authentication, GssAuthentication, SSHCFG_ALL) \
+SSHCONF_INTFLAG(gss_cleanup_creds, GssCleanupCreds, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(gss_deleg_creds, GssDelegateCreds, SSHCFG_GLOBAL) \
+SSHCONF_INTFLAG(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL)
+#else /* GSSAPI */
+#define SSHD_CONFIG_ENTRIES_GSS \
+SSHCONF_INT_UNSUP(gss_authentication, GssAuthentication, SSHCFG_ALL) \
+SSHCONF_INT_UNSUP(gss_cleanup_creds, GssCleanupCreds, SSHCFG_GLOBAL) \
+SSHCONF_INT_UNSUP(gss_deleg_creds, GssDelegateCreds, SSHCFG_GLOBAL) \
+SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL)
+#endif /* GSSAPI */
+
+#define SSHD_CONFIG_ENTRIES \
+	SSHD_CONFIG_ENTRIES_BASE \
+	SSHD_CONFIG_ENTRIES_KRB5 \
+	SSHD_CONFIG_ENTRIES_GSS
+
+/* Macros to declare ServerOptions member variables */
+#define SSHCONF_INT(var, conf, flags, ms)		int var;
+#define SSHCONF_INT_UNSUP(var, conf, flags)		int var;
+#define SSHCONF_INTFLAG(var, conf, flags)		int var;
+#define SSHCONF_UINT(var, conf, flags, ms)		u_int var;
+#define SSHCONF_STRING(var, conf, flags)		char *var;
+#define SSHCONF_STRARRAY(var, nvar, conf, flags)	\
+	char **var; \
+	u_int nvar;
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags) /* empty */
+#define SSHCONF_NONCONF(funcsuffix) /* empty */
 typedef struct {
+	SSHD_CONFIG_ENTRIES
+	/* Ports */
 	u_int	num_ports;
 	u_int	ports_from_cmdline;
 	int	ports[MAX_PORTS];	/* Port number to listen on. */
+	/* ListenAddress */
 	struct queued_listenaddr *queued_listen_addrs;
 	u_int	num_queued_listens;
 	struct listenaddr *listen_addrs;
 	u_int	num_listen_addrs;
-	int	address_family;		/* Address family used by the server. */
-
-	char	*routing_domain;	/* Bind session to routing domain */
-
+	/* HostKeyFile */
 	char   **host_key_files;	/* Files containing host keys. */
 	int	*host_key_file_userprovided; /* Key was specified by user. */
 	u_int	num_host_key_files;     /* Number of files for host keys. */
-	char   **host_cert_files;	/* Files containing host certs. */
-	u_int	num_host_cert_files;	/* Number of files for host certs. */
-
-	char   *host_key_agent;		/* ssh-agent socket for host keys. */
-	char   *pid_file;		/* Where to put our pid */
-	char   *moduli_file;		/* moduli file for DH-GEX */
-	int     login_grace_time;	/* Disconnect if no auth in this time
-					 * (sec). */
-	int     permit_root_login;	/* PERMIT_*, see above */
-	int     ignore_rhosts;	/* Ignore .rhosts and .shosts. */
-	int     ignore_user_known_hosts;	/* Ignore ~/.ssh/known_hosts
-						 * for RhostsRsaAuth */
-	int     print_motd;	/* If true, print /etc/motd. */
-	int	print_lastlog;	/* If true, print lastlog */
-	int     x11_forwarding;	/* If true, permit inet (spoofing) X11 fwd. */
-	int     x11_display_offset;	/* What DISPLAY number to start
-					 * searching at */
-	int     x11_use_localhost;	/* If true, use localhost for fake X11 server. */
-	char   *xauth_location;	/* Location of xauth program */
-	int	permit_tty;	/* If false, deny pty allocation */
-	int	permit_user_rc;	/* If false, deny ~/.ssh/rc execution */
-	int     strict_modes;	/* If true, require string home dir modes. */
-	int     tcp_keep_alive;	/* If true, set SO_KEEPALIVE. */
+	/* IPQoS */
 	int	ip_qos_interactive;	/* IP ToS/DSCP/class for interactive */
 	int	ip_qos_bulk;		/* IP ToS/DSCP/class for bulk traffic */
-	char   *ciphers;	/* Supported SSH2 ciphers. */
-	char   *macs;		/* Supported SSH2 macs. */
-	char   *kex_algorithms;	/* SSH2 kex methods in order of preference. */
+	/* GatewayPorts, StreamLocalBindMask, StreamLocalBindUnlink */
+	/* XXX could be simplified */
 	struct ForwardOptions fwd_opts;	/* forwarding options */
+	/* LogFacility */
 	SyslogFacility log_facility;	/* Facility for system logging. */
+	/* LogLevel */
 	LogLevel log_level;	/* Level for system logging. */
-	u_int	num_log_verbose;	/* Verbose log overrides */
-	char	**log_verbose;
-	int     hostbased_authentication;	/* If true, permit ssh2 hostbased auth */
-	int     hostbased_uses_name_from_packet_only; /* experimental */
-	char   *hostbased_accepted_algos; /* Algos allowed for hostbased */
-	char   *hostkeyalgorithms;	/* SSH2 server key types */
-	char   *ca_sign_algorithms;	/* Allowed CA signature algorithms */
-	int     pubkey_authentication;	/* If true, permit ssh2 pubkey authentication. */
-	char   *pubkey_accepted_algos;	/* Signature algos allowed for pubkey */
+	/* PubkeyAuthOptions */
 	int	pubkey_auth_options;	/* -1 or mask of PUBKEYAUTH_* flags */
-	int     kerberos_authentication;	/* If true, permit Kerberos
-						 * authentication. */
-	int     kerberos_or_local_passwd;	/* If true, permit kerberos
-						 * and any other password
-						 * authentication mechanism,
-						 * such as SecurID or
-						 * /etc/passwd */
-	int     kerberos_ticket_cleanup;	/* If true, destroy ticket
-						 * file on logout. */
-	int     kerberos_get_afs_token;		/* If true, try to get AFS token if
-						 * authenticated with Kerberos. */
-	int     gss_authentication;	/* If true, permit GSSAPI authentication */
-	int     gss_cleanup_creds;	/* If true, destroy cred cache on logout */
-	int     gss_deleg_creds;	/* If true, accept delegated GSS credentials */
-	int     gss_strict_acceptor;	/* If true, restrict the GSSAPI acceptor name */
-	int     password_authentication;	/* If true, permit password
-						 * authentication. */
-	int     kbd_interactive_authentication;	/* If true, permit */
-	int     permit_empty_passwd;	/* If false, do not permit empty
-					 * passwords. */
+	/* PermitUserEnvironment */
 	int     permit_user_env;	/* If true, read ~/.ssh/environment */
 	char   *permit_user_env_allowlist; /* pattern-list of allowed env names */
-	int     compression;	/* If true, compression is allowed */
-	int	allow_tcp_forwarding; /* One of FORWARD_* */
-	int	allow_streamlocal_forwarding; /* One of FORWARD_* */
-	int	allow_agent_forwarding;
-	int	disable_forwarding;
-	u_int num_allow_users;
-	char   **allow_users;
-	u_int num_deny_users;
-	char   **deny_users;
-	u_int num_allow_groups;
-	char   **allow_groups;
-	u_int num_deny_groups;
-	char   **deny_groups;
-
+	/* Subsystem */
 	u_int num_subsystems;
 	char   **subsystem_name;
 	char   **subsystem_command;
 	char   **subsystem_args;
-
-	u_int num_accept_env;
-	char   **accept_env;
-	u_int num_setenv;
-	char   **setenv;
-
+	/* MaxStartups */
 	int	max_startups_begin;
 	int	max_startups_rate;
 	int	max_startups;
-	int	per_source_max_startups;
+	/* PerSourceNetBlockSize */
 	int	per_source_masklen_ipv4;
 	int	per_source_masklen_ipv6;
-	char	*per_source_penalty_exempt;
+	/* PerSourcePenalties */
 	struct per_source_penalty per_source_penalty;
-	int	max_authtries;
-	int	max_sessions;
-	char   *banner;			/* SSH-2 banner message */
-	int	use_dns;
-	int	client_alive_interval;	/*
-					 * poke the client this often to
-					 * see if it's still there
-					 */
-	int	client_alive_count_max;	/*
-					 * If the client is unresponsive
-					 * for this many intervals above,
-					 * disconnect the session
-					 */
-
-	u_int	num_authkeys_files;	/* Files containing public keys */
-	char   **authorized_keys_files;
-
-	char   *adm_forced_command;
-
-	int	permit_tun;
-
-	char   **permitted_opens;	/* May also be one of PERMITOPEN_* */
-	u_int   num_permitted_opens;
-	char   **permitted_listens; /* May also be one of PERMITOPEN_* */
-	u_int   num_permitted_listens;
-
-	char   *chroot_directory;
-	uint	num_revoked_keys_files;
-	char   **revoked_keys_files;
-	char   *trusted_user_ca_keys;
-	char   *authorized_keys_command;
-	char   *authorized_keys_command_user;
-	char   *authorized_principals_file;
-	char   *authorized_principals_command;
-	char   *authorized_principals_command_user;
-
+	/* RekeyLimit */
 	int64_t rekey_limit;
 	int	rekey_interval;
-
-	char   *version_addendum;	/* Appended to SSH banner */
-
-	u_int	num_auth_methods;
-	char   **auth_methods;
-
-	int	fingerprint_hash;
-	int	expose_userauth_info;
+	/* Passed by config but not keyword for this */
 	uint64_t timing_secret;
-	char   *sk_provider;
-	int	required_rsa_size;	/* minimum size of RSA keys */
-
+	/* ChannelTimeout */
 	char	**channel_timeouts;	/* inactivity timeout by channel type */
 	u_int	num_channel_timeouts;
-
-	int	unused_connection_timeout;
-
-	char   *sshd_session_path;
-	char   *sshd_auth_path;
-
-	int	refuse_connection;
 }       ServerOptions;
+#undef SSHCONF_INT
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_UINT
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
 
 /* Information about the incoming connection as used by Match */
 struct connection_info {
