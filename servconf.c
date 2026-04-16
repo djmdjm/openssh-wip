@@ -515,44 +515,35 @@ fill_default_server_options(ServerOptions *options)
 #undef CLEAR_ON_NONE_ARRAY
 }
 
+/* Macros to declare ServerOpCodes enum values */
+#define SSHCONF_INT(var, conf, flags, ms)		s##conf,
+#define SSHCONF_INT_UNSUP(var, conf, flags)		s##conf,
+#define SSHCONF_INTFLAG(var, conf, flags)		s##conf,
+#define SSHCONF_UINT(var, conf, flags, ms)		s##conf,
+#define SSHCONF_STRING(var, conf, flags)		s##conf,
+#define SSHCONF_STRARRAY(var, nvar, conf, flags)	s##conf,
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags) 	s##conf,
+#define SSHCONF_NONCONF(funcsuffix)			/* empty */
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
 /* Keyword tokens. */
 typedef enum {
 	sBadOption,		/* == unknown option */
-	sPort, sHostKeyFile, sLoginGraceTime,
-	sPermitRootLogin, sLogFacility, sLogLevel, sLogVerbose,
-	sKerberosAuthentication, sKerberosOrLocalPasswd, sKerberosTicketCleanup,
-	sKerberosGetAFSToken, sPasswordAuthentication,
-	sKbdInteractiveAuthentication, sListenAddress, sAddressFamily,
-	sPrintMotd, sPrintLastLog, sIgnoreRhosts,
-	sX11Forwarding, sX11DisplayOffset, sX11UseLocalhost,
-	sPermitTTY, sStrictModes, sEmptyPasswd, sTCPKeepAlive,
-	sPermitUserEnvironment, sAllowTcpForwarding, sCompression,
-	sRekeyLimit, sAllowUsers, sDenyUsers, sAllowGroups, sDenyGroups,
-	sIgnoreUserKnownHosts, sCiphers, sMacs, sPidFile, sModuliFile,
-	sGatewayPorts, sPubkeyAuthentication, sPubkeyAcceptedAlgorithms,
-	sXAuthLocation, sSubsystem, sMaxStartups, sMaxAuthTries, sMaxSessions,
-	sBanner, sUseDNS, sHostbasedAuthentication,
-	sHostbasedUsesNameFromPacketOnly, sHostbasedAcceptedAlgorithms,
-	sHostKeyAlgorithms, sPerSourceMaxStartups, sPerSourceNetBlockSize,
-	sPerSourcePenalties, sPerSourcePenaltyExemptList,
-	sClientAliveInterval, sClientAliveCountMax, sAuthorizedKeysFile,
-	sGssAuthentication, sGssCleanupCreds, sGssDelegateCreds, sGssStrictAcceptor,
-	sAcceptEnv, sSetEnv, sPermitTunnel,
-	sMatch, sPermitOpen, sPermitListen, sForceCommand, sChrootDirectory,
-	sUsePrivilegeSeparation, sAllowAgentForwarding,
-	sHostCertificate, sInclude,
-	sRevokedKeys, sTrustedUserCAKeys, sAuthorizedPrincipalsFile,
-	sAuthorizedPrincipalsCommand, sAuthorizedPrincipalsCommandUser,
-	sKexAlgorithms, sCASignatureAlgorithms, sIPQoS, sVersionAddendum,
-	sAuthorizedKeysCommand, sAuthorizedKeysCommandUser,
-	sAuthenticationMethods, sHostKeyAgent, sPermitUserRC,
-	sStreamLocalBindMask, sStreamLocalBindUnlink,
-	sAllowStreamLocalForwarding, sFingerprintHash, sDisableForwarding,
-	sExposeAuthInfo, sRDomain, sPubkeyAuthOptions, sSecurityKeyProvider,
-	sRequiredRSASize, sChannelTimeout, sUnusedConnectionTimeout,
-	sSshdSessionPath, sSshdAuthPath, sRefuseConnection,
+	SSHD_CONFIG_ENTRIES
+	sMatch, sInclude,
 	sDeprecated, sIgnore, sUnsupported
 } ServerOpCodes;
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_UINT
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
 
 #define SSHCFG_GLOBAL		0x01	/* allowed in main section of config */
 #define SSHCFG_MATCH		0x02	/* allowed inside a Match section */
@@ -560,152 +551,43 @@ typedef enum {
 #define SSHCFG_NEVERMATCH	0x04  /* Match never matches; internal only */
 #define SSHCFG_MATCH_ONLY	0x08  /* Match only in conditional blocks; internal only */
 
+/* Macros to define keywords[] entries */
+#define SSHCONF_KW(conf, flags)		{ #conf, s##conf, flags },
+#define SSHCONF_INT(var, conf, flags, ms)		SSHCONF_KW(conf, flags)
+#define SSHCONF_INTFLAG(var, conf, flags)		SSHCONF_KW(conf, flags)
+#define SSHCONF_UINT(var, conf, flags, ms)		SSHCONF_KW(conf, flags)
+#define SSHCONF_STRING(var, conf, flags)		SSHCONF_KW(conf, flags)
+#define SSHCONF_STRARRAY(var, nvar, conf, flags)	SSHCONF_KW(conf, flags)
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags)		SSHCONF_KW(conf, flags)
+#define SSHCONF_NONCONF(funcsuffix)			/* empty */
+#define SSHCONF_INT_UNSUP(var, conf, flags) \
+	{ #conf, sUnsupported, flags },
+#define SSHCONF_DEPRECATED(conf) \
+	{ #conf, sDeprecated, SSHCFG_ALL },
+#define SSHCONF_ALIAS(old, conf, flags) \
+	{ #old, s##conf, flags },
+
 /* Textual representation of the tokens. */
 static struct {
 	const char *name;
 	ServerOpCodes opcode;
 	u_int flags;
 } keywords[] = {
-	{ "port", sPort, SSHCFG_GLOBAL },
-	{ "hostkey", sHostKeyFile, SSHCFG_GLOBAL },
-	{ "hostdsakey", sHostKeyFile, SSHCFG_GLOBAL },		/* alias */
-	{ "hostkeyagent", sHostKeyAgent, SSHCFG_GLOBAL },
-	{ "pidfile", sPidFile, SSHCFG_GLOBAL },
-	{ "modulifile", sModuliFile, SSHCFG_GLOBAL },
-	{ "serverkeybits", sDeprecated, SSHCFG_GLOBAL },
-	{ "logingracetime", sLoginGraceTime, SSHCFG_GLOBAL },
-	{ "keyregenerationinterval", sDeprecated, SSHCFG_GLOBAL },
-	{ "permitrootlogin", sPermitRootLogin, SSHCFG_ALL },
-	{ "syslogfacility", sLogFacility, SSHCFG_GLOBAL },
-	{ "loglevel", sLogLevel, SSHCFG_ALL },
-	{ "logverbose", sLogVerbose, SSHCFG_ALL },
-	{ "rhostsauthentication", sDeprecated, SSHCFG_GLOBAL },
-	{ "rhostsrsaauthentication", sDeprecated, SSHCFG_ALL },
-	{ "hostbasedauthentication", sHostbasedAuthentication, SSHCFG_ALL },
-	{ "hostbasedusesnamefrompacketonly", sHostbasedUsesNameFromPacketOnly, SSHCFG_ALL },
-	{ "hostbasedacceptedalgorithms", sHostbasedAcceptedAlgorithms, SSHCFG_ALL },
-	{ "hostbasedacceptedkeytypes", sHostbasedAcceptedAlgorithms, SSHCFG_ALL }, /* obsolete */
-	{ "hostkeyalgorithms", sHostKeyAlgorithms, SSHCFG_GLOBAL },
-	{ "rsaauthentication", sDeprecated, SSHCFG_ALL },
-	{ "pubkeyauthentication", sPubkeyAuthentication, SSHCFG_ALL },
-	{ "pubkeyacceptedalgorithms", sPubkeyAcceptedAlgorithms, SSHCFG_ALL },
-	{ "pubkeyacceptedkeytypes", sPubkeyAcceptedAlgorithms, SSHCFG_ALL }, /* obsolete */
-	{ "pubkeyauthoptions", sPubkeyAuthOptions, SSHCFG_ALL },
-	{ "dsaauthentication", sPubkeyAuthentication, SSHCFG_GLOBAL }, /* alias */
-#ifdef KRB5
-	{ "kerberosauthentication", sKerberosAuthentication, SSHCFG_ALL },
-	{ "kerberosorlocalpasswd", sKerberosOrLocalPasswd, SSHCFG_GLOBAL },
-	{ "kerberosticketcleanup", sKerberosTicketCleanup, SSHCFG_GLOBAL },
-	{ "kerberosgetafstoken", sKerberosGetAFSToken, SSHCFG_GLOBAL },
-#else
-	{ "kerberosauthentication", sUnsupported, SSHCFG_ALL },
-	{ "kerberosorlocalpasswd", sUnsupported, SSHCFG_GLOBAL },
-	{ "kerberosticketcleanup", sUnsupported, SSHCFG_GLOBAL },
-	{ "kerberosgetafstoken", sUnsupported, SSHCFG_GLOBAL },
-#endif
-	{ "kerberostgtpassing", sUnsupported, SSHCFG_GLOBAL },
-	{ "afstokenpassing", sUnsupported, SSHCFG_GLOBAL },
-#ifdef GSSAPI
-	{ "gssapiauthentication", sGssAuthentication, SSHCFG_ALL },
-	{ "gssapicleanupcredentials", sGssCleanupCreds, SSHCFG_GLOBAL },
-	{ "gssapidelegatecredentials", sGssDelegateCreds, SSHCFG_GLOBAL },
-	{ "gssapistrictacceptorcheck", sGssStrictAcceptor, SSHCFG_GLOBAL },
-#else
-	{ "gssapiauthentication", sUnsupported, SSHCFG_ALL },
-	{ "gssapicleanupcredentials", sUnsupported, SSHCFG_GLOBAL },
-	{ "gssapidelegatecredentials", sUnsupported, SSHCFG_GLOBAL },
-	{ "gssapistrictacceptorcheck", sUnsupported, SSHCFG_GLOBAL },
-#endif
-	{ "passwordauthentication", sPasswordAuthentication, SSHCFG_ALL },
-	{ "kbdinteractiveauthentication", sKbdInteractiveAuthentication, SSHCFG_ALL },
-	{ "challengeresponseauthentication", sKbdInteractiveAuthentication, SSHCFG_ALL }, /* alias */
-	{ "skeyauthentication", sKbdInteractiveAuthentication, SSHCFG_ALL }, /* alias */
-	{ "checkmail", sDeprecated, SSHCFG_GLOBAL },
-	{ "listenaddress", sListenAddress, SSHCFG_GLOBAL },
-	{ "addressfamily", sAddressFamily, SSHCFG_GLOBAL },
-	{ "printmotd", sPrintMotd, SSHCFG_GLOBAL },
-	{ "printlastlog", sPrintLastLog, SSHCFG_GLOBAL },
-	{ "ignorerhosts", sIgnoreRhosts, SSHCFG_ALL },
-	{ "ignoreuserknownhosts", sIgnoreUserKnownHosts, SSHCFG_GLOBAL },
-	{ "x11forwarding", sX11Forwarding, SSHCFG_ALL },
-	{ "x11displayoffset", sX11DisplayOffset, SSHCFG_ALL },
-	{ "x11uselocalhost", sX11UseLocalhost, SSHCFG_ALL },
-	{ "xauthlocation", sXAuthLocation, SSHCFG_GLOBAL },
-	{ "strictmodes", sStrictModes, SSHCFG_GLOBAL },
-	{ "permitemptypasswords", sEmptyPasswd, SSHCFG_ALL },
-	{ "permituserenvironment", sPermitUserEnvironment, SSHCFG_GLOBAL },
-	{ "uselogin", sDeprecated, SSHCFG_GLOBAL },
-	{ "compression", sCompression, SSHCFG_GLOBAL },
-	{ "rekeylimit", sRekeyLimit, SSHCFG_ALL },
-	{ "tcpkeepalive", sTCPKeepAlive, SSHCFG_GLOBAL },
-	{ "keepalive", sTCPKeepAlive, SSHCFG_GLOBAL },	/* obsolete alias */
-	{ "allowtcpforwarding", sAllowTcpForwarding, SSHCFG_ALL },
-	{ "allowagentforwarding", sAllowAgentForwarding, SSHCFG_ALL },
-	{ "allowusers", sAllowUsers, SSHCFG_ALL },
-	{ "denyusers", sDenyUsers, SSHCFG_ALL },
-	{ "allowgroups", sAllowGroups, SSHCFG_ALL },
-	{ "denygroups", sDenyGroups, SSHCFG_ALL },
-	{ "ciphers", sCiphers, SSHCFG_GLOBAL },
-	{ "macs", sMacs, SSHCFG_GLOBAL },
-	{ "protocol", sIgnore, SSHCFG_GLOBAL },
-	{ "gatewayports", sGatewayPorts, SSHCFG_ALL },
-	{ "subsystem", sSubsystem, SSHCFG_ALL },
-	{ "maxstartups", sMaxStartups, SSHCFG_GLOBAL },
-	{ "persourcemaxstartups", sPerSourceMaxStartups, SSHCFG_GLOBAL },
-	{ "persourcenetblocksize", sPerSourceNetBlockSize, SSHCFG_GLOBAL },
-	{ "persourcepenalties", sPerSourcePenalties, SSHCFG_GLOBAL },
-	{ "persourcepenaltyexemptlist", sPerSourcePenaltyExemptList, SSHCFG_GLOBAL },
-	{ "maxauthtries", sMaxAuthTries, SSHCFG_ALL },
-	{ "maxsessions", sMaxSessions, SSHCFG_ALL },
-	{ "banner", sBanner, SSHCFG_ALL },
-	{ "usedns", sUseDNS, SSHCFG_GLOBAL },
-	{ "verifyreversemapping", sDeprecated, SSHCFG_GLOBAL },
-	{ "reversemappingcheck", sDeprecated, SSHCFG_GLOBAL },
-	{ "clientaliveinterval", sClientAliveInterval, SSHCFG_ALL },
-	{ "clientalivecountmax", sClientAliveCountMax, SSHCFG_ALL },
-	{ "authorizedkeysfile", sAuthorizedKeysFile, SSHCFG_ALL },
-	{ "authorizedkeysfile2", sDeprecated, SSHCFG_ALL },
-	{ "useprivilegeseparation", sDeprecated, SSHCFG_GLOBAL},
-	{ "acceptenv", sAcceptEnv, SSHCFG_ALL },
-	{ "setenv", sSetEnv, SSHCFG_ALL },
-	{ "permittunnel", sPermitTunnel, SSHCFG_ALL },
-	{ "permittty", sPermitTTY, SSHCFG_ALL },
-	{ "permituserrc", sPermitUserRC, SSHCFG_ALL },
+	SSHD_CONFIG_ENTRIES
 	{ "match", sMatch, SSHCFG_ALL },
-	{ "permitopen", sPermitOpen, SSHCFG_ALL },
-	{ "permitlisten", sPermitListen, SSHCFG_ALL },
-	{ "forcecommand", sForceCommand, SSHCFG_ALL },
-	{ "chrootdirectory", sChrootDirectory, SSHCFG_ALL },
-	{ "hostcertificate", sHostCertificate, SSHCFG_GLOBAL },
-	{ "revokedkeys", sRevokedKeys, SSHCFG_ALL },
-	{ "trustedusercakeys", sTrustedUserCAKeys, SSHCFG_ALL },
-	{ "authorizedprincipalsfile", sAuthorizedPrincipalsFile, SSHCFG_ALL },
-	{ "kexalgorithms", sKexAlgorithms, SSHCFG_GLOBAL },
 	{ "include", sInclude, SSHCFG_ALL },
-	{ "ipqos", sIPQoS, SSHCFG_ALL },
-	{ "authorizedkeyscommand", sAuthorizedKeysCommand, SSHCFG_ALL },
-	{ "authorizedkeyscommanduser", sAuthorizedKeysCommandUser, SSHCFG_ALL },
-	{ "authorizedprincipalscommand", sAuthorizedPrincipalsCommand, SSHCFG_ALL },
-	{ "authorizedprincipalscommanduser", sAuthorizedPrincipalsCommandUser, SSHCFG_ALL },
-	{ "versionaddendum", sVersionAddendum, SSHCFG_GLOBAL },
-	{ "authenticationmethods", sAuthenticationMethods, SSHCFG_ALL },
-	{ "streamlocalbindmask", sStreamLocalBindMask, SSHCFG_ALL },
-	{ "streamlocalbindunlink", sStreamLocalBindUnlink, SSHCFG_ALL },
-	{ "allowstreamlocalforwarding", sAllowStreamLocalForwarding, SSHCFG_ALL },
-	{ "fingerprinthash", sFingerprintHash, SSHCFG_GLOBAL },
-	{ "disableforwarding", sDisableForwarding, SSHCFG_ALL },
-	{ "exposeauthinfo", sExposeAuthInfo, SSHCFG_ALL },
-	{ "rdomain", sRDomain, SSHCFG_ALL },
-	{ "casignaturealgorithms", sCASignatureAlgorithms, SSHCFG_ALL },
-	{ "securitykeyprovider", sSecurityKeyProvider, SSHCFG_GLOBAL },
-	{ "requiredrsasize", sRequiredRSASize, SSHCFG_ALL },
-	{ "channeltimeout", sChannelTimeout, SSHCFG_ALL },
-	{ "unusedconnectiontimeout", sUnusedConnectionTimeout, SSHCFG_ALL },
-	{ "sshdsessionpath", sSshdSessionPath, SSHCFG_GLOBAL },
-	{ "sshdauthpath", sSshdAuthPath, SSHCFG_GLOBAL },
-	{ "refuseconnection", sRefuseConnection, SSHCFG_ALL },
 	{ NULL, sBadOption, 0 }
 };
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_UINT
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
 
 static struct {
 	int val;
@@ -1648,7 +1530,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 		intptr = &options->tcp_keep_alive;
 		goto parse_flag;
 
-	case sEmptyPasswd:
+	case sPermitEmptyPasswords:
 		intptr = &options->permit_empty_passwd;
 		goto parse_flag;
 
@@ -3225,7 +3107,7 @@ dump_config(ServerOptions *o)
 	dump_cfg_fmtint(sPermitUserRC, o->permit_user_rc);
 	dump_cfg_fmtint(sStrictModes, o->strict_modes);
 	dump_cfg_fmtint(sTCPKeepAlive, o->tcp_keep_alive);
-	dump_cfg_fmtint(sEmptyPasswd, o->permit_empty_passwd);
+	dump_cfg_fmtint(sPermitEmptyPasswords, o->permit_empty_passwd);
 	dump_cfg_fmtint(sCompression, o->compression);
 	dump_cfg_fmtint(sGatewayPorts, o->fwd_opts.gateway_ports);
 	dump_cfg_fmtint(sUseDNS, o->use_dns);

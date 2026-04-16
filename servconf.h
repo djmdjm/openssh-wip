@@ -102,7 +102,8 @@ struct per_source_penalty {
  *
  * Unsupported options use SSHCONF_INT_UNSUP. This leaves the placeholder
  * variable in ServerOptions but marks the keyword as unsupported in the
- * parser.
+ * parser. Deprecated options get SSHCONF_DEPRECATED. Deprecated aliases that
+ * still work use SSHCONF_ALIAS.
  *
  * Why go to all this trouble? It ensures a level of consistency between
  * the configuration structure and the parsing code and helps us write
@@ -162,7 +163,7 @@ SSHCONF_INTFLAG(pubkey_authentication, PubkeyAuthentication, SSHCFG_ALL) \
 SSHCONF_STRING(pubkey_accepted_algos, PubkeyAcceptedAlgorithms, SSHCFG_ALL) \
 SSHCONF_INTFLAG(password_authentication, PasswordAuthentication, SSHCFG_ALL) \
 SSHCONF_INTFLAG(kbd_interactive_authentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
-SSHCONF_INTFLAG(permit_empty_passwd, PermitEmptyPasswd, SSHCFG_ALL) \
+SSHCONF_INTFLAG(permit_empty_passwd, PermitEmptyPasswords, SSHCFG_ALL) \
 SSHCONF_INT(compression, Compression, SSHCFG_GLOBAL, multistate_compression) \
 SSHCONF_INT(allow_tcp_forwarding, AllowTcpForwarding, SSHCFG_ALL, multistate_tcpfwd) \
 SSHCONF_INT(allow_streamlocal_forwarding, AllowStreamLocalForwarding, SSHCFG_ALL, multistate_tcpfwd) \
@@ -203,8 +204,29 @@ SSHCONF_INT(required_rsa_size, RequiredRSASize, SSHCFG_ALL, NULL) \
 SSHCONF_INT(unused_connection_timeout, UnusedConnectionTimeout, SSHCFG_ALL, NULL) \
 SSHCONF_STRING(sshd_session_path, SshdSessionPath, SSHCFG_GLOBAL) \
 SSHCONF_STRING(sshd_auth_path, SshdAuthPath, SSHCFG_GLOBAL) \
-SSHCONF_INTFLAG(refuse_connection, ExposeAuthInfo, SSHCFG_ALL)
+SSHCONF_INTFLAG(refuse_connection, RefuseConnection, SSHCFG_ALL) \
+\
+SSHCONF_DEPRECATED(ServerKeyBits) \
+SSHCONF_DEPRECATED(KeyRegenerationInterval) \
+SSHCONF_DEPRECATED(RHostsAuthentication) \
+SSHCONF_DEPRECATED(RhostsRSAAuthentication) \
+SSHCONF_DEPRECATED(RSAAuthentication) \
+SSHCONF_DEPRECATED(CheckMail) \
+SSHCONF_DEPRECATED(UseLogin) \
+SSHCONF_DEPRECATED(VerifyReverseMapping) \
+SSHCONF_DEPRECATED(ReverseMappingCheck) \
+SSHCONF_DEPRECATED(AuthorizedKeysFile2) \
+SSHCONF_DEPRECATED(UsePrivilegeSeparation) \
+\
+SSHCONF_ALIAS(HostDSAKey, HostKeyFile, SSHCFG_GLOBAL) \
+SSHCONF_ALIAS(HostBasedAcceptedKeyTypes, HostbasedAcceptedAlgorithms, SSHCFG_ALL) \
+SSHCONF_ALIAS(PubkeyAcceptedKeyTypes, PubkeyAcceptedAlgorithms, SSHCFG_ALL) \
+SSHCONF_ALIAS(DSAAuthentication, PubkeyAuthentication, SSHCFG_ALL) \
+SSHCONF_ALIAS(ChallengeResponseAuthentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
+SSHCONF_ALIAS(SKeyAuthentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
+SSHCONF_ALIAS(KeepAlive, TCPKeepAlive, SSHCFG_GLOBAL)
 
+/* Compile-time enabled options */
 #ifdef KRB5
 #define SSHD_CONFIG_ENTRIES_KRB5 \
 SSHCONF_INTFLAG(kerberos_authentication, KerberosAuthentication, SSHCFG_ALL) \
@@ -247,8 +269,11 @@ SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL)
 #define SSHCONF_STRARRAY(var, nvar, conf, flags)	\
 	char **var; \
 	u_int nvar;
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags) /* empty */
-#define SSHCONF_NONCONF(funcsuffix) /* empty */
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags)		/* empty */
+#define SSHCONF_NONCONF(funcsuffix)			/* empty */
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
 typedef struct {
 	SSHD_CONFIG_ENTRIES
 	/* Ports */
@@ -303,12 +328,15 @@ typedef struct {
 	u_int	num_channel_timeouts;
 }       ServerOptions;
 #undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_UINT
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
 
 /* Information about the incoming connection as used by Match */
 struct connection_info {
