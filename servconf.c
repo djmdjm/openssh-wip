@@ -3065,8 +3065,10 @@ deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 		error_fr(r, "deserialise length");
 		return r;
 	}
-	userprovided = xcalloc(n, sizeof(*userprovided));
-	files = xcalloc(n, sizeof(*files));
+	if (n > 0) {
+		userprovided = xcalloc(n, sizeof(*userprovided));
+		files = xcalloc(n, sizeof(*files));
+	}
 	for (i = 0; i < n; i++) {
 		if ((r = deserialise_s32(buf, userprovided + i) != 0) ||
 		    (r = sshbuf_get_cstring(buf, files + i, NULL) != 0)) {
@@ -3107,7 +3109,8 @@ deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 		error_fr(r, "deserialise length");
 		return r;
 	}
-	qla = xcalloc(n, sizeof(*qla));
+	if (n > 0)
+		qla = xcalloc(n, sizeof(*qla));
 	for (i = 0; i < n; i++) {
 		if ((r = sshbuf_get_cstring(buf, &qla[i].addr, NULL)) != 0 ||
 		    (r = deserialise_s32(buf, &qla[i].port)) != 0 ||
@@ -3319,15 +3322,17 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
 	u_int i, j, n;
-	char **names, **commands, **args;
+	char **names = NULL, **commands = NULL, **args = NULL;
 
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
 		error_fr(r, "deserialise length");
 		return r;
 	}
-	names = xcalloc(n, sizeof(*names));
-	commands = xcalloc(n, sizeof(*names));
-	args = xcalloc(n, sizeof(*args));
+	if (n > 0) {
+		names = xcalloc(n, sizeof(*names));
+		commands = xcalloc(n, sizeof(*names));
+		args = xcalloc(n, sizeof(*args));
+	}
 	for (i = 0; i < n; i++) {
 		if ((r = sshbuf_get_cstring(buf, names + i, NULL)) != 0 ||
 		    (r = sshbuf_get_cstring(buf, commands + i, NULL)) != 0 ||
@@ -3393,7 +3398,7 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 		error_fr(r, "deserialise %s length", #var); \
 		goto out; \
 	} \
-	arr = xcalloc(n, sizeof(*arr)); \
+	arr = n == 0 ? NULL : xcalloc(n, sizeof(*arr)); \
 	for (i = 0; i < n; i++) { \
 		if ((r = sshbuf_get_cstring(buf, arr + i, NULL)) != 0) { \
 			error_fr(r, "deserialise %s entry", #var); \
