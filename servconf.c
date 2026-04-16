@@ -107,8 +107,6 @@ initialize_server_options(ServerOptions *options)
 #define init_port(options) \
 	options->num_ports = 0; \
 	options->ports_from_cmdline = 0;
-#define init_pubkeyauthopts(options) \
-	options->pubkey_auth_options = -1;
 #define init_gatewayports(options) \
 	options->fwd_opts.gateway_ports = -1;
 #define init_streamlocalbindmask(options) \
@@ -148,7 +146,8 @@ initialize_server_options(ServerOptions *options)
 	options->subsystem_name = NULL; \
 	options->subsystem_command = NULL; \
 	options->subsystem_args = NULL;
-#define init_timingsuffix(options) /* empty */
+#define init_timingsecret(options) \
+	options->timing_secret = 0;
 
 	SSHD_CONFIG_ENTRIES
 
@@ -158,7 +157,6 @@ initialize_server_options(ServerOptions *options)
 #undef init_logfacility
 #undef init_loglevel
 #undef init_port
-#undef init_pubkeyauthopts
 #undef init_gatewayports
 #undef init_streamlocalbindmask
 #undef init_streamlocalbindunlink
@@ -168,7 +166,7 @@ initialize_server_options(ServerOptions *options)
 #undef init_persourcepenalties
 #undef init_rekeylimit
 #undef init_subsystem
-#undef init_timingsuffix
+#undef init_timingsecret
 #undef SSHCONF_INT
 #undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
@@ -271,6 +269,8 @@ fill_default_server_options(ServerOptions *options)
 #define SSHCONF_NONCONF(funcsuffix)			/* done manually */
 #define SSHCONF_DEPRECATED(conf)			/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
+	/* XXX maybe use macros here too to force consistency? */
 
 	SSHD_CONFIG_ENTRIES
 
@@ -2647,6 +2647,796 @@ servconf_merge_subsystems(ServerOptions *dst, ServerOptions *src)
 	}
 }
 
+static int
+serialise_s32(struct sshbuf *buf, int v)
+{
+	int r;
+
+	if ((r = sshbuf_put_u8(buf, v < 0)) != 0 ||
+	    (r = sshbuf_put_u32(buf, v < 0 ? -v : v)) != 0)
+		return r;
+	return 0;
+}
+
+static int
+serialise_s64(struct sshbuf *buf, int64_t v)
+{
+	int r;
+
+	if ((r = sshbuf_put_u8(buf, v < 0)) != 0 ||
+	    (r = sshbuf_put_u64(buf, v < 0 ? -v : v)) != 0)
+		return r;
+	return 0;
+}
+
+static int
+serialise_double(struct sshbuf *buf, double v)
+{
+	/*
+	 * XXX this is no good for a wire encoding.
+	 * It's fine for passing configurations via RPC, but it would
+	 * be nicer to have an exact binary encoding here.
+	 */
+	return sshbuf_put(buf, &v, sizeof(v));
+}
+
+static int
+serialise_hostkeyfile(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_int i;
+
+	if ((r = sshbuf_put_u32(buf, options->num_host_key_files)) != 0) {
+		error_fr(r, "serialise length");
+		return r;
+	}
+	for (i = 0; i < options->num_host_key_files; i++) {
+		if ((r = serialise_s32(buf,
+		    options->host_key_file_userprovided[i])) != 0 ||
+		    (r = sshbuf_put_cstring(buf,
+		    options->host_key_files[i])) != 0) {
+			error_fr(r, "serialise member");
+			return r;
+		}
+	}
+	return 0;
+}
+
+static int
+serialise_ipqos(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, options->ip_qos_interactive)) != 0 ||
+	    (r = serialise_s32(buf, options->ip_qos_bulk)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_listenaddress(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_int i;
+
+	/* Note: only serialises queued listen addresses */
+	if ((r = sshbuf_put_u32(buf, options->num_queued_listens)) != 0) {
+		error_fr(r, "serialise length");
+		return r;
+	}
+	for (i = 0; i < options->num_queued_listens; i++) {
+		const struct queued_listenaddr *qla =
+		    options->queued_listen_addrs + i;
+
+		if ((r = sshbuf_put_cstring(buf, qla->addr)) != 0 ||
+		    (r = serialise_s32(buf, qla->port)) != 0 ||
+		    (r = sshbuf_put_cstring(buf,
+		    qla->rdomain == NULL ? NULL : qla->rdomain)) != 0) {
+			error_fr(r, "serialise member");
+			return r;
+		}
+	}
+	return 0;
+}
+
+static int
+serialise_logfacility(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, (int)options->log_facility)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_loglevel(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, (int)options->log_level)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_port(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_int i;
+
+	if ((r = sshbuf_put_u32(buf, options->num_ports)) != 0) {
+		error_fr(r, "serialise length");
+		return r;
+	}
+	for (i = 0; i < options->num_ports; i++) {
+		if ((r = serialise_s32(buf, options->ports[i])) != 0) {
+			error_fr(r, "serialise port");
+			return r;
+		}
+	}
+	return 0;
+}
+
+static int
+serialise_gatewayports(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, options->fwd_opts.gateway_ports)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+	return 0;
+}
+
+static int
+serialise_streamlocalbindmask(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = sshbuf_put_u32(buf,
+	    (uint32_t)options->fwd_opts.streamlocal_bind_mask)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+	return 0;
+}
+
+static int
+serialise_streamlocalbindunlink(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = sshbuf_put_u8(buf,
+	    (options->fwd_opts.streamlocal_bind_unlink != 0))) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+	return 0;
+}
+
+static int
+serialise_maxstartups(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, options->max_startups_begin)) != 0 ||
+	    (r = serialise_s32(buf, options->max_startups_rate)) != 0 ||
+	    (r = serialise_s32(buf, options->max_startups)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_permituserenv(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, options->permit_user_env)) != 0 ||
+	    (r = sshbuf_put_cstring(buf,
+	    options->permit_user_env_allowlist == NULL ?
+	    "" : options->permit_user_env_allowlist)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_persourcenetblocksize(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, options->per_source_masklen_ipv4)) != 0 ||
+	    (r = serialise_s32(buf, options->per_source_masklen_ipv6)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_persourcepenalties(const ServerOptions *options, struct sshbuf *buf)
+{
+	const struct per_source_penalty *psp = &options->per_source_penalty;
+	int r;
+
+	if ((r = serialise_s32(buf, psp->enabled)) != 0 ||
+	    (r = serialise_s32(buf, psp->max_sources4)) != 0 ||
+	    (r = serialise_s32(buf, psp->max_sources6)) != 0 ||
+	    (r = serialise_s32(buf, psp->overflow_mode)) != 0 ||
+	    (r = serialise_s32(buf, psp->overflow_mode6)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_crash)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_grace)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_authfail)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_invaliduser)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_noauth)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_refuseconnection)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_max)) != 0 ||
+	    (r = serialise_double(buf, psp->penalty_min)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_rekeylimit(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s64(buf, options->rekey_limit)) != 0 ||
+	    (r = serialise_s32(buf, options->rekey_interval)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+serialise_subsystem(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_int i;
+
+	if ((r = sshbuf_put_u32(buf, options->num_subsystems)) != 0) {
+		error_fr(r, "serialise length");
+		return r;
+	}
+	for (i = 0; i < options->num_subsystems; i++) {
+		if ((r = sshbuf_put_cstring(buf,
+		    options->subsystem_name[i])) != 0 ||
+		    (r = sshbuf_put_cstring(buf,
+		    options->subsystem_command[i])) != 0 ||
+		    (r = sshbuf_put_cstring(buf,
+		    options->subsystem_args[i])) != 0) {
+			error_fr(r, "serialise member");
+			return r;
+		}
+	}
+	return 0;
+}
+
+static int
+serialise_timingsecret(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = sshbuf_put_u64(buf, options->timing_secret)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+	return 0;
+}
+
+
+int
+serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
+{
+	struct sshbuf *buf = NULL;
+	u_int i;
+	int r = SSH_ERR_INTERNAL_ERROR;
+
+	*bufp = NULL;
+
+	if ((buf = sshbuf_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+
+#define SSHCONF_INT(var, conf, flags, ms, def) \
+	if ((r = serialise_s32(buf, options->var)) != 0) { \
+		error_fr(r, "serialise %s", #var); \
+		goto out; \
+	}
+#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def) \
+	if ((r = serialise_s32(buf, options->var)) != 0) { \
+		error_fr(r, "serialise %s", #var); \
+		goto out; \
+	}
+#define SSHCONF_STRING(var, conf, flags) \
+	if ((r = sshbuf_put_cstring(buf, options->var)) != 0) { \
+		error_fr(r, "serialise %s", #var); \
+		goto out; \
+	}
+#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+	if ((r = sshbuf_put_u32(buf, options->nvar)) != 0) { \
+		error_fr(r, "serialise %s length", #var); \
+		goto out; \
+	} \
+	for (i = 0; i < options->nvar; i++) { \
+		if ((r = sshbuf_put_cstring(buf, options->var[i])) != 0) { \
+			error_fr(r, "serialise %s entry", #var); \
+			goto out; \
+		} \
+	}
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+	if ((r = serialise_##funcsuffix(options, buf)) != 0) \
+		goto out;
+#define SSHCONF_NONCONF(funcsuffix) \
+	if ((r = serialise_##funcsuffix(options, buf)) != 0) \
+		goto out;
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
+	SSHD_CONFIG_ENTRIES
+
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
+
+	/* success */
+	r = 0;
+	*bufp = buf;
+	buf = NULL; /* transferred */
+ out:
+	sshbuf_free(buf);
+	return r;
+}
+
+static int
+deserialise_s32(struct sshbuf *buf, int *v)
+{
+	uint32_t tmp;
+	int r;
+	u_char was_signed;
+
+	if ((r = sshbuf_get_u8(buf, &was_signed)) != 0 ||
+	    (r = sshbuf_get_u32(buf, &tmp)) != 0)
+		return r;
+	if (tmp > INT_MAX)
+		return SSH_ERR_INVALID_FORMAT;
+	*v = was_signed ? -(int)tmp : (int)tmp;
+	return 0;
+}
+
+static int
+deserialise_s64(struct sshbuf *buf, int64_t *v)
+{
+	uint64_t tmp;
+	int r;
+	u_char was_signed;
+
+	if ((r = sshbuf_get_u8(buf, &was_signed)) != 0 ||
+	    (r = sshbuf_get_u64(buf, &tmp)) != 0)
+		return r;
+	if (tmp > INT64_MAX)
+		return SSH_ERR_INVALID_FORMAT;
+	*v = was_signed ? -(int64_t)tmp : (int64_t)tmp;
+	return 0;
+}
+
+static int
+deserialise_double(struct sshbuf *buf, double *v)
+{
+	return sshbuf_get(buf, v, sizeof(*v));
+}
+
+
+/*
+ * NB. all these assume a zero-filled ServerOptions.
+ *     all will modify buf.
+ */
+
+static int
+deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
+{
+	int r, *userprovided = NULL;
+	uint32_t n, i;
+	char **files = NULL;
+
+	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
+		error_fr(r, "deserialise length");
+		return r;
+	}
+	userprovided = xcalloc(n, sizeof(*userprovided));
+	files = xcalloc(n, sizeof(*files));
+	for (i = 0; i < n; i++) {
+		if ((r = deserialise_s32(buf, userprovided + i) != 0) ||
+		    (r = sshbuf_get_cstring(buf, files + i, NULL) != 0)) {
+			error_fr(r, "ideserialise member");
+			free(files);
+			free(userprovided);
+			return r;
+		}
+	}
+	options->num_host_key_files = n;
+	options->host_key_file_userprovided = userprovided;
+	options->host_key_files = files;
+	return 0;
+}
+
+static int
+deserialise_ipqos(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s32(buf, &options->ip_qos_interactive)) != 0 ||
+	    (r = deserialise_s32(buf, &options->ip_qos_bulk)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	uint32_t n, i, j;
+	struct queued_listenaddr *qla = NULL;
+
+	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
+		error_fr(r, "deserialise length");
+		return r;
+	}
+	qla = xcalloc(n, sizeof(*qla));
+	for (i = 0; i < n; i++) {
+		if ((r = sshbuf_get_cstring(buf, &qla[i].addr, NULL)) != 0 ||
+		    (r = deserialise_s32(buf, &qla[i].port)) != 0 ||
+		    (r = sshbuf_get_cstring(buf, &qla[i].rdomain, NULL)) != 0) {
+			error_fr(r, "deserialise member");
+			for (j = 0; j < i; j++) {
+				free(qla[j].addr);
+				free(qla[j].rdomain);
+			}
+			free(qla);
+			return r;
+		}
+		if (*qla[i].rdomain == '\0') {
+			free(qla[i].rdomain);
+			qla[i].rdomain = NULL;
+		}
+	}
+	options->num_queued_listens = n;
+	options->queued_listen_addrs = qla;
+	return 0;
+}
+
+static int
+deserialise_logfacility(ServerOptions *options, struct sshbuf *buf)
+{
+	int r, tmp;
+
+	if ((r = deserialise_s32(buf, &tmp)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	options->log_facility = (SyslogFacility)tmp;
+
+	return 0;
+}
+
+static int
+deserialise_loglevel(ServerOptions *options, struct sshbuf *buf)
+{
+
+	int r, tmp;
+
+	if ((r = deserialise_s32(buf, &tmp)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	options->log_level = (LogLevel)tmp;
+
+	return 0;
+}
+
+static int
+deserialise_port(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_int i, n;
+
+	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
+		error_fr(r, "deserialise length");
+		return r;
+	}
+	if (n > MAX_PORTS) {
+		error_fr(r, "bad number of ports");
+		return r;
+	}
+	options->num_ports = n;
+	for (i = 0; i < options->num_ports; i++) {
+		if ((r = deserialise_s32(buf, options->ports + i)) != 0) {
+			error_fr(r, "deserialise port");
+			return r;
+		}
+	}
+	return 0;
+}
+
+static int
+deserialise_gatewayports(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s32(buf, &options->fwd_opts.gateway_ports)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	return 0;
+}
+
+static int
+deserialise_streamlocalbindmask(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	uint32_t tmp;
+
+	if ((r = sshbuf_get_u32(buf, &tmp)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	options->fwd_opts.streamlocal_bind_mask = (mode_t)tmp;
+	return 0;
+}
+
+static int
+deserialise_streamlocalbindunlink(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_char tmp;
+
+	if ((r = sshbuf_get_u8(buf, &tmp)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	options->fwd_opts.streamlocal_bind_unlink = tmp;
+	return 0;
+}
+
+static int
+deserialise_maxstartups(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s32(buf, &options->max_startups_begin)) != 0 ||
+	    (r = deserialise_s32(buf, &options->max_startups_rate)) != 0 ||
+	    (r = deserialise_s32(buf, &options->max_startups)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+deserialise_permituserenv(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s32(buf, &options->permit_user_env)) != 0 ||
+	    (r = sshbuf_get_cstring(buf,
+	    &options->permit_user_env_allowlist, NULL)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	if (*options->permit_user_env_allowlist == '\0') {
+		free(options->permit_user_env_allowlist);
+		options->permit_user_env_allowlist = NULL;
+	}
+	return 0;
+}
+
+static int
+deserialise_persourcenetblocksize(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s32(buf,
+	    &options->per_source_masklen_ipv4)) != 0 ||
+	    (r = deserialise_s32(buf,
+	    &options->per_source_masklen_ipv6)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+deserialise_persourcepenalties(ServerOptions *options, struct sshbuf *buf)
+{
+	struct per_source_penalty *psp = &options->per_source_penalty;
+	int r;
+
+	if ((r = deserialise_s32(buf, &psp->enabled)) != 0 ||
+	    (r = deserialise_s32(buf, &psp->max_sources4)) != 0 ||
+	    (r = deserialise_s32(buf, &psp->max_sources6)) != 0 ||
+	    (r = deserialise_s32(buf, &psp->overflow_mode)) != 0 ||
+	    (r = deserialise_s32(buf, &psp->overflow_mode6)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_crash)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_grace)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_authfail)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_invaliduser)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_noauth)) != 0 ||
+	    (r = deserialise_double(buf,
+	    &psp->penalty_refuseconnection)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_max)) != 0 ||
+	    (r = deserialise_double(buf, &psp->penalty_min)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+deserialise_rekeylimit(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s64(buf, &options->rekey_limit)) != 0 ||
+	    (r = deserialise_s32(buf, &options->rekey_interval)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+
+	return 0;
+}
+
+static int
+deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+	u_int i, j, n;
+	char **names, **commands, **args;
+
+	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
+		error_fr(r, "deserialise length");
+		return r;
+	}
+	names = xcalloc(n, sizeof(*names));
+	commands = xcalloc(n, sizeof(*names));
+	args = xcalloc(n, sizeof(*args));
+	for (i = 0; i < options->num_subsystems; i++) {
+		if ((r = sshbuf_get_cstring(buf, names + i, NULL)) != 0 ||
+		    (r = sshbuf_get_cstring(buf, commands + i, NULL)) != 0 ||
+		    (r = sshbuf_get_cstring(buf, args + i, NULL)) != 0) {
+			error_fr(r, "deserialise member");
+			for (j = 0; j < i; j++) {
+				free(names[j]);
+				free(commands[j]);
+				free(args[j]);
+			}
+			free(names);
+			free(commands);
+			free(args);
+			return r;
+		}
+	}
+	options->num_subsystems = n;
+	options->subsystem_name = names;
+	options->subsystem_command = commands;
+	options->subsystem_args = args;
+	return 0;
+}
+
+static int
+deserialise_timingsecret(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = sshbuf_get_u64(buf, &options->timing_secret)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	return 0;
+}
+
+
+int
+deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
+{
+	u_int i, j, n;
+	char **arr;
+	int r = SSH_ERR_INTERNAL_ERROR;
+
+#define SSHCONF_INT(var, conf, flags, ms, def) \
+	if ((r = deserialise_s32(buf, &options->var)) != 0) { \
+		error_fr(r, "deseserialise %s", #var); \
+		goto out; \
+	}
+#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def) \
+	if ((r = deserialise_s32(buf, &options->var)) != 0) { \
+		error_fr(r, "deserialise %s", #var); \
+		goto out; \
+	}
+#define SSHCONF_STRING(var, conf, flags) \
+	if ((r = sshbuf_get_cstring(buf, &options->var, NULL)) != 0) { \
+		error_fr(r, "deserialise %s", #var); \
+		goto out; \
+	}
+#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+	if ((r = sshbuf_get_u32(buf, &n)) != 0) { \
+		error_fr(r, "deserialise %s length", #var); \
+		goto out; \
+	} \
+	arr = xcalloc(n, sizeof(*arr)); \
+	for (i = 0; i < n; i++) { \
+		if ((r = sshbuf_get_cstring(buf, arr + i, NULL)) != 0) { \
+			error_fr(r, "deserialise %s entry", #var); \
+			for (j = 0; j < i; j++) \
+				free(arr[j]); \
+			free(arr); \
+			goto out; \
+		} \
+	} \
+	options->nvar = n; \
+	options->var = arr;
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+	if ((r = deserialise_##funcsuffix(options, buf)) != 0) \
+		goto out;
+#define SSHCONF_NONCONF(funcsuffix) \
+	if ((r = deserialise_##funcsuffix(options, buf)) != 0) \
+		goto out;
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
+
+	SSHD_CONFIG_ENTRIES
+
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
+
+	/* success */
+	r = 0;
+ out:
+	/* XXX free partial contents */
+	return r;
+}
+
 /*
  * Copy any supported values that are set.
  *
@@ -2657,6 +3447,7 @@ servconf_merge_subsystems(ServerOptions *dst, ServerOptions *src)
 void
 copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 {
+/* XXX use SSHD_CONFIG_ENTRIES here too */
 #define M_CP_INTOPT(n) do {\
 	if (src->n != -1) \
 		dst->n = src->n; \
