@@ -21,7 +21,6 @@
 #include <stdlib.h>
 
 #include "crypto_api.h"
-#include "libcrux-mlkem-mldsa.h"
 #include "sshbuf.h"
 #include "ssherr.h"
 #include "digest.h"
@@ -40,7 +39,7 @@
  */
 
 int
-raw_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
+crypto_sign_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
     uint8_t sk[MLDSA65_ED25519_SK_SZ])
 {
 	uint8_t mldsa_seed[32], ed25519_seed[32];
@@ -49,7 +48,7 @@ raw_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
 	arc4random_buf(mldsa_seed, sizeof(mldsa_seed));
 	arc4random_buf(ed25519_seed, sizeof(ed25519_seed));
 
-	r = raw_mldsa65_ed25519_keygen_seeded(pk, sk, mldsa_seed,
+	r = crypto_sign_mldsa65_ed25519_keygen_seeded(pk, sk, mldsa_seed,
 	    ed25519_seed);
 	explicit_bzero(mldsa_seed, sizeof(mldsa_seed));
 	explicit_bzero(ed25519_seed, sizeof(ed25519_seed));
@@ -57,14 +56,14 @@ raw_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
 }
 
 int
-raw_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
+crypto_sign_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
     uint8_t sk[MLDSA65_ED25519_SK_SZ], const uint8_t mldsa_seed[32],
     const uint8_t ed25519_seed[32])
 {
 	uint8_t ed25519_pk[32], ed25519_sk[64];
 	uint8_t mldsa_sk[MLDSA65_SECRETKEYBYTES];
 
-	if (mldsa65_keypair_seeded(pk, mldsa_sk, mldsa_seed) != 0)
+	if (crypto_sign_mldsa65_keypair_seeded(pk, mldsa_sk, mldsa_seed) != 0)
 		return -1;
 	if (crypto_sign_ed25519_keypair_from_seed(ed25519_pk, ed25519_sk,
 	    ed25519_seed) != 0)
@@ -83,42 +82,47 @@ raw_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
 }
 
 static int
-construct_m_prime(uint8_t **m_prime, size_t *m_prime_len,
+construct_m_prime(uint8_t **m_primep, size_t *m_prime_lenp,
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen)
 {
+	int r;
 	uint8_t hash[64];
-	size_t prefix_len = strlen(COMPOSITE_PREFIX);
-	size_t label_len = strlen(COMPOSITE_LABEL);
+	struct sshbuf *m_prime;
 
-	*m_prime = NULL;
-	*m_prime_len = 0;
+	*m_primep = NULL;
+	*m_prime_lenp = 0;
 
 	if (ctxlen > 255)
-		return -1;
-
-	if (ssh_digest_memory(SSH_DIGEST_SHA512, msg, msglen,
-	    hash, sizeof(hash)) != 0)
-		return -1;
-
-	*m_prime_len = prefix_len + label_len + 1 + ctxlen + sizeof(hash);
-	if ((*m_prime = malloc(*m_prime_len)) == NULL)
-		return -1;
-
-	/* M' :=  Prefix || Label || len(ctx) || ctx || PH( M ) */
-	memcpy(*m_prime, COMPOSITE_PREFIX, prefix_len);
-	memcpy(*m_prime + prefix_len, COMPOSITE_LABEL, label_len);
-	(*m_prime)[prefix_len + label_len] = (uint8_t)ctxlen;
-	if (ctxlen > 0)
-		memcpy(*m_prime + prefix_len + label_len + 1, ctx, ctxlen);
-	memcpy(*m_prime + prefix_len + label_len + 1 + ctxlen,
-	    hash, sizeof(hash));
-
+		return SSH_ERR_INVALID_ARGUMENT;
+	if ((r = ssh_digest_memory(SSH_DIGEST_SHA512, msg, msglen,
+	    hash, sizeof(hash))) != 0)
+		return r;
+	if ((m_prime = sshbuf_new()) == NULL)
+		return SSH_ERR_ALLOC_FAIL;
+	if ((r = sshbuf_put(m_prime, COMPOSITE_PREFIX,
+	    sizeof(COMPOSITE_PREFIX) - 1)) != 0 ||
+	    (r = sshbuf_put(m_prime, COMPOSITE_LABEL,
+	    sizeof(COMPOSITE_LABEL) - 1)) != 0 ||
+	    (r = sshbuf_put_u8(m_prime, (uint8_t)ctxlen)) != 0 ||
+	    (r = sshbuf_put(m_prime, ctx, ctxlen)) != 0 ||
+	    (r = sshbuf_put(m_prime, hash, sizeof(hash))) != 0) {
+		sshbuf_free(m_prime);
+		return r;
+	}
+	if ((*m_primep = malloc(sshbuf_len(m_prime))) == NULL) {
+		sshbuf_free(m_prime);
+		return SSH_ERR_ALLOC_FAIL;
+	}
+	memcpy(*m_primep, sshbuf_ptr(m_prime), sshbuf_len(m_prime));
+	*m_prime_lenp = sshbuf_len(m_prime);
+	/* success */
+	sshbuf_free(m_prime);
 	return 0;
 }
 
 int
-raw_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
+crypto_sign_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t sk[MLDSA65_ED25519_SK_SZ])
@@ -137,12 +141,12 @@ raw_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
 		return -1;
 
 	/* Expand ML-DSA key from seed */
-	if (mldsa65_keypair_seeded(mldsa_pk_dummy, mldsa_sk, sk) != 0)
+	if (crypto_sign_mldsa65_keypair_seeded(mldsa_pk_dummy, mldsa_sk, sk) != 0)
 		goto out;
 
 	/* Sign with ML-DSA */
 	arc4random_buf(mldsa_rnd, sizeof(mldsa_rnd));
-	if (mldsa65_sign_seeded(sig, m_prime, m_prime_len,
+	if (crypto_sign_mldsa65_seeded(sig, m_prime, m_prime_len,
 	    (const uint8_t *)COMPOSITE_LABEL, sizeof(COMPOSITE_LABEL) - 1,
 	    mldsa_sk, mldsa_rnd) != 0)
 		goto out;
@@ -175,7 +179,7 @@ raw_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
 }
 
 int
-raw_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
+crypto_sign_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t pk[MLDSA65_ED25519_PK_SZ])
@@ -191,7 +195,7 @@ raw_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
 		return -1;
 
 	/* Verify ML-DSA */
-	if (mldsa65_verify(sig, m_prime, m_prime_len,
+	if (crypto_sign_mldsa65_verify(sig, m_prime, m_prime_len,
 	    (const uint8_t *)COMPOSITE_LABEL, sizeof(COMPOSITE_LABEL) - 1,
 	    pk) != 0)
 		goto out;
@@ -207,7 +211,6 @@ raw_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
 	if (crypto_sign_ed25519_open(m, &mlen, sm, smlen,
 	    pk + MLDSA65_PUBLICKEYBYTES) != 0)
 		goto out;
-
 	if (mlen != m_prime_len)
 		goto out;
 
@@ -327,7 +330,7 @@ ssh_mldsa65_ed25519_generate(struct sshkey *k, int bits)
 	if ((k->mldsa_ed25519_pk = malloc(MLDSA65_ED25519_PK_SZ)) == NULL ||
 	    (k->mldsa_ed25519_sk = malloc(MLDSA65_ED25519_SK_SZ)) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
-	if (raw_mldsa65_ed25519_keygen(k->mldsa_ed25519_pk,
+	if (crypto_sign_mldsa65_ed25519_keygen(k->mldsa_ed25519_pk,
 	    k->mldsa_ed25519_sk) != 0)
 		return SSH_ERR_CRYPTO_ERROR;
 	return 0;
@@ -365,7 +368,7 @@ ssh_mldsa65_ed25519_sign(struct sshkey *key,
 	    key->mldsa_ed25519_sk == NULL)
 		return SSH_ERR_INVALID_ARGUMENT;
 
-	if (raw_mldsa65_ed25519_sign(sig, data, datalen, NULL, 0,
+	if (crypto_sign_mldsa65_ed25519_sign(sig, data, datalen, NULL, 0,
 	    key->mldsa_ed25519_sk) != 0) {
 		r = SSH_ERR_CRYPTO_ERROR;
 		goto out;
@@ -430,7 +433,7 @@ ssh_mldsa65_ed25519_verify(const struct sshkey *key,
 		goto out;
 	}
 
-	if (raw_mldsa65_ed25519_verify(sigblob, data, dlen, NULL, 0,
+	if (crypto_sign_mldsa65_ed25519_verify(sigblob, data, dlen, NULL, 0,
 	    key->mldsa_ed25519_pk) != 0) {
 		r = SSH_ERR_SIGNATURE_INVALID;
 		goto out;

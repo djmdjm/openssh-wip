@@ -75,6 +75,7 @@ int	crypto_kem_sntrup761_dec(unsigned char *k,
     const unsigned char *cstr, const unsigned char *sk);
 int	crypto_kem_sntrup761_keypair(unsigned char *pk, unsigned char *sk);
 
+/* ML-KEM-768 */
 #define crypto_kem_mlkem768_PUBLICKEYBYTES 1184
 #define crypto_kem_mlkem768_SECRETKEYBYTES 2400
 #define crypto_kem_mlkem768_CIPHERTEXTBYTES 1088
@@ -86,29 +87,65 @@ int	crypto_kem_sntrup761_keypair(unsigned char *pk, unsigned char *sk);
 #define MLKEM768_CIPHERTEXTBYTES crypto_kem_mlkem768_CIPHERTEXTBYTES
 #define MLKEM768_BYTES crypto_kem_mlkem768_BYTES
 
+int crypto_kem_mlkem768_keypair(uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES],
+    uint8_t sk[crypto_kem_mlkem768_SECRETKEYBYTES]);
+int crypto_kem_mlkem768_enc(uint8_t ct[crypto_kem_mlkem768_CIPHERTEXTBYTES],
+    uint8_t shared_secret[crypto_kem_mlkem768_BYTES],
+    const uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES]);
+int crypto_kem_mlkem768_dec(uint8_t shared_secret[crypto_kem_mlkem768_BYTES],
+    const uint8_t ct[crypto_kem_mlkem768_CIPHERTEXTBYTES],
+    const uint8_t sk[crypto_kem_mlkem768_SECRETKEYBYTES]);
+int crypto_kem_mlkem768_keypair_seeded(uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES],
+    uint8_t sk[crypto_kem_mlkem768_SECRETKEYBYTES], const uint8_t seed[64]);
+int crypto_kem_mlkem768_enc_seeded(uint8_t ct[crypto_kem_mlkem768_CIPHERTEXTBYTES],
+    uint8_t shared_secret[crypto_kem_mlkem768_BYTES],
+    const uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES],
+    const uint8_t seed[32]);
+
 /* ML-DSA-65 */
 #define MLDSA65_PUBLICKEYBYTES 1952
 #define MLDSA65_SECRETKEYBYTES 4032
 #define MLDSA65_SIGBYTES 3309
 #define MLDSA65_SEEDBYTES 32
 
+int crypto_sign_mldsa65_keypair(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
+    uint8_t sk[MLDSA65_SECRETKEYBYTES]);
+int crypto_sign_mldsa65(uint8_t sig[MLDSA65_SIGBYTES],
+    const uint8_t *msg, size_t msglen,
+    const uint8_t *ctx, size_t ctxlen,
+    const uint8_t sk[MLDSA65_SECRETKEYBYTES]);
+int crypto_sign_mldsa65_verify(const uint8_t sig[MLDSA65_SIGBYTES],
+    const uint8_t *msg, size_t msglen,
+    const uint8_t *ctx, size_t ctxlen,
+    const uint8_t pk[MLDSA65_PUBLICKEYBYTES]);
+int crypto_sign_mldsa65_keypair_seeded(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
+    uint8_t sk[MLDSA65_SECRETKEYBYTES], const uint8_t seed[32]);
+int crypto_sign_mldsa65_seeded(uint8_t sig[MLDSA65_SIGBYTES],
+    const uint8_t *msg, size_t msglen,
+    const uint8_t *ctx, size_t ctxlen,
+    const uint8_t sk[MLDSA65_SECRETKEYBYTES], const uint8_t seed[32]);
+
 /* MLDSA65-Ed25519-SHA512 */
 #define MLDSA65_ED25519_PK_SZ (MLDSA65_PUBLICKEYBYTES + crypto_sign_ed25519_PUBLICKEYBYTES)
 #define MLDSA65_ED25519_SK_SZ (MLDSA65_SEEDBYTES + 32)
 #define MLDSA65_ED25519_SIG_SZ (MLDSA65_SIGBYTES + crypto_sign_ed25519_BYTES)
 
-int raw_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
+int crypto_sign_mldsa65_ed25519_keygen(uint8_t pk[MLDSA65_ED25519_PK_SZ],
     uint8_t sk[MLDSA65_ED25519_SK_SZ]);
-int raw_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
+int crypto_sign_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
     uint8_t sk[MLDSA65_ED25519_SK_SZ], const uint8_t mldsa_seed[32],
     const uint8_t ed25519_seed[32]);
-int raw_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
+int crypto_sign_mldsa65_ed25519_sign(uint8_t sig[MLDSA65_ED25519_SIG_SZ],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t sk[MLDSA65_ED25519_SK_SZ]);
-int raw_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
+int crypto_sign_mldsa65_ed25519_verify(const uint8_t sig[MLDSA65_ED25519_SIG_SZ],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t pk[MLDSA65_ED25519_PK_SZ]);
+
+/* Utility */
+void sha3_256(uint8_t digest[32], const uint8_t *data, size_t len);
+void sha3_512(uint8_t digest[64], const uint8_t *data, size_t len);
 
 #endif /* crypto_api_h */

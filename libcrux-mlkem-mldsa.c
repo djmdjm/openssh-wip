@@ -23,108 +23,123 @@
 #include <string.h>
 
 #include "log.h"
-#include "libcrux-mlkem-mldsa.h"
+#include "crypto_api.h"
 #include "libcrux_internal.h"
 
+/* Ergonomic aliases matching libcrux_mlkem768_sha3.c style */
+#define libcrux_mlkem768_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair
+#define libcrux_mlkem768_pk Eurydice_arr_74
+#define libcrux_mlkem768_sk Eurydice_arr_ea
+#define libcrux_mlkem768_ciphertext Eurydice_arr_2c
+#define libcrux_mlkem768_enc_result tuple_38
+
+#define LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN 64
+#define LIBCRUX_ML_KEM_ENC_PRNG_LEN 32
+
+/* ML-KEM 768 */
+
 int
-mlkem768_keypair(uint8_t pk[MLKEM768_PUBLICKEYBYTES],
-    uint8_t sk[MLKEM768_SECRETKEYBYTES])
+crypto_kem_mlkem768_keypair(uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES],
+    uint8_t sk[crypto_kem_mlkem768_SECRETKEYBYTES])
 {
-	uint8_t rnd[64];
+	uint8_t rnd[LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN];
 	int r;
 
 	arc4random_buf(rnd, sizeof(rnd));
-	r = mlkem768_keypair_seeded(pk, sk, rnd);
+	r = crypto_kem_mlkem768_keypair_seeded(pk, sk, rnd);
 	explicit_bzero(rnd, sizeof(rnd));
 	return r;
 }
 
 int
-mlkem768_keypair_seeded(uint8_t pk[MLKEM768_PUBLICKEYBYTES],
-    uint8_t sk[MLKEM768_SECRETKEYBYTES], const uint8_t seed[64])
+crypto_kem_mlkem768_keypair_seeded(uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES],
+    uint8_t sk[crypto_kem_mlkem768_SECRETKEYBYTES], const uint8_t seed[64])
 {
-	Eurydice_arr_060 rnd;
 	libcrux_mlkem768_keypair keypair;
+	Eurydice_arr_060 rnd;
 
 	memcpy(rnd.data, seed, 64);
 	keypair = libcrux_ml_kem_mlkem768_portable_generate_key_pair(rnd);
-	memcpy(pk, keypair.pk.data, MLKEM768_PUBLICKEYBYTES);
-	memcpy(sk, keypair.sk.data, MLKEM768_SECRETKEYBYTES);
+	memcpy(pk, keypair.pk.data, crypto_kem_mlkem768_PUBLICKEYBYTES);
+	memcpy(sk, keypair.sk.data, crypto_kem_mlkem768_SECRETKEYBYTES);
 
 	explicit_bzero(&keypair, sizeof(keypair));
 	return 0;
 }
 
 int
-mlkem768_encapsulate(uint8_t ct[MLKEM768_CIPHERTEXTBYTES],
-    uint8_t shared_secret[MLKEM768_BYTES],
-    const uint8_t pk[MLKEM768_PUBLICKEYBYTES])
+crypto_kem_mlkem768_enc(uint8_t ct[crypto_kem_mlkem768_CIPHERTEXTBYTES],
+    uint8_t shared_secret[crypto_kem_mlkem768_BYTES],
+    const uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES])
 {
-	uint8_t rnd[32];
+	uint8_t rnd[LIBCRUX_ML_KEM_ENC_PRNG_LEN];
 	int r;
 
 	arc4random_buf(rnd, sizeof(rnd));
-	r = mlkem768_encapsulate_seeded(ct, shared_secret, pk, rnd);
+	r = crypto_kem_mlkem768_enc_seeded(ct, shared_secret, pk, rnd);
 	explicit_bzero(rnd, sizeof(rnd));
 	return r;
 }
 
 int
-mlkem768_encapsulate_seeded(uint8_t ct[MLKEM768_CIPHERTEXTBYTES],
-    uint8_t shared_secret[MLKEM768_BYTES],
-    const uint8_t pk[MLKEM768_PUBLICKEYBYTES], const uint8_t seed[32])
+crypto_kem_mlkem768_enc_seeded(uint8_t ct[crypto_kem_mlkem768_CIPHERTEXTBYTES],
+    uint8_t shared_secret[crypto_kem_mlkem768_BYTES],
+    const uint8_t pk[crypto_kem_mlkem768_PUBLICKEYBYTES], const uint8_t seed[32])
 {
-	Eurydice_arr_600 rnd;
 	libcrux_mlkem768_enc_result enc;
-	Eurydice_arr_74 pk_internal;
+	libcrux_mlkem768_pk pk_internal;
+	Eurydice_arr_600 rnd;
 
-	memcpy(pk_internal.data, pk, MLKEM768_PUBLICKEYBYTES);
+	memcpy(pk_internal.data, pk, crypto_kem_mlkem768_PUBLICKEYBYTES);
 	if (!libcrux_ml_kem_mlkem768_portable_validate_public_key(&pk_internal))
 		return -1;
 	memcpy(rnd.data, seed, 32);
 	enc = libcrux_ml_kem_mlkem768_portable_encapsulate(&pk_internal, rnd);
-	memcpy(ct, enc.fst.data, MLKEM768_CIPHERTEXTBYTES);
-	memcpy(shared_secret, enc.snd.data, MLKEM768_BYTES);
+	memcpy(ct, enc.fst.data, crypto_kem_mlkem768_CIPHERTEXTBYTES);
+	memcpy(shared_secret, enc.snd.data, crypto_kem_mlkem768_BYTES);
 
 	explicit_bzero(&enc, sizeof(enc));
 	return 0;
 }
 
 int
-mlkem768_decapsulate(uint8_t shared_secret[MLKEM768_BYTES],
-    const uint8_t ct[MLKEM768_CIPHERTEXTBYTES],
-    const uint8_t sk[MLKEM768_SECRETKEYBYTES])
+crypto_kem_mlkem768_dec(uint8_t shared_secret[crypto_kem_mlkem768_BYTES],
+    const uint8_t ct[crypto_kem_mlkem768_CIPHERTEXTBYTES],
+    const uint8_t sk[crypto_kem_mlkem768_SECRETKEYBYTES])
 {
-	Eurydice_arr_ea sk_internal;
-	Eurydice_arr_2c ct_internal;
+	libcrux_mlkem768_sk sk_internal;
+	libcrux_mlkem768_ciphertext ct_internal;
 	Eurydice_arr_600 shared_secret_internal;
 
-	memcpy(sk_internal.data, sk, MLKEM768_SECRETKEYBYTES);
-	memcpy(ct_internal.data, ct, MLKEM768_CIPHERTEXTBYTES);
-	shared_secret_internal = libcrux_ml_kem_mlkem768_portable_decapsulate(
-	    &sk_internal, &ct_internal);
-	memcpy(shared_secret, shared_secret_internal.data, MLKEM768_BYTES);
+	memcpy(sk_internal.data, sk, crypto_kem_mlkem768_SECRETKEYBYTES);
+	memcpy(ct_internal.data, ct, crypto_kem_mlkem768_CIPHERTEXTBYTES);
+	shared_secret_internal = libcrux_ml_kem_mlkem768_portable_decapsulate(&sk_internal,
+	    &ct_internal);
+	memcpy(shared_secret, shared_secret_internal.data, crypto_kem_mlkem768_BYTES);
 
 	explicit_bzero(&sk_internal, sizeof(sk_internal));
 	explicit_bzero(&shared_secret_internal, sizeof(shared_secret_internal));
 	return 0;
 }
 
+
+/* ML-DSA 65 */
+
 int
-mldsa65_keypair(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
+crypto_sign_mldsa65_keypair(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
     uint8_t sk[MLDSA65_SECRETKEYBYTES])
 {
 	uint8_t rnd[32];
 	int r;
 
 	arc4random_buf(rnd, sizeof(rnd));
-	r = mldsa65_keypair_seeded(pk, sk, rnd);
+	r = crypto_sign_mldsa65_keypair_seeded(pk, sk, rnd);
 	explicit_bzero(rnd, sizeof(rnd));
 	return r;
 }
 
 int
-mldsa65_keypair_seeded(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
+crypto_sign_mldsa65_keypair_seeded(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
     uint8_t sk[MLDSA65_SECRETKEYBYTES], const uint8_t seed[32])
 {
 	Eurydice_arr_600 rnd;
@@ -140,7 +155,7 @@ mldsa65_keypair_seeded(uint8_t pk[MLDSA65_PUBLICKEYBYTES],
 }
 
 int
-mldsa65_sign(uint8_t sig[MLDSA65_SIGBYTES],
+crypto_sign_mldsa65(uint8_t sig[MLDSA65_SIGBYTES],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t sk[MLDSA65_SECRETKEYBYTES])
@@ -149,13 +164,13 @@ mldsa65_sign(uint8_t sig[MLDSA65_SIGBYTES],
 	int r;
 
 	arc4random_buf(rnd, sizeof(rnd));
-	r = mldsa65_sign_seeded(sig, msg, msglen, ctx, ctxlen, sk, rnd);
+	r = crypto_sign_mldsa65_seeded(sig, msg, msglen, ctx, ctxlen, sk, rnd);
 	explicit_bzero(rnd, sizeof(rnd));
 	return r;
 }
 
 int
-mldsa65_sign_seeded(uint8_t sig[MLDSA65_SIGBYTES],
+crypto_sign_mldsa65_seeded(uint8_t sig[MLDSA65_SIGBYTES],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t sk[MLDSA65_SECRETKEYBYTES], const uint8_t seed[32])
@@ -182,7 +197,7 @@ mldsa65_sign_seeded(uint8_t sig[MLDSA65_SIGBYTES],
 }
 
 int
-mldsa65_verify(const uint8_t sig[MLDSA65_SIGBYTES],
+crypto_sign_mldsa65_verify(const uint8_t sig[MLDSA65_SIGBYTES],
     const uint8_t *msg, size_t msglen,
     const uint8_t *ctx, size_t ctxlen,
     const uint8_t pk[MLDSA65_PUBLICKEYBYTES])
