@@ -139,7 +139,8 @@ for i in $FILES; do
 	*)
 		cat
 		;;
-	esac
+	esac | \
+	perl -0777 -pe 's/ <<\n\s+\(uint32_t\)\(int32_t\)0//g'
 	echo
 done
 

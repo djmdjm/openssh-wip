@@ -12334,8 +12334,7 @@ libcrux_ml_dsa_simd_portable_arithmetic_shift_left_then_reduce_c3(Eurydice_arr_d
   {
     size_t i0 = i;
     simd_unit->data[i0] =
-      libcrux_ml_dsa_simd_portable_arithmetic_reduce_element(simd_unit->data[i0] <<
-          (uint32_t)(int32_t)0);
+      libcrux_ml_dsa_simd_portable_arithmetic_reduce_element(simd_unit->data[i0]);
   }
 }
 
