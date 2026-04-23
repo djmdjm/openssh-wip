@@ -3,7 +3,7 @@
 #       Placed in the Public Domain.
 #
 
-WANT_LIBCRUX_REVISION="origin/main"
+WANT_LIBCRUX_REVISION="origin/jonas/combined-extraction-fix"
 
 BASE="libcrux/combined_extraction/generated"
 FILES="
@@ -130,21 +130,6 @@ for i in $FILES; do
 	sed -e "/#include/d" \
 	    -e 's/[	 ]*$//' \
 	    $i | \
-	perl -0777 -pe '
-		# 1. Convert Result constructors:
-		#    Type_s(TAG, &Type_s::U::case_M, VAL) -> (Type){ .tag = TAG, .val = { .case_M = VAL } }
-		s/(\w+)_s\((\w+),\s+&\1_s::U::(\w+),\s+(.*?)\)/\($1\)\{ .tag = $2, .val = \{ .$3 = $4 \} \}/gs;
-
-		# 2. Convert C++-style initializers to C99 compound literals:
-		#    Type{...} -> (Type){...}
-		s/(\w+)\{/($1)\{/g;
-
-		# 3. Revert #2 for "struct {" and "union {" definitions
-		s/\((struct|union)\)\{/\1 \{/g;
-
-		# 4. Use anonymous unions to avoid redefinition of "union U"
-		s/union U/union/g;
-	' | \
 	case "$i" in
 	*/eurydice_glue.h)
 		# Replace endian function for consistency.
