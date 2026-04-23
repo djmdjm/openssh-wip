@@ -263,6 +263,10 @@ ask_filename(struct passwd *pw, const char *prompt)
 		case KEY_ED25519_SK_CERT:
 			name = _PATH_SSH_CLIENT_ID_ED25519_SK;
 			break;
+		case KEY_MLDSA65_ED25519:
+		case KEY_MLDSA65_ED25519_CERT:
+			name = _PATH_SSH_CLIENT_ID_MLDSA65_ED25519;
+			break;
 		default:
 			fatal("bad key type");
 		}
@@ -995,6 +999,8 @@ do_gen_all_hostkeys(struct passwd *pw)
 		{ "ecdsa", "ECDSA",_PATH_HOST_ECDSA_KEY_FILE },
 #endif /* WITH_OPENSSL */
 		{ "ed25519", "ED25519",_PATH_HOST_ED25519_KEY_FILE },
+		{ "mldsa65-ed25519", "MLDSA65-ED25519",
+		     _PATH_HOST_MLDSA65_ED25519_KEY_FILE },
 		{ NULL, NULL, NULL }
 	};
 

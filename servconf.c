@@ -285,6 +285,8 @@ fill_default_server_options(ServerOptions *options)
 		    _PATH_HOST_ECDSA_KEY_FILE, 0);
 		servconf_add_hostkey("[default]", 0, options,
 		    _PATH_HOST_ED25519_KEY_FILE, 0);
+		servconf_add_hostkey("[default]", 0, options,
+		    _PATH_HOST_MLDSA65_ED25519_KEY_FILE, 0);
 	}
 	/* No certificates by default */
 	if (options->num_ports == 0)
