@@ -64,10 +64,10 @@ crypto_sign_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
 	uint8_t mldsa_sk[MLDSA65_SECRETKEYBYTES];
 
 	if (crypto_sign_mldsa65_keypair_seeded(pk, mldsa_sk, mldsa_seed) != 0)
-		return -1;
+		goto out;
 	if (crypto_sign_ed25519_keypair_from_seed(ed25519_pk, ed25519_sk,
 	    ed25519_seed) != 0)
-		return -1;
+		goto out;
 
 	/* Serialize PK: mldsaPK || ed25519PK */
 	memcpy(pk + MLDSA65_PUBLICKEYBYTES, ed25519_pk, 32);
@@ -76,6 +76,7 @@ crypto_sign_mldsa65_ed25519_keygen_seeded(uint8_t pk[MLDSA65_ED25519_PK_SZ],
 	memcpy(sk, mldsa_seed, 32);
 	memcpy(sk + 32, ed25519_seed, 32);
 
+out:
 	explicit_bzero(mldsa_sk, sizeof(mldsa_sk));
 	explicit_bzero(ed25519_sk, sizeof(ed25519_sk));
 	return 0;
