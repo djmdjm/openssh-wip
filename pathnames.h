@@ -33,6 +33,7 @@
 #define _PATH_HOST_ECDSA_KEY_FILE	SSHDIR "/ssh_host_ecdsa_key"
 #define _PATH_HOST_RSA_KEY_FILE		SSHDIR "/ssh_host_rsa_key"
 #define _PATH_HOST_ED25519_KEY_FILE	SSHDIR "/ssh_host_ed25519_key"
+#define _PATH_HOST_MLDSA65_ED25519_KEY_FILE SSHDIR "/ssh_host_mldsa65_ed25519_key"
 #define _PATH_DH_MODULI			ETCDIR "/moduli"
 
 #define _PATH_SSH_PROGRAM		"/usr/bin/ssh"
@@ -78,6 +79,7 @@
 #define _PATH_SSH_CLIENT_ID_ED25519	_PATH_SSH_USER_DIR "/id_ed25519"
 #define _PATH_SSH_CLIENT_ID_ECDSA_SK	_PATH_SSH_USER_DIR "/id_ecdsa_sk"
 #define _PATH_SSH_CLIENT_ID_ED25519_SK	_PATH_SSH_USER_DIR "/id_ed25519_sk"
+#define _PATH_SSH_CLIENT_ID_MLDSA65_ED25519 _PATH_SSH_USER_DIR "/id_mldsa65_ed25519"
 
 /*
  * Configuration file in user's home directory.  This file need not be

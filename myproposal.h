@@ -41,6 +41,7 @@
 	"diffie-hellman-group14-sha256"
 
 #define	KEX_DEFAULT_PK_ALG	\
+	"ssh-mldsa65-ed25519-cert-v01@openssh.com," \
 	"ssh-ed25519-cert-v01@openssh.com," \
 	"ecdsa-sha2-nistp256-cert-v01@openssh.com," \
 	"ecdsa-sha2-nistp384-cert-v01@openssh.com," \
@@ -50,6 +51,7 @@
 	"webauthn-sk-ecdsa-sha2-nistp256-cert-v01@openssh.com," \
 	"rsa-sha2-512-cert-v01@openssh.com," \
 	"rsa-sha2-256-cert-v01@openssh.com," \
+	"ssh-mldsa65-ed25519@openssh.com," \
 	"ssh-ed25519," \
 	"ecdsa-sha2-nistp256," \
 	"ecdsa-sha2-nistp384," \
@@ -83,6 +85,7 @@
 
 /* Not a KEX value, but here so all the algorithm defaults are together */
 #define	SSH_ALLOWED_CA_SIGALGS	\
+	"ssh-mldsa65-ed25519@openssh.com," \
 	"ssh-ed25519," \
 	"ecdsa-sha2-nistp256," \
 	"ecdsa-sha2-nistp384," \

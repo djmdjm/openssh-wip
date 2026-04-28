@@ -3,15 +3,17 @@
 #       Placed in the Public Domain.
 #
 
-#WANT_LIBCRUX_REVISION="origin/main"
-WANT_LIBCRUX_REVISION="core-models-v0.0.4"
+WANT_LIBCRUX_REVISION="origin/jonas/combined-extraction-fix"
 
-BASE="libcrux/libcrux-ml-kem/extracts/c_header_only/generated"
+BASE="libcrux/combined_extraction/generated"
 FILES="
 	$BASE/eurydice_glue.h
+	$BASE/libcrux_core.h
+	$BASE/libcrux_sha3_portable.h
+	$BASE/libcrux_mldsa_core.h
+	$BASE/libcrux_mldsa65_portable.h
 	$BASE/libcrux_mlkem_core.h
 	$BASE/libcrux_ct_ops.h
-	$BASE/libcrux_sha3_portable.h
 	$BASE/libcrux_mlkem768_portable.h
 "
 
@@ -51,6 +53,7 @@ cat << _EOF
 #define KRML_NOINLINE __attribute__((noinline, unused))
 #define KRML_HOST_EPRINTF(...)
 #define KRML_HOST_EXIT(x) fatal_f("internal error")
+#define KRML_UNION_CONSTRUCTOR(T)
 
 static inline void
 store64_le(uint8_t dst[8], uint64_t src)
@@ -121,6 +124,9 @@ for i in $FILES; do
 	# Changes to all files:
 	#  - remove all includes, we inline everything required.
 	#  - cleanup whitespace
+	#  - convert C++-style constructors to C-style compound literals
+	#  - convert Result constructors to C initializers
+	#  - use anonymous unions to avoid "union U" redefinition errors
 	sed -e "/#include/d" \
 	    -e 's/[	 ]*$//' \
 	    $i | \
@@ -133,22 +139,26 @@ for i in $FILES; do
 	*)
 		cat
 		;;
-	esac
+	esac | \
+	perl -0777 -pe 's/ <<\n\s+\(uint32_t\)\(int32_t\)0//g'
 	echo
 done
 
 echo
 echo '/* rename some types to be a bit more ergonomic */'
-echo '#define libcrux_mlkem768_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair_s'
-echo '#define libcrux_mlkem768_pk libcrux_ml_kem_types_MlKemPublicKey_30_s'
-echo '#define libcrux_mlkem768_sk libcrux_ml_kem_types_MlKemPrivateKey_d9_s'
-echo '#define libcrux_mlkem768_ciphertext libcrux_ml_kem_mlkem768_MlKem768Ciphertext_s'
-echo '#define libcrux_mlkem768_enc_result tuple_c2_s'
-) > libcrux_mlkem768_sha3.h_new
+echo 'typedef Eurydice_arr_060 libcrux_mlkem768_keypair_rnd;'
+echo 'typedef Eurydice_arr_600 libcrux_mlkem768_enc_rnd;'
+echo '#define libcrux_mlkem768_keypair libcrux_ml_kem_mlkem768_MlKem768KeyPair'
+echo '#define libcrux_mlkem768_pk Eurydice_arr_74'
+echo '#define libcrux_mlkem768_sk Eurydice_arr_ea'
+echo '#define libcrux_mlkem768_ciphertext Eurydice_arr_2c'
+echo '#define libcrux_mlkem768_enc_result tuple_38'
+echo '#define libcrux_mlkem768_dec_result Eurydice_arr_600'
+) > libcrux_internal.h_new
 
 # Do some checks on the resultant file
 
-cat > libcrux_mlkem768_sha3_check.c << _EOF
+cat > libcrux_internal_check.c << _EOF
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -159,29 +169,31 @@ cat > libcrux_mlkem768_sha3_check.c << _EOF
 #include <err.h>
 #include "crypto_api.h"
 #define fatal_f(x) exit(1)
-#include "libcrux_mlkem768_sha3.h_new"
+#include "libcrux_internal.h_new"
 int main(void) {
-	struct libcrux_mlkem768_keypair keypair = {0};
-	struct libcrux_mlkem768_pk pk = {0};
-	struct libcrux_mlkem768_sk sk = {0};
-	struct libcrux_mlkem768_ciphertext ct = {0};
-	struct libcrux_mlkem768_enc_result enc_result = {0};
-	uint8_t kp_seed[64] = {0}, enc_seed[32] = {0};
+	libcrux_mlkem768_keypair keypair = {0};
+	libcrux_mlkem768_pk pk = {0};
+	libcrux_mlkem768_sk sk = {0};
+	libcrux_mlkem768_ciphertext ct = {0};
+	libcrux_mlkem768_enc_result enc_result = {0};
+	libcrux_mlkem768_keypair_rnd kp_seed = {0};
+	libcrux_mlkem768_enc_rnd enc_seed = {0};
+	libcrux_mlkem768_dec_result shared_secret = {0};
 	uint8_t shared_key[crypto_kem_mlkem768_BYTES];
 
-	if (sizeof(keypair.pk.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
+	if (sizeof(keypair.pk.data) != crypto_kem_mlkem768_PUBLICKEYBYTES)
 		errx(1, "keypair.pk bad");
-	if (sizeof(keypair.sk.value) != crypto_kem_mlkem768_SECRETKEYBYTES)
+	if (sizeof(keypair.sk.data) != crypto_kem_mlkem768_SECRETKEYBYTES)
 		errx(1, "keypair.sk bad");
-	if (sizeof(pk.value) != crypto_kem_mlkem768_PUBLICKEYBYTES)
+	if (sizeof(pk.data) != crypto_kem_mlkem768_PUBLICKEYBYTES)
 		errx(1, "pk bad");
-	if (sizeof(sk.value) != crypto_kem_mlkem768_SECRETKEYBYTES)
+	if (sizeof(sk.data) != crypto_kem_mlkem768_SECRETKEYBYTES)
 		errx(1, "sk bad");
-	if (sizeof(ct.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
+	if (sizeof(ct.data) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
 		errx(1, "ct bad");
-	if (sizeof(enc_result.fst.value) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
+	if (sizeof(enc_result.fst.data) != crypto_kem_mlkem768_CIPHERTEXTBYTES)
 		errx(1, "enc_result ct bad");
-	if (sizeof(enc_result.snd) != crypto_kem_mlkem768_BYTES)
+	if (sizeof(enc_result.snd.data) != crypto_kem_mlkem768_BYTES)
 		errx(1, "enc_result shared key bad");
 
 	keypair = libcrux_ml_kem_mlkem768_portable_generate_key_pair(kp_seed);
@@ -189,31 +201,20 @@ int main(void) {
 		errx(1, "valid smoke failed");
 	enc_result = libcrux_ml_kem_mlkem768_portable_encapsulate(&keypair.pk,
 	    enc_seed);
-	libcrux_ml_kem_mlkem768_portable_decapsulate(&keypair.sk,
-	    &enc_result.fst, shared_key);
-	if (memcmp(shared_key, enc_result.snd, sizeof(shared_key)) != 0)
+	shared_secret = libcrux_ml_kem_mlkem768_portable_decapsulate(
+	    &keypair.sk, &enc_result.fst);
+	memcpy(shared_key, shared_secret.data, sizeof(shared_key));
+	if (memcmp(shared_key, enc_result.snd.data, sizeof(shared_key)) != 0)
 		errx(1, "smoke failed");
 	return 0;
 }
 _EOF
-cc -Wall -Wextra -Wno-unused-parameter -I . -o libcrux_mlkem768_sha3_check \
-	libcrux_mlkem768_sha3_check.c
-./libcrux_mlkem768_sha3_check
+cc -Wall -Wextra -Wno-unused-parameter -I . -o libcrux_internal_check \
+	libcrux_internal_check.c
+./libcrux_internal_check
 
-# Extract PRNG inputs; there's no nice #defines for these
-key_pair_rng_len=`grep '^libcrux_ml_kem_mlkem768_portable_generate_key_pair.*randomness' libcrux_mlkem768_sha3.h_new | sed 's/.*randomness[[]//;s/\].*//'`
-enc_rng_len=`sed -e '/^static inline tuple_c2 libcrux_ml_kem_mlkem768_portable_encapsulate[(]$/,/[)] {$/!d' < libcrux_mlkem768_sha3.h_new | grep 'uint8_t randomness\[[0-9]*U\][)]' | sed 's/.*randomness\[\([0-9]*\)U\].*/\1/'`
-test -z "$key_pair_rng_len" && die "couldn't find size of libcrux_ml_kem_mlkem768_portable_kyber_generate_key_pair randomness argument"
-test -z "$enc_rng_len" && die "couldn't find size of libcrux_ml_kem_mlkem768_portable_kyber_encapsulate randomness argument"
-
-(
-echo "/* defines for PRNG inputs */"
-echo "#define LIBCRUX_ML_KEM_KEY_PAIR_PRNG_LEN $key_pair_rng_len"
-echo "#define LIBCRUX_ML_KEM_ENC_PRNG_LEN $enc_rng_len"
-) >> libcrux_mlkem768_sha3.h_new
-
-mv libcrux_mlkem768_sha3.h_new libcrux_mlkem768_sha3.h
-rm libcrux_mlkem768_sha3_check libcrux_mlkem768_sha3_check.c
+mv libcrux_internal.h_new libcrux_internal.h
+rm libcrux_internal_check libcrux_internal_check.c
 echo 1>&2
-echo "libcrux_mlkem768_sha3.h OK" 1>&2
+echo "libcrux_internal.h OK" 1>&2
 
