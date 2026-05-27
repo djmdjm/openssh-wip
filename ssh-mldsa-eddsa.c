@@ -332,8 +332,11 @@ ssh_mldsa65_ed25519_generate(struct sshkey *k, int bits)
 	    (k->mldsa_ed25519_sk = malloc(MLDSA65_ED25519_SK_SZ)) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
 	if (crypto_sign_mldsa65_ed25519_keygen(k->mldsa_ed25519_pk,
-	    k->mldsa_ed25519_sk) != 0)
+	    k->mldsa_ed25519_sk) != 0) {
+		free(k->mldsa_ed25519_pk);
+		free(k->mldsa_ed25519_sk);
 		return SSH_ERR_CRYPTO_ERROR;
+	}
 	return 0;
 }
 
