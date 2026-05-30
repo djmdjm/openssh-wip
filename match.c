@@ -58,23 +58,17 @@
 static void
 epsilon_closure(char *states, const char *pattern, size_t M)
 {
-	int changed = 1;
 	size_t i;
 
-	while (changed) {
-		changed = 0;
-		for (i = 0; i < M; i++) {
-			if (!states[i] || pattern[i] != '*')
-				continue;
-			/*
-			 * State i is active, and pattern[i] is '*',
-			 * so we can epsilon-transition to i+1.
-			 */
-			if (!states[i + 1]) {
-				states[i + 1] = 1;
-				changed = 1;
-			}
-		}
+	/* only need a forward pass as there are no back jumps in our grammar */
+	for (i = 0; i < M; i++) {
+		if (!states[i] || pattern[i] != '*')
+			continue;
+		/*
+		 * State i is active, and pattern[i] is '*', so we can
+		 * epsilon-transition to i+1.
+		 */
+		states[i + 1] = 1;
 	}
 }
 
