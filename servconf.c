@@ -2655,10 +2655,12 @@ servconf_merge_subsystems(ServerOptions *dst, ServerOptions *src)
 static int
 serialise_s32(struct sshbuf *buf, int v)
 {
+	uint32_t uv;
 	int r;
 
+	uv = v < 0 ? (uint32_t)(-(v + 1)) + 1 : (uint32_t)v;
 	if ((r = sshbuf_put_u8(buf, v < 0)) != 0 ||
-	    (r = sshbuf_put_u32(buf, v < 0 ? -v : v)) != 0)
+	    (r = sshbuf_put_u32(buf, uv)) != 0)
 		return r;
 	return 0;
 }
@@ -2666,12 +2668,27 @@ serialise_s32(struct sshbuf *buf, int v)
 static int
 serialise_s64(struct sshbuf *buf, int64_t v)
 {
+	uint64_t uv;
 	int r;
 
+	uv = v < 0 ? (uint64_t)(-(v + 1)) + 1 : (uint64_t)v;
 	if ((r = sshbuf_put_u8(buf, v < 0)) != 0 ||
-	    (r = sshbuf_put_u64(buf, v < 0 ? -v : v)) != 0)
+	    (r = sshbuf_put_u64(buf, uv)) != 0)
 		return r;
 	return 0;
+}
+
+static int
+serialise_mode(struct sshbuf *buf, mode_t v)
+{
+	u_int uv;
+
+	if (v == (mode_t)-1)
+		return serialise_s32(buf, -1);
+	uv = (u_int)v;
+	if ((mode_t)uv != v || uv > 0777)
+		return SSH_ERR_INVALID_FORMAT;
+	return serialise_s32(buf, (int)uv);
 }
 
 static int
@@ -2835,8 +2852,8 @@ serialise_streamlocalbindmask(const ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
 
-	if ((r = sshbuf_put_u32(buf,
-	    (uint32_t)options->fwd_opts.streamlocal_bind_mask)) != 0) {
+	if ((r = serialise_mode(buf,
+	    options->fwd_opts.streamlocal_bind_mask)) != 0) {
 		error_fr(r, "serialise");
 		return r;
 	}
@@ -3052,9 +3069,17 @@ deserialise_s32(struct sshbuf *buf, int *v)
 	if ((r = sshbuf_get_u8(buf, &was_signed)) != 0 ||
 	    (r = sshbuf_get_u32(buf, &tmp)) != 0)
 		return r;
-	if (tmp > INT_MAX)
+	if (was_signed > 1)
 		return SSH_ERR_INVALID_FORMAT;
-	*v = was_signed ? -(int)tmp : (int)tmp;
+	if (was_signed) {
+		if (tmp > (uint32_t)INT_MAX + 1)
+			return SSH_ERR_INVALID_FORMAT;
+		*v = tmp == (uint32_t)INT_MAX + 1 ? INT_MIN : -(int)tmp;
+	} else {
+		if (tmp > INT_MAX)
+			return SSH_ERR_INVALID_FORMAT;
+		*v = (int)tmp;
+	}
 	return 0;
 }
 
@@ -3068,9 +3093,35 @@ deserialise_s64(struct sshbuf *buf, int64_t *v)
 	if ((r = sshbuf_get_u8(buf, &was_signed)) != 0 ||
 	    (r = sshbuf_get_u64(buf, &tmp)) != 0)
 		return r;
-	if (tmp > INT64_MAX)
+	if (was_signed > 1)
 		return SSH_ERR_INVALID_FORMAT;
-	*v = was_signed ? -(int64_t)tmp : (int64_t)tmp;
+	if (was_signed) {
+		if (tmp > (uint64_t)INT64_MAX + 1)
+			return SSH_ERR_INVALID_FORMAT;
+		*v = tmp == (uint64_t)INT64_MAX + 1 ?
+		    INT64_MIN : -(int64_t)tmp;
+	} else {
+		if (tmp > INT64_MAX)
+			return SSH_ERR_INVALID_FORMAT;
+		*v = (int64_t)tmp;
+	}
+	return 0;
+}
+
+static int
+deserialise_mode(struct sshbuf *buf, mode_t *v)
+{
+	int r, tmp;
+
+	if ((r = deserialise_s32(buf, &tmp)) != 0)
+		return r;
+	if (tmp == -1) {
+		*v = (mode_t)-1;
+		return 0;
+	}
+	if (tmp < 0 || tmp > 0777)
+		return SSH_ERR_INVALID_FORMAT;
+	*v = (mode_t)tmp;
 	return 0;
 }
 
@@ -3110,6 +3161,29 @@ free_string_array(char **a, u_int n)
 }
 
 static int
+deserialise_count(struct sshbuf *buf, u_int *np, size_t min_entry_len,
+    const char *what)
+{
+	int r;
+	uint32_t n;
+
+	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
+		error_fr(r, "deserialise %s length", what);
+		return r;
+	}
+	if (n > UINT_MAX) {
+		error_f("bad number of %s", what);
+		return SSH_ERR_INVALID_FORMAT;
+	}
+	if (min_entry_len != 0 && n > sshbuf_len(buf) / min_entry_len) {
+		error_f("bad number of %s", what);
+		return SSH_ERR_INVALID_FORMAT;
+	}
+	*np = n;
+	return 0;
+}
+
+static int
 deserialise_nullable_string_array(struct sshbuf *buf, char ***arrayp,
     u_int *np)
 {
@@ -3119,10 +3193,8 @@ deserialise_nullable_string_array(struct sshbuf *buf, char ***arrayp,
 
 	*arrayp = NULL;
 	*np = 0;
-	if ((r = sshbuf_get_u32(buf, &n)) != 0)
+	if ((r = deserialise_count(buf, &n, 1, "strings")) != 0)
 		return r;
-	if (n > sshbuf_len(buf))
-		return SSH_ERR_INVALID_FORMAT;
 	if (n > 0)
 		a = xcalloc(n, sizeof(*a));
 	for (i = 0; i < n; i++) {
@@ -3154,17 +3226,11 @@ static int
 deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 {
 	int r, *userprovided = NULL;
-	uint32_t n, i;
+	u_int i, n;
 	char **files = NULL;
 
-	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
-		error_fr(r, "deserialise length");
+	if ((r = deserialise_count(buf, &n, 6, "host key files")) != 0)
 		return r;
-	}
-	if (n > sshbuf_len(buf) / 6) {
-		error_f("bad number of host key files");
-		return SSH_ERR_INVALID_FORMAT;
-	}
 	if (n > 0) {
 		userprovided = xcalloc(n, sizeof(*userprovided));
 		files = xcalloc(n, sizeof(*files));
@@ -3202,17 +3268,11 @@ static int
 deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
-	uint32_t n, i;
+	u_int i, n;
 	struct queued_listenaddr *qla = NULL;
 
-	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
-		error_fr(r, "deserialise length");
+	if ((r = deserialise_count(buf, &n, 10, "listen addresses")) != 0)
 		return r;
-	}
-	if (n > sshbuf_len(buf) / 10) {
-		error_f("bad number of listen addresses");
-		return SSH_ERR_INVALID_FORMAT;
-	}
 	if (n > 0)
 		qla = xcalloc(n, sizeof(*qla));
 	for (i = 0; i < n; i++) {
@@ -3239,6 +3299,11 @@ deserialise_logfacility(ServerOptions *options, struct sshbuf *buf)
 		error_fr(r, "deserialise");
 		return r;
 	}
+	if (tmp != SYSLOG_FACILITY_NOT_SET &&
+	    log_facility_name((SyslogFacility)tmp) == NULL) {
+		error_f("bad syslog facility");
+		return SSH_ERR_INVALID_FORMAT;
+	}
 	options->log_facility = (SyslogFacility)tmp;
 
 	return 0;
@@ -3247,12 +3312,16 @@ deserialise_logfacility(ServerOptions *options, struct sshbuf *buf)
 static int
 deserialise_loglevel(ServerOptions *options, struct sshbuf *buf)
 {
-
 	int r, tmp;
 
 	if ((r = deserialise_s32(buf, &tmp)) != 0) {
 		error_fr(r, "deserialise");
 		return r;
+	}
+	if (tmp != SYSLOG_LEVEL_NOT_SET &&
+	    log_level_name((LogLevel)tmp) == NULL) {
+		error_f("bad log level");
+		return SSH_ERR_INVALID_FORMAT;
 	}
 	options->log_level = (LogLevel)tmp;
 
@@ -3265,13 +3334,11 @@ deserialise_port(ServerOptions *options, struct sshbuf *buf)
 	int r;
 	u_int i, n;
 
-	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
-		error_fr(r, "deserialise length");
+	if ((r = deserialise_count(buf, &n, 5, "ports")) != 0)
 		return r;
-	}
 	if (n > MAX_PORTS) {
-		error_fr(r, "bad number of ports");
-		return r;
+		error_f("bad number of ports");
+		return SSH_ERR_INVALID_FORMAT;
 	}
 	options->num_ports = n;
 	memset(options->ports, 0, sizeof(options->ports));
@@ -3300,13 +3367,12 @@ static int
 deserialise_streamlocalbindmask(ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
-	uint32_t tmp;
 
-	if ((r = sshbuf_get_u32(buf, &tmp)) != 0) {
+	if ((r = deserialise_mode(buf,
+	    &options->fwd_opts.streamlocal_bind_mask)) != 0) {
 		error_fr(r, "deserialise");
 		return r;
 	}
-	options->fwd_opts.streamlocal_bind_mask = (mode_t)tmp;
 	return 0;
 }
 
@@ -3319,6 +3385,10 @@ deserialise_streamlocalbindunlink(ServerOptions *options, struct sshbuf *buf)
 	if ((r = sshbuf_get_u8(buf, &tmp)) != 0) {
 		error_fr(r, "deserialise");
 		return r;
+	}
+	if (tmp > 1) {
+		error_f("bad boolean");
+		return SSH_ERR_INVALID_FORMAT;
 	}
 	options->fwd_opts.streamlocal_bind_unlink = tmp;
 	return 0;
@@ -3417,14 +3487,8 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 	u_int i, n;
 	char **names = NULL, **commands = NULL, **args = NULL;
 
-	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
-		error_fr(r, "deserialise length");
+	if ((r = deserialise_count(buf, &n, 12, "subsystems")) != 0)
 		return r;
-	}
-	if (n > sshbuf_len(buf) / 12) {
-		error_f("bad number of subsystems");
-		return SSH_ERR_INVALID_FORMAT;
-	}
 	if (n > 0) {
 		names = xcalloc(n, sizeof(*names));
 		commands = xcalloc(n, sizeof(*names));
@@ -3479,7 +3543,7 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 	}
 #define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
-		error_fr(r, "deseserialise %s", #var); \
+		error_fr(r, "deserialise %s", #var); \
 		goto out; \
 	}
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
@@ -3567,7 +3631,7 @@ free_permituserenv(ServerOptions *options)
 	free(options->permit_user_env_allowlist);
 }
 
-static int
+static void
 free_subsystem(ServerOptions *options)
 {
 	u_int i;
@@ -3580,7 +3644,6 @@ free_subsystem(ServerOptions *options)
 	free(options->subsystem_name);
 	free(options->subsystem_command);
 	free(options->subsystem_args);
-	return 0;
 }
 
 void
@@ -3742,13 +3805,15 @@ copy_subsystem(ServerOptions *dst, const ServerOptions *src)
 /*
  * Copy any supported values that are set.
  *
- * If the preauth flag is set, we do not bother copying the string or
- * array values that are not used pre-authentication, because any that we
- * do use must be explicitly sent in mm_getpwnamallow().
+ * If the preauth flag is set, skip the post-authentication-only manual
+ * string cleanup and subsystem merge below.
  */
 void
 copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 {
+	if (dst == src)
+		return;
+
 #define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	cp(copy_server_option_int(&dst->var, src->var);)
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
