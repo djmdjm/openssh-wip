@@ -124,8 +124,18 @@ struct per_source_penalty {
  * the configuration structure and the parsing code and helps us write
  * serialisation/deserialisation functions that we can be pretty sure will
  * capture every value in the configuration file.
+ *
+ * Entry formats:
+ *   SSHCONF_INT(field, keyword, scope, multistate, default, copy)
+ *   SSHCONF_INTFLAG(field, keyword, scope, default, copy)
+ *   SSHCONF_STRING(field, keyword, scope, copy)
+ *   SSHCONF_STRARRAY(field, nfield, keyword, scope, copy)
+ *   SSHCONF_CUSTOM(keyword, suffix, scope, copy)
+ *   SSHCONF_NONCONF(suffix)
+ *   SSHCONF_NOSUPPORT(field, keyword, token, scope)
+ *   SSHCONF_ALIAS(old_keyword, keyword, scope)
  */
-#define SSHD_CONFIG_ENTRIES_BASE \
+#define SSHD_CONFIG_ENTRIES_CUSTOM \
 SSHCONF_CUSTOM(Port, port, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_CUSTOM(ListenAddress, listenaddress, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_CUSTOM(HostKey, hostkeyfile, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
@@ -141,8 +151,9 @@ SSHCONF_CUSTOM(MaxStartups, maxstartups, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_CUSTOM(PerSourceNetBlockSize, persourcenetblocksize, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_CUSTOM(PerSourcePenalties, persourcepenalties, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_CUSTOM(RekeyLimit, rekeylimit, SSHCFG_ALL, SSHCFG_COPY_MATCH) \
-SSHCONF_NONCONF(timingsecret) \
-\
+SSHCONF_NONCONF(timingsecret)
+
+#define SSHD_CONFIG_ENTRIES_MAIN \
 SSHCONF_INT(address_family, AddressFamily, SSHCFG_GLOBAL, multistate_addressfamily, AF_UNSPEC, SSHCFG_COPY_NONE) \
 SSHCONF_STRING(routing_domain, RDomain, SSHCFG_ALL, SSHCFG_COPY_MATCH) \
 SSHCONF_STRARRAY(host_cert_files, num_host_cert_files, HostCertificate, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
@@ -219,8 +230,9 @@ SSHCONF_STRARRAY(channel_timeouts, num_channel_timeouts, ChannelTimeout, SSHCFG_
 SSHCONF_INT(unused_connection_timeout, UnusedConnectionTimeout, SSHCFG_ALL, NULL, 0, SSHCFG_COPY_MATCH) \
 SSHCONF_STRING(sshd_session_path, SshdSessionPath, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_STRING(sshd_auth_path, SshdAuthPath, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
-SSHCONF_INTFLAG(refuse_connection, RefuseConnection, SSHCFG_ALL, 0, SSHCFG_COPY_MATCH) \
-\
+SSHCONF_INTFLAG(refuse_connection, RefuseConnection, SSHCFG_ALL, 0, SSHCFG_COPY_MATCH)
+
+#define SSHD_CONFIG_ENTRIES_LEGACY \
 SSHCONF_NOSUPPORT(server_key_bits, ServerKeyBits, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
 SSHCONF_NOSUPPORT(key_regeneration_interval, KeyRegenerationInterval, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
 SSHCONF_NOSUPPORT(rhosts_authentication, RHostsAuthentication, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
@@ -232,16 +244,23 @@ SSHCONF_NOSUPPORT(verify_reverse_mapping, VerifyReverseMapping, SSHCONF_DEPRECAT
 SSHCONF_NOSUPPORT(reverse_mapping_check, ReverseMappingCheck, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
 SSHCONF_NOSUPPORT(authorized_keys_file2, AuthorizedKeysFile2, SSHCONF_DEPRECATED, SSHCFG_ALL) \
 SSHCONF_NOSUPPORT(use_privilege_separation, UsePrivilegeSeparation, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
-SSHCONF_NOSUPPORT(protocol, Protocol, SSHCONF_IGNORE, SSHCFG_GLOBAL) \
-\
+SSHCONF_NOSUPPORT(protocol, Protocol, SSHCONF_IGNORE, SSHCFG_GLOBAL)
+
+#define SSHD_CONFIG_ENTRIES_ALIASES \
 SSHCONF_ALIAS(HostDSAKey, HostKey, SSHCFG_GLOBAL) \
 SSHCONF_ALIAS(HostBasedAcceptedKeyTypes, HostbasedAcceptedAlgorithms, SSHCFG_ALL) \
 SSHCONF_ALIAS(PubkeyAcceptedKeyTypes, PubkeyAcceptedAlgorithms, SSHCFG_ALL) \
 SSHCONF_ALIAS(DSAAuthentication, PubkeyAuthentication, SSHCFG_GLOBAL) \
 SSHCONF_ALIAS(ChallengeResponseAuthentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
 SSHCONF_ALIAS(SKeyAuthentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
-SSHCONF_ALIAS(KeepAlive, TCPKeepAlive, SSHCFG_GLOBAL) \
-SSHD_CONFIG_ENTRIES_LASTLOG
+SSHCONF_ALIAS(KeepAlive, TCPKeepAlive, SSHCFG_GLOBAL)
+
+#define SSHD_CONFIG_ENTRIES_BASE \
+	SSHD_CONFIG_ENTRIES_CUSTOM \
+	SSHD_CONFIG_ENTRIES_MAIN \
+	SSHD_CONFIG_ENTRIES_LEGACY \
+	SSHD_CONFIG_ENTRIES_ALIASES \
+	SSHD_CONFIG_ENTRIES_LASTLOG
 
 #ifdef DISABLE_LASTLOG
 #define SSHD_CONFIG_ENTRIES_LASTLOG \
