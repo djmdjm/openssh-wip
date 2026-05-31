@@ -2698,6 +2698,21 @@ serialise_nullable_string(struct sshbuf *buf, const char *s)
 }
 
 static int
+serialise_nullable_string_array(struct sshbuf *buf, char **a, u_int n)
+{
+	int r;
+	u_int i;
+
+	if ((r = sshbuf_put_u32(buf, n)) != 0)
+		return r;
+	for (i = 0; i < n; i++) {
+		if ((r = serialise_nullable_string(buf, a[i])) != 0)
+			return r;
+	}
+	return 0;
+}
+
+static int
 serialise_hostkeyfile(const ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
@@ -2966,7 +2981,6 @@ int
 serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 {
 	struct sshbuf *buf = NULL;
-	u_int i;
 	int r = SSH_ERR_INTERNAL_ERROR;
 
 	*bufp = NULL;
@@ -2994,15 +3008,10 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 		goto out; \
 	}
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
-	if ((r = sshbuf_put_u32(buf, options->nvar)) != 0) { \
-		error_fr(r, "serialise %s length", #var); \
+	if ((r = serialise_nullable_string_array(buf, options->var, \
+	    options->nvar)) != 0) { \
+		error_fr(r, "serialise %s", #var); \
 		goto out; \
-	} \
-	for (i = 0; i < options->nvar; i++) { \
-		if ((r = serialise_nullable_string(buf, options->var[i])) != 0) { \
-			error_fr(r, "serialise %s entry", #var); \
-			goto out; \
-		} \
 	}
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	if ((r = serialise_##funcsuffix(options, buf)) != 0) \
@@ -3088,6 +3097,57 @@ deserialise_nullable_string(struct sshbuf *buf, char **sp)
 	return sshbuf_get_cstring(buf, sp, NULL);
 }
 
+static void
+free_string_array(char **a, u_int n)
+{
+	u_int i;
+
+	if (a == NULL)
+		return;
+	for (i = 0; i < n; i++)
+		free(a[i]);
+	free(a);
+}
+
+static int
+deserialise_nullable_string_array(struct sshbuf *buf, char ***arrayp,
+    u_int *np)
+{
+	char **a = NULL;
+	int r;
+	u_int i, n;
+
+	*arrayp = NULL;
+	*np = 0;
+	if ((r = sshbuf_get_u32(buf, &n)) != 0)
+		return r;
+	if (n > 0)
+		a = xcalloc(n, sizeof(*a));
+	for (i = 0; i < n; i++) {
+		if ((r = deserialise_nullable_string(buf, a + i)) != 0) {
+			free_string_array(a, i + 1);
+			return r;
+		}
+	}
+	*arrayp = a;
+	*np = n;
+	return 0;
+}
+
+static void
+free_queued_listen_addrs(struct queued_listenaddr *qla, u_int n)
+{
+	u_int i;
+
+	if (qla == NULL)
+		return;
+	for (i = 0; i < n; i++) {
+		free(qla[i].addr);
+		free(qla[i].rdomain);
+	}
+	free(qla);
+}
+
 static int
 deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 {
@@ -3107,9 +3167,7 @@ deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 		if ((r = deserialise_s32(buf, userprovided + i)) != 0 ||
 		    (r = deserialise_nullable_string(buf, files + i)) != 0) {
 			error_fr(r, "deserialise member");
-			while (i > 0)
-				free(files[--i]);
-			free(files);
+			free_string_array(files, i + 1);
 			free(userprovided);
 			return r;
 		}
@@ -3138,7 +3196,7 @@ static int
 deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
-	uint32_t n, i, j;
+	uint32_t n, i;
 	struct queued_listenaddr *qla = NULL;
 
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
@@ -3153,13 +3211,7 @@ deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 		    (r = deserialise_nullable_string(buf,
 		    &qla[i].rdomain)) != 0) {
 			error_fr(r, "deserialise member");
-			free(qla[i].addr);
-			free(qla[i].rdomain);
-			for (j = 0; j < i; j++) {
-				free(qla[j].addr);
-				free(qla[j].rdomain);
-			}
-			free(qla);
+			free_queued_listen_addrs(qla, i + 1);
 			return r;
 		}
 	}
@@ -3352,7 +3404,7 @@ static int
 deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
-	u_int i, j, n;
+	u_int i, n;
 	char **names = NULL, **commands = NULL, **args = NULL;
 
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
@@ -3369,14 +3421,9 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 		    (r = sshbuf_get_cstring(buf, commands + i, NULL)) != 0 ||
 		    (r = sshbuf_get_cstring(buf, args + i, NULL)) != 0) {
 			error_fr(r, "deserialise member");
-			for (j = 0; j < i; j++) {
-				free(names[j]);
-				free(commands[j]);
-				free(args[j]);
-			}
-			free(names);
-			free(commands);
-			free(args);
+			free_string_array(names, i + 1);
+			free_string_array(commands, i + 1);
+			free_string_array(args, i + 1);
 			return r;
 		}
 	}
@@ -3402,8 +3449,6 @@ deserialise_timingsecret(ServerOptions *options, struct sshbuf *buf)
 int
 deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 {
-	u_int i, j, n;
-	char **arr;
 	int r = SSH_ERR_INTERNAL_ERROR;
 	uint32_t version;
 	ServerOptions new_options;
@@ -3434,22 +3479,11 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 		goto out; \
 	}
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
-	if ((r = sshbuf_get_u32(buf, &n)) != 0) { \
-		error_fr(r, "deserialise %s length", #var); \
+	if ((r = deserialise_nullable_string_array(buf, &new_options.var, \
+	    &new_options.nvar)) != 0) { \
+		error_fr(r, "deserialise %s", #var); \
 		goto out; \
-	} \
-	arr = n == 0 ? NULL : xcalloc(n, sizeof(*arr)); \
-	for (i = 0; i < n; i++) { \
-		if ((r = deserialise_nullable_string(buf, arr + i)) != 0) { \
-			error_fr(r, "deserialise %s entry", #var); \
-			for (j = 0; j < i; j++) \
-				free(arr[j]); \
-			free(arr); \
-			goto out; \
-		} \
-	} \
-	new_options.nvar = n; \
-	new_options.var = arr;
+	}
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	if ((r = deserialise_##funcsuffix(&new_options, buf)) != 0) \
 		goto out;
@@ -3502,11 +3536,8 @@ free_listenaddress(ServerOptions *options)
 {
 	u_int i;
 
-	for (i = 0; i < options->num_queued_listens; i++) {
-		free(options->queued_listen_addrs[i].addr);
-		free(options->queued_listen_addrs[i].rdomain);
-	}
-	free(options->queued_listen_addrs);
+	free_queued_listen_addrs(options->queued_listen_addrs,
+	    options->num_queued_listens);
 
 	for (i = 0; i < options->num_listen_addrs; i++) {
 		free(options->listen_addrs[i].rdomain);
@@ -3541,15 +3572,11 @@ free_subsystem(ServerOptions *options)
 void
 free_server_options(ServerOptions *options)
 {
-	u_int i;
-
 #define SSHCONF_INT(var, conf, flags, ms, def, cp)	/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp)	/* empty */
 #define SSHCONF_STRING(var, conf, flags, cp)		free(options->var);
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
-	for (i = 0; i < options->nvar; i++) \
-		free(options->var[i]); \
-	free(options->var);
+	free_string_array(options->var, options->nvar);
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	free_##funcsuffix(options);
 #define SSHCONF_NONCONF(funcsuffix) \
