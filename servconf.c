@@ -2573,6 +2573,7 @@ parse_server_match_config(ServerOptions *options,
 	parse_server_config(&mo, "reprocess config", cfg, includes,
 	    connectinfo, 0);
 	copy_set_server_options(options, &mo, 0);
+	free_server_options(&mo);
 }
 
 int
