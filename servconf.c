@@ -3121,6 +3121,8 @@ deserialise_nullable_string_array(struct sshbuf *buf, char ***arrayp,
 	*np = 0;
 	if ((r = sshbuf_get_u32(buf, &n)) != 0)
 		return r;
+	if (n > sshbuf_len(buf))
+		return SSH_ERR_INVALID_FORMAT;
 	if (n > 0)
 		a = xcalloc(n, sizeof(*a));
 	for (i = 0; i < n; i++) {
@@ -3158,6 +3160,10 @@ deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
 		error_fr(r, "deserialise length");
 		return r;
+	}
+	if (n > sshbuf_len(buf) / 6) {
+		error_f("bad number of host key files");
+		return SSH_ERR_INVALID_FORMAT;
 	}
 	if (n > 0) {
 		userprovided = xcalloc(n, sizeof(*userprovided));
@@ -3202,6 +3208,10 @@ deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
 		error_fr(r, "deserialise length");
 		return r;
+	}
+	if (n > sshbuf_len(buf) / 10) {
+		error_f("bad number of listen addresses");
+		return SSH_ERR_INVALID_FORMAT;
 	}
 	if (n > 0)
 		qla = xcalloc(n, sizeof(*qla));
@@ -3410,6 +3420,10 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) {
 		error_fr(r, "deserialise length");
 		return r;
+	}
+	if (n > sshbuf_len(buf) / 12) {
+		error_f("bad number of subsystems");
+		return SSH_ERR_INVALID_FORMAT;
 	}
 	if (n > 0) {
 		names = xcalloc(n, sizeof(*names));
