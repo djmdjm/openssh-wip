@@ -76,7 +76,6 @@ initialize_server_options(ServerOptions *options)
 {
 	memset(options, 0, sizeof(*options));
 #define SSHCONF_INT(var, conf, flags, ms, def, cp)	options->var = -1;
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp)	options->var = -1;
 #define SSHCONF_STRING(var, conf, flags, cp)		options->var = NULL;
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
@@ -86,8 +85,7 @@ initialize_server_options(ServerOptions *options)
 	init_##funcsuffix(options)
 #define SSHCONF_NONCONF(funcsuffix) \
 	init_##funcsuffix(options)
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 	/* Using macros for these is a bit overkill but forces consistency */
@@ -171,14 +169,12 @@ initialize_server_options(ServerOptions *options)
 #undef init_subsystem
 #undef init_timingsecret
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 }
 
@@ -263,7 +259,6 @@ fill_default_server_options(ServerOptions *options)
 #define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	if (options->var == -1) \
 		options->var = def;
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	if (options->var == -1) \
 		options->var = def;
@@ -271,8 +266,7 @@ fill_default_server_options(ServerOptions *options)
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	/* done manually */
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	/* done manually */
 #define SSHCONF_NONCONF(funcsuffix)			/* done manually */
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 	/* XXX maybe use macros here too to force consistency? */
@@ -280,14 +274,12 @@ fill_default_server_options(ServerOptions *options)
 	SSHD_CONFIG_ENTRIES
 
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 	if (options->num_host_key_files == 0) {
@@ -433,14 +425,12 @@ fill_default_server_options(ServerOptions *options)
 
 /* Macros to declare ServerOpCodes enum values */
 #define SSHCONF_INT(var, conf, flags, ms, def, cp)	s##conf,
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		s##conf,
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp)	s##conf,
 #define SSHCONF_STRING(var, conf, flags, cp)		s##conf,
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	s##conf,
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	s##conf,
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 /* Keyword tokens. */
@@ -451,14 +441,12 @@ typedef enum {
 	sDeprecated, sIgnore, sUnsupported
 } ServerOpCodes;
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 #define SSHCFG_GLOBAL		0x01	/* allowed in main section of config */
@@ -475,12 +463,11 @@ typedef enum {
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	SSHCONF_KW(conf, flags)
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	SSHCONF_KW(conf, flags)
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp) \
-	{ #conf, sUnsupported, flags },
-#define SSHCONF_IGNORE(conf) \
-	{ #conf, sIgnore, SSHCFG_ALL },
-#define SSHCONF_DEPRECATED(conf) \
-	{ #conf, sDeprecated, SSHCFG_ALL },
+#define SSHCONF_DEPRECATED				sDeprecated
+#define SSHCONF_IGNORE					sIgnore
+#define SSHCONF_UNSUPPORTED				sUnsupported
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags) \
+	{ #conf, opcode, flags },
 #define SSHCONF_ALIAS(old, conf, flags) \
 	{ #old, s##conf, flags },
 
@@ -496,14 +483,15 @@ static struct {
 	{ NULL, sBadOption, 0 }
 };
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
 #undef SSHCONF_DEPRECATED
+#undef SSHCONF_IGNORE
+#undef SSHCONF_UNSUPPORTED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 static struct {
@@ -1361,6 +1349,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 			*intptr = value;
 		break;
 
+#ifdef KRB5
 	case sKerberosAuthentication:
 		intptr = &options->kerberos_authentication;
 		goto parse_flag;
@@ -1376,7 +1365,9 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 	case sKerberosGetAFSToken:
 		intptr = &options->kerberos_get_afs_token;
 		goto parse_flag;
+#endif /* KRB5 */
 
+#ifdef GSSAPI
 	case sGssAuthentication:
 		intptr = &options->gss_authentication;
 		goto parse_flag;
@@ -1392,6 +1383,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 	case sGssStrictAcceptor:
 		intptr = &options->gss_strict_acceptor;
 		goto parse_flag;
+#endif /* GSSAPI */
 
 	case sPasswordAuthentication:
 		intptr = &options->password_authentication;
@@ -2990,7 +2982,6 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 		error_fr(r, "serialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	if ((r = serialise_s32(buf, options->var)) != 0) { \
 		error_fr(r, "serialise %s", #var); \
@@ -3018,21 +3009,18 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 #define SSHCONF_NONCONF(funcsuffix) \
 	if ((r = serialise_##funcsuffix(options, buf)) != 0) \
 		goto out;
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 	SSHD_CONFIG_ENTRIES
 
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 	/* success */
@@ -3434,7 +3422,6 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 		error_fr(r, "deseserialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deserialise %s", #var); \
@@ -3468,8 +3455,7 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 #define SSHCONF_NONCONF(funcsuffix) \
 	if ((r = deserialise_##funcsuffix(&new_options, buf)) != 0) \
 		goto out;
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 	SSHD_CONFIG_ENTRIES
@@ -3481,14 +3467,12 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 	}
 
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 	/* success */
@@ -3559,7 +3543,6 @@ free_server_options(ServerOptions *options)
 	u_int i;
 
 #define SSHCONF_INT(var, conf, flags, ms, def, cp)	/* empty */
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp)	/* empty */
 #define SSHCONF_STRING(var, conf, flags, cp)		free(options->var);
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
@@ -3570,8 +3553,7 @@ free_server_options(ServerOptions *options)
 	free_##funcsuffix(options);
 #define SSHCONF_NONCONF(funcsuffix) \
 	free_##funcsuffix(options);
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 #define free_ipqos(options)
@@ -3603,14 +3585,12 @@ free_server_options(ServerOptions *options)
 #undef free_timingsecret
 
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 	initialize_server_options(options);
@@ -3729,7 +3709,6 @@ copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 {
 #define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	cp(copy_server_option_int(&dst->var, src->var);)
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	cp(copy_server_option_int(&dst->var, src->var);)
 #define SSHCONF_STRING(var, conf, flags, cp) \
@@ -3740,21 +3719,18 @@ copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	cp(copy_##funcsuffix(dst, src);)
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 	SSHD_CONFIG_ENTRIES
 
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 	/*

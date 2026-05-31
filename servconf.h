@@ -116,10 +116,9 @@ struct per_source_penalty {
  * their corresponding variable definitions in ServerOptions. The integer
  * options also include defaults for initialisation.
  *
- * Unsupported options use SSHCONF_INT_UNSUP. This leaves the placeholder
- * variable in ServerOptions but marks the keyword as unsupported in the
- * parser. Deprecated options get SSHCONF_DEPRECATED or SSHCONFIG_IGNORE for
- * silent deprecation. Deprecated aliases that still work use SSHCONF_ALIAS.
+ * Unsupported, deprecated and ignored options use SSHCONF_NOSUPPORT and
+ * don't populate ServerOptions. Deprecated aliases that still work use
+ * SSHCONF_ALIAS.
  *
  * Why go to all this trouble? It ensures a level of consistency between
  * the configuration structure and the parsing code and helps us write
@@ -222,23 +221,23 @@ SSHCONF_STRING(sshd_session_path, SshdSessionPath, SSHCFG_GLOBAL, SSHCFG_COPY_NO
 SSHCONF_STRING(sshd_auth_path, SshdAuthPath, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
 SSHCONF_INTFLAG(refuse_connection, RefuseConnection, SSHCFG_ALL, 0, SSHCFG_COPY_MATCH) \
 \
-SSHCONF_DEPRECATED(ServerKeyBits) \
-SSHCONF_DEPRECATED(KeyRegenerationInterval) \
-SSHCONF_DEPRECATED(RHostsAuthentication) \
-SSHCONF_DEPRECATED(RhostsRSAAuthentication) \
-SSHCONF_DEPRECATED(RSAAuthentication) \
-SSHCONF_DEPRECATED(CheckMail) \
-SSHCONF_DEPRECATED(UseLogin) \
-SSHCONF_DEPRECATED(VerifyReverseMapping) \
-SSHCONF_DEPRECATED(ReverseMappingCheck) \
-SSHCONF_DEPRECATED(AuthorizedKeysFile2) \
-SSHCONF_DEPRECATED(UsePrivilegeSeparation) \
-SSHCONF_IGNORE(Protocol) \
+SSHCONF_NOSUPPORT(server_key_bits, ServerKeyBits, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(key_regeneration_interval, KeyRegenerationInterval, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(rhosts_authentication, RHostsAuthentication, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(rhosts_rsa_authentication, RhostsRSAAuthentication, SSHCONF_DEPRECATED, SSHCFG_ALL) \
+SSHCONF_NOSUPPORT(rsa_authentication, RSAAuthentication, SSHCONF_DEPRECATED, SSHCFG_ALL) \
+SSHCONF_NOSUPPORT(check_mail, CheckMail, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(use_login, UseLogin, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(verify_reverse_mapping, VerifyReverseMapping, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(reverse_mapping_check, ReverseMappingCheck, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(authorized_keys_file2, AuthorizedKeysFile2, SSHCONF_DEPRECATED, SSHCFG_ALL) \
+SSHCONF_NOSUPPORT(use_privilege_separation, UsePrivilegeSeparation, SSHCONF_DEPRECATED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(protocol, Protocol, SSHCONF_IGNORE, SSHCFG_GLOBAL) \
 \
 SSHCONF_ALIAS(HostDSAKey, HostKey, SSHCFG_GLOBAL) \
 SSHCONF_ALIAS(HostBasedAcceptedKeyTypes, HostbasedAcceptedAlgorithms, SSHCFG_ALL) \
 SSHCONF_ALIAS(PubkeyAcceptedKeyTypes, PubkeyAcceptedAlgorithms, SSHCFG_ALL) \
-SSHCONF_ALIAS(DSAAuthentication, PubkeyAuthentication, SSHCFG_ALL) \
+SSHCONF_ALIAS(DSAAuthentication, PubkeyAuthentication, SSHCFG_GLOBAL) \
 SSHCONF_ALIAS(ChallengeResponseAuthentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
 SSHCONF_ALIAS(SKeyAuthentication, KbdInteractiveAuthentication, SSHCFG_ALL) \
 SSHCONF_ALIAS(KeepAlive, TCPKeepAlive, SSHCFG_GLOBAL) \
@@ -246,7 +245,7 @@ SSHD_CONFIG_ENTRIES_LASTLOG
 
 #ifdef DISABLE_LASTLOG
 #define SSHD_CONFIG_ENTRIES_LASTLOG \
-SSHCONF_INT_UNSUP(print_lastlog, PrintLastLog, SSHCFG_GLOBAL, SSHCFG_COPY_NONE)
+SSHCONF_NOSUPPORT(print_lastlog, PrintLastLog, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL)
 #else
 #define SSHD_CONFIG_ENTRIES_LASTLOG \
 SSHCONF_INTFLAG(print_lastlog, PrintLastLog, SSHCFG_GLOBAL, 1, SSHCFG_COPY_NONE)
@@ -255,20 +254,20 @@ SSHCONF_INTFLAG(print_lastlog, PrintLastLog, SSHCFG_GLOBAL, 1, SSHCFG_COPY_NONE)
 /* Compile-time enabled options */
 #ifdef KRB5
 
-#define SSHD_CONFIG_ENTRIES_KRB5_AFS \
-SSHCONF_INTFLAG(kerberos_get_afs_token, KerberosGetAFSToken, SSHCFG_GLOBAL, 0, SSHCFG_COPY_NONE)
 
 #define SSHD_CONFIG_ENTRIES_KRB5 \
 SSHCONF_INTFLAG(kerberos_authentication, KerberosAuthentication, SSHCFG_ALL, 0, SSHCFG_COPY_MATCH) \
 SSHCONF_INTFLAG(kerberos_or_local_passwd, KerberosOrLocalPasswd, SSHCFG_GLOBAL, 1, SSHCFG_COPY_NONE) \
 SSHCONF_INTFLAG(kerberos_ticket_cleanup, KerberosTicketCleanup, SSHCFG_GLOBAL, 1, SSHCFG_COPY_NONE) \
-SSHD_CONFIG_ENTRIES_KRB5_AFS
+SSHCONF_INTFLAG(kerberos_get_afs_token, KerberosGetAFSToken, SSHCFG_GLOBAL, 0, SSHCFG_COPY_NONE)
 #else /* KRB5 */
 #define SSHD_CONFIG_ENTRIES_KRB5 \
-SSHCONF_INT_UNSUP(kerberos_authentication, KerberosAuthentication, SSHCFG_ALL, SSHCFG_COPY_NONE) \
-SSHCONF_INT_UNSUP(kerberos_or_local_passwd, KerberosOrLocalPasswd, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
-SSHCONF_INT_UNSUP(kerberos_ticket_cleanup, KerberosTicketCleanup, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
-SSHCONF_INT_UNSUP(kerberos_get_afs_token, KerberosGetAFSToken, SSHCFG_GLOBAL, SSHCFG_COPY_NONE)
+SSHCONF_NOSUPPORT(kerberos_authentication, KerberosAuthentication, SSHCONF_UNSUPPORTED, SSHCFG_ALL) \
+SSHCONF_NOSUPPORT(kerberos_or_local_passwd, KerberosOrLocalPasswd, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(kerberos_ticket_cleanup, KerberosTicketCleanup, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(kerberos_get_afs_token, KerberosGetAFSToken, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(kerberos_tgt_passing, KerberosTgtPassing, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(afs_token_passing, AFSTokenPassing, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL)
 #endif /* KRB5 */
 
 #ifdef GSSAPI
@@ -279,10 +278,10 @@ SSHCONF_INTFLAG(gss_deleg_creds, GssDelegateCreds, SSHCFG_GLOBAL, 1, SSHCFG_COPY
 SSHCONF_INTFLAG(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL, 1, SSHCFG_COPY_NONE)
 #else /* GSSAPI */
 #define SSHD_CONFIG_ENTRIES_GSS \
-SSHCONF_INT_UNSUP(gss_authentication, GssAuthentication, SSHCFG_ALL, SSHCFG_COPY_NONE) \
-SSHCONF_INT_UNSUP(gss_cleanup_creds, GssCleanupCreds, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
-SSHCONF_INT_UNSUP(gss_deleg_creds, GssDelegateCreds, SSHCFG_GLOBAL, SSHCFG_COPY_NONE) \
-SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL, SSHCFG_COPY_NONE)
+SSHCONF_NOSUPPORT(gss_authentication, GssAuthentication, SSHCONF_UNSUPPORTED, SSHCFG_ALL) \
+SSHCONF_NOSUPPORT(gss_cleanup_creds, GssCleanupCreds, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(gss_deleg_creds, GssDelegateCreds, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL) \
+SSHCONF_NOSUPPORT(gss_strict_acceptor, GssStrictAcceptor, SSHCONF_UNSUPPORTED, SSHCFG_GLOBAL)
 #endif /* GSSAPI */
 
 #define SSHD_CONFIG_ENTRIES \
@@ -292,7 +291,6 @@ SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL, SSHCFG_
 
 /* Macros to declare ServerOptions member variables */
 #define SSHCONF_INT(var, conf, flags, ms, def, cp)	int var;
-#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		int var;
 #define SSHCONF_INTFLAG(var, conf, flags, def, cp)	int var;
 #define SSHCONF_STRING(var, conf, flags, cp)		char *var;
 #define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	\
@@ -300,8 +298,7 @@ SSHCONF_INT_UNSUP(gss_strict_acceptor, GssStrictAcceptor, SSHCFG_GLOBAL, SSHCFG_
 	u_int nvar;
 #define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	/* empty */
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
-#define SSHCONF_IGNORE(conf)				/* empty */
-#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_NOSUPPORT(var, conf, opcode, flags)	/* empty */
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 typedef struct ServerOptions {
@@ -352,14 +349,12 @@ typedef struct ServerOptions {
 	uint64_t timing_secret;
 }       ServerOptions;
 #undef SSHCONF_INT
-#undef SSHCONF_INT_UNSUP
 #undef SSHCONF_INTFLAG
 #undef SSHCONF_STRING
 #undef SSHCONF_STRARRAY
 #undef SSHCONF_CUSTOM
 #undef SSHCONF_NONCONF
-#undef SSHCONF_IGNORE
-#undef SSHCONF_DEPRECATED
+#undef SSHCONF_NOSUPPORT
 #undef SSHCONF_ALIAS
 
 /* Information about the incoming connection as used by Match */
