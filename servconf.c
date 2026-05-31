@@ -3161,8 +3161,7 @@ free_string_array(char **a, u_int n)
 }
 
 static int
-deserialise_count(struct sshbuf *buf, u_int *np, size_t min_entry_len,
-    const char *what)
+deserialise_count(struct sshbuf *buf, u_int *np, const char *what)
 {
 	int r;
 	uint32_t n;
@@ -3175,7 +3174,7 @@ deserialise_count(struct sshbuf *buf, u_int *np, size_t min_entry_len,
 		error_f("bad number of %s", what);
 		return SSH_ERR_INVALID_FORMAT;
 	}
-	if (min_entry_len != 0 && n > sshbuf_len(buf) / min_entry_len) {
+	if (n > sshbuf_len(buf)) {
 		error_f("bad number of %s", what);
 		return SSH_ERR_INVALID_FORMAT;
 	}
@@ -3193,7 +3192,7 @@ deserialise_nullable_string_array(struct sshbuf *buf, char ***arrayp,
 
 	*arrayp = NULL;
 	*np = 0;
-	if ((r = deserialise_count(buf, &n, 1, "strings")) != 0)
+	if ((r = deserialise_count(buf, &n, "strings")) != 0)
 		return r;
 	if (n > 0)
 		a = xcalloc(n, sizeof(*a));
@@ -3229,7 +3228,7 @@ deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 	u_int i, n;
 	char **files = NULL;
 
-	if ((r = deserialise_count(buf, &n, 6, "host key files")) != 0)
+	if ((r = deserialise_count(buf, &n, "host key files")) != 0)
 		return r;
 	if (n > 0) {
 		userprovided = xcalloc(n, sizeof(*userprovided));
@@ -3271,7 +3270,7 @@ deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 	u_int i, n;
 	struct queued_listenaddr *qla = NULL;
 
-	if ((r = deserialise_count(buf, &n, 10, "listen addresses")) != 0)
+	if ((r = deserialise_count(buf, &n, "listen addresses")) != 0)
 		return r;
 	if (n > 0)
 		qla = xcalloc(n, sizeof(*qla));
@@ -3334,7 +3333,7 @@ deserialise_port(ServerOptions *options, struct sshbuf *buf)
 	int r;
 	u_int i, n;
 
-	if ((r = deserialise_count(buf, &n, 5, "ports")) != 0)
+	if ((r = deserialise_count(buf, &n, "ports")) != 0)
 		return r;
 	if (n > MAX_PORTS) {
 		error_f("bad number of ports");
@@ -3487,7 +3486,7 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 	u_int i, n;
 	char **names = NULL, **commands = NULL, **args = NULL;
 
-	if ((r = deserialise_count(buf, &n, 12, "subsystems")) != 0)
+	if ((r = deserialise_count(buf, &n, "subsystems")) != 0)
 		return r;
 	if (n > 0) {
 		names = xcalloc(n, sizeof(*names));
