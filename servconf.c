@@ -75,14 +75,14 @@ void
 initialize_server_options(ServerOptions *options)
 {
 	memset(options, 0, sizeof(*options));
-#define SSHCONF_INT(var, conf, flags, ms, def)		options->var = -1;
-#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
-#define SSHCONF_INTFLAG(var, conf, flags, def)		options->var = -1;
-#define SSHCONF_STRING(var, conf, flags)		options->var = NULL;
-#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+#define SSHCONF_INT(var, conf, flags, ms, def, cp)	options->var = -1;
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp)	options->var = -1;
+#define SSHCONF_STRING(var, conf, flags, cp)		options->var = NULL;
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
 	options->nvar = 0; \
 	options->var = NULL;
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	init_##funcsuffix(options)
 #define SSHCONF_NONCONF(funcsuffix) \
 	init_##funcsuffix(options)
@@ -260,16 +260,16 @@ fill_default_server_options(ServerOptions *options)
 {
 	u_int i;
 
-#define SSHCONF_INT(var, conf, flags, ms, def) \
+#define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	if (options->var == -1) \
 		options->var = def;
-#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
-#define SSHCONF_INTFLAG(var, conf, flags, def) \
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	if (options->var == -1) \
 		options->var = def;
-#define SSHCONF_STRING(var, conf, flags)		/* done manually */
-#define SSHCONF_STRARRAY(var, nvar, conf, flags)	/* done manually */
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags)		/* done manually */
+#define SSHCONF_STRING(var, conf, flags, cp)		/* done manually */
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	/* done manually */
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	/* done manually */
 #define SSHCONF_NONCONF(funcsuffix)			/* done manually */
 #define SSHCONF_IGNORE(conf)				/* empty */
 #define SSHCONF_DEPRECATED(conf)			/* empty */
@@ -432,12 +432,12 @@ fill_default_server_options(ServerOptions *options)
 }
 
 /* Macros to declare ServerOpCodes enum values */
-#define SSHCONF_INT(var, conf, flags, ms, def)		s##conf,
-#define SSHCONF_INT_UNSUP(var, conf, flags)		s##conf,
-#define SSHCONF_INTFLAG(var, conf, flags, def)		s##conf,
-#define SSHCONF_STRING(var, conf, flags)		s##conf,
-#define SSHCONF_STRARRAY(var, nvar, conf, flags)	s##conf,
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags) 	s##conf,
+#define SSHCONF_INT(var, conf, flags, ms, def, cp)	s##conf,
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		s##conf,
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp)	s##conf,
+#define SSHCONF_STRING(var, conf, flags, cp)		s##conf,
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	s##conf,
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	s##conf,
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
 #define SSHCONF_IGNORE(conf)				/* empty */
 #define SSHCONF_DEPRECATED(conf)			/* empty */
@@ -469,13 +469,13 @@ typedef enum {
 
 /* Macros to define keywords[] entries */
 #define SSHCONF_KW(conf, flags)		{ #conf, s##conf, flags },
-#define SSHCONF_INT(var, conf, flags, ms, def)		SSHCONF_KW(conf, flags)
-#define SSHCONF_INTFLAG(var, conf, flags, def)		SSHCONF_KW(conf, flags)
-#define SSHCONF_STRING(var, conf, flags)		SSHCONF_KW(conf, flags)
-#define SSHCONF_STRARRAY(var, nvar, conf, flags)	SSHCONF_KW(conf, flags)
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags)		SSHCONF_KW(conf, flags)
+#define SSHCONF_INT(var, conf, flags, ms, def, cp)	SSHCONF_KW(conf, flags)
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp)	SSHCONF_KW(conf, flags)
+#define SSHCONF_STRING(var, conf, flags, cp)		SSHCONF_KW(conf, flags)
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp)	SSHCONF_KW(conf, flags)
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp)	SSHCONF_KW(conf, flags)
 #define SSHCONF_NONCONF(funcsuffix)			/* empty */
-#define SSHCONF_INT_UNSUP(var, conf, flags) \
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp) \
 	{ #conf, sUnsupported, flags },
 #define SSHCONF_IGNORE(conf) \
 	{ #conf, sIgnore, SSHCFG_ALL },
@@ -2985,23 +2985,23 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 		goto out;
 	}
 
-#define SSHCONF_INT(var, conf, flags, ms, def) \
+#define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	if ((r = serialise_s32(buf, options->var)) != 0) { \
 		error_fr(r, "serialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
-#define SSHCONF_INTFLAG(var, conf, flags, def) \
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	if ((r = serialise_s32(buf, options->var)) != 0) { \
 		error_fr(r, "serialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_STRING(var, conf, flags) \
+#define SSHCONF_STRING(var, conf, flags, cp) \
 	if ((r = serialise_nullable_string(buf, options->var)) != 0) { \
 		error_fr(r, "serialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
 	if ((r = sshbuf_put_u32(buf, options->nvar)) != 0) { \
 		error_fr(r, "serialise %s length", #var); \
 		goto out; \
@@ -3012,7 +3012,7 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 			goto out; \
 		} \
 	}
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	if ((r = serialise_##funcsuffix(options, buf)) != 0) \
 		goto out;
 #define SSHCONF_NONCONF(funcsuffix) \
@@ -3429,23 +3429,23 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 		r = SSH_ERR_INVALID_FORMAT;
 		goto out;
 	}
-#define SSHCONF_INT(var, conf, flags, ms, def) \
+#define SSHCONF_INT(var, conf, flags, ms, def, cp) \
 	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deseserialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
-#define SSHCONF_INTFLAG(var, conf, flags, def) \
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
 	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deserialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_STRING(var, conf, flags) \
+#define SSHCONF_STRING(var, conf, flags, cp) \
 	if ((r = deserialise_nullable_string(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deserialise %s", #var); \
 		goto out; \
 	}
-#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
 	if ((r = sshbuf_get_u32(buf, &n)) != 0) { \
 		error_fr(r, "deserialise %s length", #var); \
 		goto out; \
@@ -3462,7 +3462,7 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 	} \
 	new_options.nvar = n; \
 	new_options.var = arr;
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	if ((r = deserialise_##funcsuffix(&new_options, buf)) != 0) \
 		goto out;
 #define SSHCONF_NONCONF(funcsuffix) \
@@ -3558,15 +3558,15 @@ free_server_options(ServerOptions *options)
 {
 	u_int i;
 
-#define SSHCONF_INT(var, conf, flags, ms, def)		/* empty */
-#define SSHCONF_INT_UNSUP(var, conf, flags)		/* empty */
-#define SSHCONF_INTFLAG(var, conf, flags, def)		/* empty */
-#define SSHCONF_STRING(var, conf, flags)		free(options->var);
-#define SSHCONF_STRARRAY(var, nvar, conf, flags) \
+#define SSHCONF_INT(var, conf, flags, ms, def, cp)	/* empty */
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp)	/* empty */
+#define SSHCONF_STRING(var, conf, flags, cp)		free(options->var);
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
 	for (i = 0; i < options->nvar; i++) \
 		free(options->var[i]); \
 	free(options->var);
-#define SSHCONF_CUSTOM(conf, funcsuffix, flags) \
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
 	free_##funcsuffix(options);
 #define SSHCONF_NONCONF(funcsuffix) \
 	free_##funcsuffix(options);
@@ -3616,6 +3616,107 @@ free_server_options(ServerOptions *options)
 	initialize_server_options(options);
 }
 
+static void
+copy_server_option_int(int *dst, int src)
+{
+	if (src != -1)
+		*dst = src;
+}
+
+static void
+copy_server_option_int64(int64_t *dst, int64_t src)
+{
+	if (src != -1)
+		*dst = src;
+}
+
+static void
+copy_server_option_string(char **dst, const char *src)
+{
+	if (src != NULL && *dst != src) {
+		free(*dst);
+		*dst = xstrdup(src);
+	}
+}
+
+static void
+copy_server_option_strarray_values(char ***dst, u_int ndst,
+    char * const *src, u_int nsrc)
+{
+	u_int i;
+
+	if (nsrc == 0)
+		return;
+	for (i = 0; i < ndst; i++)
+		free((*dst)[i]);
+	free(*dst);
+	*dst = xcalloc(nsrc, sizeof(**dst));
+	for (i = 0; i < nsrc; i++)
+		(*dst)[i] = src[i] == NULL ? NULL : xstrdup(src[i]);
+}
+
+static void
+copy_server_option_strarray(char ***dst, u_int *ndst,
+    char * const *src, u_int nsrc)
+{
+	if (nsrc == 0)
+		return;
+	copy_server_option_strarray_values(dst, *ndst, src, nsrc);
+	*ndst = nsrc;
+}
+
+static void
+copy_ipqos(ServerOptions *dst, const ServerOptions *src)
+{
+	copy_server_option_int(&dst->ip_qos_interactive,
+	    src->ip_qos_interactive);
+	copy_server_option_int(&dst->ip_qos_bulk, src->ip_qos_bulk);
+}
+
+static void
+copy_gatewayports(ServerOptions *dst, const ServerOptions *src)
+{
+	copy_server_option_int(&dst->fwd_opts.gateway_ports,
+	    src->fwd_opts.gateway_ports);
+}
+
+static void
+copy_streamlocalbindunlink(ServerOptions *dst, const ServerOptions *src)
+{
+	copy_server_option_int(&dst->fwd_opts.streamlocal_bind_unlink,
+	    src->fwd_opts.streamlocal_bind_unlink);
+}
+
+static void
+copy_loglevel(ServerOptions *dst, const ServerOptions *src)
+{
+	if (src->log_level != -1)
+		dst->log_level = src->log_level;
+}
+
+static void
+copy_rekeylimit(ServerOptions *dst, const ServerOptions *src)
+{
+	copy_server_option_int64(&dst->rekey_limit, src->rekey_limit);
+	copy_server_option_int(&dst->rekey_interval, src->rekey_interval);
+}
+
+static void
+copy_subsystem(ServerOptions *dst, const ServerOptions *src)
+{
+	u_int old_num_subsystems = dst->num_subsystems;
+
+	if (src->num_subsystems == 0)
+		return;
+	copy_server_option_strarray_values(&dst->subsystem_name,
+	    old_num_subsystems, src->subsystem_name, src->num_subsystems);
+	copy_server_option_strarray_values(&dst->subsystem_command,
+	    old_num_subsystems, src->subsystem_command, src->num_subsystems);
+	copy_server_option_strarray_values(&dst->subsystem_args,
+	    old_num_subsystems, src->subsystem_args, src->num_subsystems);
+	dst->num_subsystems = src->num_subsystems;
+}
+
 /*
  * Copy any supported values that are set.
  *
@@ -3626,83 +3727,45 @@ free_server_options(ServerOptions *options)
 void
 copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 {
-/* XXX use SSHD_CONFIG_ENTRIES here too */
-#define M_CP_INTOPT(n) do {\
-	if (src->n != -1) \
-		dst->n = src->n; \
-} while (0)
+#define SSHCONF_INT(var, conf, flags, ms, def, cp) \
+	cp(copy_server_option_int(&dst->var, src->var);)
+#define SSHCONF_INT_UNSUP(var, conf, flags, cp)		/* empty */
+#define SSHCONF_INTFLAG(var, conf, flags, def, cp) \
+	cp(copy_server_option_int(&dst->var, src->var);)
+#define SSHCONF_STRING(var, conf, flags, cp) \
+	cp(copy_server_option_string(&dst->var, src->var);)
+#define SSHCONF_STRARRAY(var, nvar, conf, flags, cp) \
+	cp(copy_server_option_strarray(&dst->var, &dst->nvar, \
+	    src->var, src->nvar);)
+#define SSHCONF_CUSTOM(conf, funcsuffix, flags, cp) \
+	cp(copy_##funcsuffix(dst, src);)
+#define SSHCONF_NONCONF(funcsuffix)			/* empty */
+#define SSHCONF_IGNORE(conf)				/* empty */
+#define SSHCONF_DEPRECATED(conf)			/* empty */
+#define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
-	M_CP_INTOPT(password_authentication);
-	M_CP_INTOPT(gss_authentication);
-	M_CP_INTOPT(pubkey_authentication);
-	M_CP_INTOPT(pubkey_auth_options);
-	M_CP_INTOPT(kerberos_authentication);
-	M_CP_INTOPT(hostbased_authentication);
-	M_CP_INTOPT(hostbased_uses_name_from_packet_only);
-	M_CP_INTOPT(kbd_interactive_authentication);
-	M_CP_INTOPT(permit_root_login);
-	M_CP_INTOPT(permit_empty_passwd);
-	M_CP_INTOPT(ignore_rhosts);
+	SSHD_CONFIG_ENTRIES
 
-	M_CP_INTOPT(allow_tcp_forwarding);
-	M_CP_INTOPT(allow_streamlocal_forwarding);
-	M_CP_INTOPT(allow_agent_forwarding);
-	M_CP_INTOPT(disable_forwarding);
-	M_CP_INTOPT(expose_userauth_info);
-	M_CP_INTOPT(permit_tun);
-	M_CP_INTOPT(fwd_opts.gateway_ports);
-	M_CP_INTOPT(fwd_opts.streamlocal_bind_unlink);
-	M_CP_INTOPT(x11_display_offset);
-	M_CP_INTOPT(x11_forwarding);
-	M_CP_INTOPT(x11_use_localhost);
-	M_CP_INTOPT(permit_tty);
-	M_CP_INTOPT(permit_user_rc);
-	M_CP_INTOPT(max_sessions);
-	M_CP_INTOPT(max_authtries);
-	M_CP_INTOPT(client_alive_count_max);
-	M_CP_INTOPT(client_alive_interval);
-	M_CP_INTOPT(ip_qos_interactive);
-	M_CP_INTOPT(ip_qos_bulk);
-	M_CP_INTOPT(rekey_limit);
-	M_CP_INTOPT(rekey_interval);
-	M_CP_INTOPT(log_level);
-	M_CP_INTOPT(required_rsa_size);
-	M_CP_INTOPT(unused_connection_timeout);
-	M_CP_INTOPT(refuse_connection);
+#undef SSHCONF_INT
+#undef SSHCONF_INT_UNSUP
+#undef SSHCONF_INTFLAG
+#undef SSHCONF_STRING
+#undef SSHCONF_STRARRAY
+#undef SSHCONF_CUSTOM
+#undef SSHCONF_NONCONF
+#undef SSHCONF_IGNORE
+#undef SSHCONF_DEPRECATED
+#undef SSHCONF_ALIAS
 
 	/*
 	 * The bind_mask is a mode_t that may be unsigned, so we can't use
-	 * M_CP_INTOPT - it does a signed comparison that causes compiler
-	 * warnings.
+	 * copy_server_option_int - it does a signed comparison that causes
+	 * compiler warnings.
 	 */
 	if (src->fwd_opts.streamlocal_bind_mask != (mode_t)-1) {
 		dst->fwd_opts.streamlocal_bind_mask =
 		    src->fwd_opts.streamlocal_bind_mask;
 	}
-
-	/* M_CP_STROPT and M_CP_STRARRAYOPT should not appear before here */
-#define M_CP_STROPT(n) do {\
-	if (src->n != NULL && dst->n != src->n) { \
-		free(dst->n); \
-		dst->n = xstrdup(src->n); \
-	} \
-} while(0)
-#define M_CP_STRARRAYOPT(s, num_s, clobber) do {\
-	u_int i; \
-	if (src->num_s != 0) { \
-		for (i = 0; i < dst->num_s; i++) \
-			free(dst->s[i]); \
-		free(dst->s); \
-		dst->s = xcalloc(src->num_s, sizeof(*dst->s)); \
-		for (i = 0; i < src->num_s; i++) \
-			dst->s[i] = xstrdup(src->s[i]); \
-		if (clobber) \
-			dst->num_s = src->num_s; \
-	} \
-} while(0)
-
-	/* See comment in servconf.h */
-	COPY_MATCH_STRING_OPTS();
 
 	/* Arguments that accept '+...' need to be expanded */
 	assemble_algorithms(dst);
@@ -3715,12 +3778,14 @@ copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 		return;
 
 	/* These options may be "none" to clear a global setting */
-	M_CP_STROPT(adm_forced_command);
+	copy_server_option_string(&dst->adm_forced_command,
+	    src->adm_forced_command);
 	if (option_clear_or_none(dst->adm_forced_command)) {
 		free(dst->adm_forced_command);
 		dst->adm_forced_command = NULL;
 	}
-	M_CP_STROPT(chroot_directory);
+	copy_server_option_string(&dst->chroot_directory,
+	    src->chroot_directory);
 	if (option_clear_or_none(dst->chroot_directory)) {
 		free(dst->chroot_directory);
 		dst->chroot_directory = NULL;
@@ -3729,10 +3794,6 @@ copy_set_server_options(ServerOptions *dst, ServerOptions *src, int preauth)
 	/* Subsystems require merging. */
 	servconf_merge_subsystems(dst, src);
 }
-
-#undef M_CP_INTOPT
-#undef M_CP_STROPT
-#undef M_CP_STRARRAYOPT
 
 #define SERVCONF_MAX_DEPTH	16
 static void
