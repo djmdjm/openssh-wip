@@ -57,6 +57,8 @@
 #include "digest.h"
 #include "version.h"
 
+#define SSHD_CONFIG_BLOB_VERSION	1
+
 static void add_listen_addr(ServerOptions *, const char *,
     const char *, int);
 static void add_one_listen_addr(ServerOptions *, const char *,
@@ -2691,6 +2693,18 @@ serialise_double(struct sshbuf *buf, double v)
 }
 
 static int
+serialise_nullable_string(struct sshbuf *buf, const char *s)
+{
+	int r;
+
+	if ((r = sshbuf_put_u8(buf, s != NULL)) != 0)
+		return r;
+	if (s == NULL)
+		return 0;
+	return sshbuf_put_cstring(buf, s);
+}
+
+static int
 serialise_hostkeyfile(const ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
@@ -2703,7 +2717,7 @@ serialise_hostkeyfile(const ServerOptions *options, struct sshbuf *buf)
 	for (i = 0; i < options->num_host_key_files; i++) {
 		if ((r = serialise_s32(buf,
 		    options->host_key_file_userprovided[i])) != 0 ||
-		    (r = sshbuf_put_cstring(buf,
+		    (r = serialise_nullable_string(buf,
 		    options->host_key_files[i])) != 0) {
 			error_fr(r, "serialise member");
 			return r;
@@ -2743,8 +2757,7 @@ serialise_listenaddress(const ServerOptions *options, struct sshbuf *buf)
 
 		if ((r = sshbuf_put_cstring(buf, qla->addr)) != 0 ||
 		    (r = serialise_s32(buf, qla->port)) != 0 ||
-		    (r = sshbuf_put_cstring(buf,
-		    qla->rdomain == NULL ? NULL : qla->rdomain)) != 0) {
+		    (r = serialise_nullable_string(buf, qla->rdomain)) != 0) {
 			error_fr(r, "serialise member");
 			return r;
 		}
@@ -2856,9 +2869,8 @@ serialise_permituserenv(const ServerOptions *options, struct sshbuf *buf)
 	int r;
 
 	if ((r = serialise_s32(buf, options->permit_user_env)) != 0 ||
-	    (r = sshbuf_put_cstring(buf,
-	    options->permit_user_env_allowlist == NULL ?
-	    "" : options->permit_user_env_allowlist)) != 0) {
+	    (r = serialise_nullable_string(buf,
+	    options->permit_user_env_allowlist)) != 0) {
 		error_fr(r, "serialise");
 		return r;
 	}
@@ -2968,6 +2980,10 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 
 	if ((buf = sshbuf_new()) == NULL)
 		return SSH_ERR_ALLOC_FAIL;
+	if ((r = sshbuf_put_u32(buf, SSHD_CONFIG_BLOB_VERSION)) != 0) {
+		error_fr(r, "serialise version");
+		goto out;
+	}
 
 #define SSHCONF_INT(var, conf, flags, ms, def) \
 	if ((r = serialise_s32(buf, options->var)) != 0) { \
@@ -2981,7 +2997,7 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 		goto out; \
 	}
 #define SSHCONF_STRING(var, conf, flags) \
-	if ((r = sshbuf_put_cstring(buf, options->var)) != 0) { \
+	if ((r = serialise_nullable_string(buf, options->var)) != 0) { \
 		error_fr(r, "serialise %s", #var); \
 		goto out; \
 	}
@@ -2991,7 +3007,7 @@ serialise_server_options(const ServerOptions *options, struct sshbuf **bufp)
 		goto out; \
 	} \
 	for (i = 0; i < options->nvar; i++) { \
-		if ((r = sshbuf_put_cstring(buf, options->var[i])) != 0) { \
+		if ((r = serialise_nullable_string(buf, options->var[i])) != 0) { \
 			error_fr(r, "serialise %s entry", #var); \
 			goto out; \
 		} \
@@ -3067,6 +3083,23 @@ deserialise_double(struct sshbuf *buf, double *v)
 }
 
 static int
+deserialise_nullable_string(struct sshbuf *buf, char **sp)
+{
+	int r;
+	u_char present;
+
+	if ((r = sshbuf_get_u8(buf, &present)) != 0)
+		return r;
+	if (present == 0) {
+		*sp = NULL;
+		return 0;
+	}
+	if (present != 1)
+		return SSH_ERR_INVALID_FORMAT;
+	return sshbuf_get_cstring(buf, sp, NULL);
+}
+
+static int
 deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 {
 	int r, *userprovided = NULL;
@@ -3082,9 +3115,11 @@ deserialise_hostkeyfile(ServerOptions *options, struct sshbuf *buf)
 		files = xcalloc(n, sizeof(*files));
 	}
 	for (i = 0; i < n; i++) {
-		if ((r = deserialise_s32(buf, userprovided + i) != 0) ||
-		    (r = sshbuf_get_cstring(buf, files + i, NULL) != 0)) {
-			error_fr(r, "ideserialise member");
+		if ((r = deserialise_s32(buf, userprovided + i)) != 0 ||
+		    (r = deserialise_nullable_string(buf, files + i)) != 0) {
+			error_fr(r, "deserialise member");
+			while (i > 0)
+				free(files[--i]);
 			free(files);
 			free(userprovided);
 			return r;
@@ -3126,18 +3161,17 @@ deserialise_listenaddress(ServerOptions *options, struct sshbuf *buf)
 	for (i = 0; i < n; i++) {
 		if ((r = sshbuf_get_cstring(buf, &qla[i].addr, NULL)) != 0 ||
 		    (r = deserialise_s32(buf, &qla[i].port)) != 0 ||
-		    (r = sshbuf_get_cstring(buf, &qla[i].rdomain, NULL)) != 0) {
+		    (r = deserialise_nullable_string(buf,
+		    &qla[i].rdomain)) != 0) {
 			error_fr(r, "deserialise member");
+			free(qla[i].addr);
+			free(qla[i].rdomain);
 			for (j = 0; j < i; j++) {
 				free(qla[j].addr);
 				free(qla[j].rdomain);
 			}
 			free(qla);
 			return r;
-		}
-		if (*qla[i].rdomain == '\0') {
-			free(qla[i].rdomain);
-			qla[i].rdomain = NULL;
 		}
 	}
 	options->num_queued_listens = n;
@@ -3260,14 +3294,10 @@ deserialise_permituserenv(ServerOptions *options, struct sshbuf *buf)
 	int r;
 
 	if ((r = deserialise_s32(buf, &options->permit_user_env)) != 0 ||
-	    (r = sshbuf_get_cstring(buf,
-	    &options->permit_user_env_allowlist, NULL)) != 0) {
+	    (r = deserialise_nullable_string(buf,
+	    &options->permit_user_env_allowlist)) != 0) {
 		error_fr(r, "deserialise");
 		return r;
-	}
-	if (*options->permit_user_env_allowlist == '\0') {
-		free(options->permit_user_env_allowlist);
-		options->permit_user_env_allowlist = NULL;
 	}
 	return 0;
 }
@@ -3386,9 +3416,19 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 	u_int i, j, n;
 	char **arr;
 	int r = SSH_ERR_INTERNAL_ERROR;
+	uint32_t version;
 	ServerOptions new_options;
 
 	initialize_server_options(&new_options);
+	if ((r = sshbuf_get_u32(buf, &version)) != 0) {
+		error_fr(r, "deserialise version");
+		goto out;
+	}
+	if (version != SSHD_CONFIG_BLOB_VERSION) {
+		error_f("unsupported config blob version %u", version);
+		r = SSH_ERR_INVALID_FORMAT;
+		goto out;
+	}
 #define SSHCONF_INT(var, conf, flags, ms, def) \
 	if ((r = deserialise_s32(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deseserialise %s", #var); \
@@ -3401,7 +3441,7 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 		goto out; \
 	}
 #define SSHCONF_STRING(var, conf, flags) \
-	if ((r = sshbuf_get_cstring(buf, &new_options.var, NULL)) != 0) { \
+	if ((r = deserialise_nullable_string(buf, &new_options.var)) != 0) { \
 		error_fr(r, "deserialise %s", #var); \
 		goto out; \
 	}
@@ -3412,7 +3452,7 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 	} \
 	arr = n == 0 ? NULL : xcalloc(n, sizeof(*arr)); \
 	for (i = 0; i < n; i++) { \
-		if ((r = sshbuf_get_cstring(buf, arr + i, NULL)) != 0) { \
+		if ((r = deserialise_nullable_string(buf, arr + i)) != 0) { \
 			error_fr(r, "deserialise %s entry", #var); \
 			for (j = 0; j < i; j++) \
 				free(arr[j]); \
@@ -3433,6 +3473,12 @@ deserialise_server_options(struct sshbuf *buf, ServerOptions *options)
 #define SSHCONF_ALIAS(old, conf, flags)			/* empty */
 
 	SSHD_CONFIG_ENTRIES
+
+	if (sshbuf_len(buf) != 0) {
+		error_f("trailing data in config blob");
+		r = SSH_ERR_INVALID_FORMAT;
+		goto out;
+	}
 
 #undef SSHCONF_INT
 #undef SSHCONF_INT_UNSUP
