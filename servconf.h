@@ -131,7 +131,7 @@ SSHCONF_CUSTOM(GatewayPorts, gatewayports, SSHCFG_ALL) \
 SSHCONF_CUSTOM(StreamLocalBindMask, streamlocalbindmask, SSHCFG_ALL) \
 SSHCONF_CUSTOM(StreamLocalBindUnlink, streamlocalbindunlink, SSHCFG_ALL) \
 SSHCONF_CUSTOM(SyslogFacility, logfacility, SSHCFG_GLOBAL) \
-SSHCONF_CUSTOM(LogLevel, loglevel, SSHCFG_GLOBAL) \
+SSHCONF_CUSTOM(LogLevel, loglevel, SSHCFG_ALL) \
 SSHCONF_CUSTOM(PermitUserEnvironment, permituserenv, SSHCFG_GLOBAL) \
 SSHCONF_CUSTOM(Subsystem, subsystem, SSHCFG_ALL) \
 SSHCONF_CUSTOM(MaxStartups, maxstartups, SSHCFG_GLOBAL) \
