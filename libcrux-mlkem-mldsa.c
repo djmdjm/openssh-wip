@@ -159,6 +159,8 @@ crypto_sign_mldsa44(uint8_t sig[MLDSA44_SIGBYTES],
 	uint8_t rnd[32];
 	int r;
 
+	if (ctxlen > 255)
+		return -1;
 	arc4random_buf(rnd, sizeof(rnd));
 	r = crypto_sign_mldsa44_seeded(sig, msg, msglen, ctx, ctxlen, sk, rnd);
 	explicit_bzero(rnd, sizeof(rnd));
@@ -178,6 +180,8 @@ crypto_sign_mldsa44_seeded(uint8_t sig[MLDSA44_SIGBYTES],
 	libcrux_mldsa44_sign_result res;
 	int r = -1;
 
+	if (ctxlen > 255)
+		return r;
 	memcpy(sk_internal.data, sk, MLDSA44_SECRETKEYBYTES);
 	memcpy(rnd.data, seed, 32);
 	res = libcrux_ml_dsa_ml_dsa_44_portable_sign(&sk_internal,
@@ -205,6 +209,8 @@ crypto_sign_mldsa44_verify(const uint8_t sig[MLDSA44_SIGBYTES],
 	libcrux_mldsa44_message context = { ctx, ctxlen };
 	libcrux_mldsa44_verify_result res;
 
+	if (ctxlen > 255)
+		return -1;
 	memcpy(pk_internal.data, pk, MLDSA44_PUBLICKEYBYTES);
 	memcpy(sig_internal.data, sig, MLDSA44_SIGBYTES);
 	res = libcrux_ml_dsa_ml_dsa_44_portable_verify(&pk_internal,
