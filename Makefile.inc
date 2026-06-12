@@ -95,6 +95,7 @@ SRCS_KEY+=	ssh-ed25519.c
 SRCS_KEY+=	ssh-ed25519-sk.c
 SRCS_KEY+=	libcrux-mlkem-mldsa.c
 SRCS_KEY+=	ssh-mldsa-eddsa.c
+SRCS_KEY+=	ssh-mldsa.c
 SRCS_KEY+=	ssherr-libcrypto.c
 
 .if (${OPENSSL:L} == "yes")
