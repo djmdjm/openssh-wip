@@ -1600,6 +1600,7 @@ main(int ac, char **av)
 		case KEY_ECDSA:
 		case KEY_ED25519:
 		case KEY_MLDSA44_ED25519:
+		case KEY_MLDSA87:
 		case KEY_ECDSA_SK:
 		case KEY_ED25519_SK:
 			if (have_agent || key != NULL)

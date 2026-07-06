@@ -313,7 +313,6 @@ crypto_sign_mldsa65_verify(const uint8_t sig[MLDSA65_SIGBYTES],
 
 /* ML-DSA 87 */
 
-#if 0
 int
 crypto_sign_mldsa87_keypair(uint8_t pk[MLDSA87_PUBLICKEYBYTES],
     uint8_t sk[MLDSA87_SECRETKEYBYTES])
@@ -407,7 +406,6 @@ crypto_sign_mldsa87_verify(const uint8_t sig[MLDSA87_SIGBYTES],
 
 	return (res.tag == LIBCRUX_RESULT_OK) ? 0 : -1;
 }
-#endif
 
 void
 sha3_256(uint8_t digest[32], const uint8_t *data, size_t len)
