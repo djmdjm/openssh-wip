@@ -290,7 +290,19 @@ userauth_pubkey(struct ssh *ssh, const char *method)
 			    (r = ssh_packet_write_wait(ssh)) != 0)
 				fatal_fr(r, "send packet");
 			authctxt->postponed = 1;
-		}
+		} else {
+			/*
+			 * Don't count this as an authentication failure
+			 * unless we have already used up the separate
+			 * max-pk-ok budget (if any).
+			 */
+			if (authctxt->pk_ok_failures++ < options.max_pubkey_ok)
+				authctxt->auth_failure_already_counted = 1;
+			debug3_f("pubkey test %d of %d%s",
+			    authctxt->pk_ok_failures, options.max_pubkey_ok,
+			    authctxt->auth_failure_already_counted ?
+			    "" : ": treating as authentication failure");
+		 }
 	}
 done:
 	if (authenticated == 1 && auth_activate_options(ssh, authopts) != 0) {
