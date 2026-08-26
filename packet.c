@@ -2412,7 +2412,10 @@ kex_to_blob(struct sshbuf *m, struct kex *kex)
 	    (r = sshbuf_put_stringb(m, kex->client_version)) != 0 ||
 	    (r = sshbuf_put_stringb(m, kex->server_version)) != 0 ||
 	    (r = sshbuf_put_stringb(m, kex->session_id)) != 0 ||
-	    (r = sshbuf_put_u32(m, kex->flags)) != 0)
+	    (r = sshbuf_put_u32(m, kex->flags)) != 0 ||
+	    (r = sshbuf_put_u32(m, kex->warn_weak_crypto)) != 0 ||
+	    (r = sshbuf_put_u32(m, kex->pq_kex_negotiated)) != 0 ||
+	    (r = sshbuf_put_u32(m, kex->non_pq_kex_warned)) != 0)
 		return r;
 	return 0;
 }
@@ -2586,7 +2589,10 @@ kex_from_blob(struct sshbuf *m, struct kex **kexp)
 	    (r = sshbuf_get_stringb(m, kex->client_version)) != 0 ||
 	    (r = sshbuf_get_stringb(m, kex->server_version)) != 0 ||
 	    (r = sshbuf_get_stringb(m, kex->session_id)) != 0 ||
-	    (r = sshbuf_get_u32(m, &kex->flags)) != 0)
+	    (r = sshbuf_get_u32(m, &kex->flags)) != 0 ||
+	    (r = sshbuf_get_u32(m, &kex->warn_weak_crypto)) != 0 ||
+	    (r = sshbuf_get_u32(m, &kex->pq_kex_negotiated)) != 0 ||
+	    (r = sshbuf_get_u32(m, &kex->non_pq_kex_warned)) != 0)
 		goto out;
 	if (kex->we_need > 1024) {
 		r = SSH_ERR_INVALID_FORMAT;
