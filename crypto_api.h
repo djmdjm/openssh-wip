@@ -57,12 +57,12 @@ crypto_hash_sha512(unsigned char *out, const unsigned char *in,
 #define crypto_sign_ed25519_SEEDBYTES 32U
 #define crypto_sign_ed25519_BYTES 64U
 
-int	crypto_sign_ed25519(unsigned char *, unsigned long long *,
+int	crypto_sign_ed25519_detached(unsigned char *, unsigned long long *,
     const unsigned char *, unsigned long long, const unsigned char *);
-int	crypto_sign_ed25519_open(unsigned char *, unsigned long long *,
+int	crypto_sign_ed25519_verify_detached(const unsigned char *,
     const unsigned char *, unsigned long long, const unsigned char *);
 int	crypto_sign_ed25519_keypair(unsigned char *, unsigned char *);
-int	crypto_sign_ed25519_keypair_from_seed(unsigned char *, unsigned char *,
+int	crypto_sign_ed25519_seed_keypair(unsigned char *, unsigned char *,
     const unsigned char *);
 
 #define crypto_kem_sntrup761_PUBLICKEYBYTES 1158
