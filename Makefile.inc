@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile.inc,v 1.107 2026/07/27 12:28:52 markus Exp $
+#	$OpenBSD: Makefile.inc,v 1.106 2026/06/14 03:59:34 djm Exp $
 
 .include <bsd.own.mk>
 
@@ -27,8 +27,8 @@ CDIAGFLAGS+=	-Widiomatic-parentheses -Wparentheses
 .endif
 CDIAGFLAGS+=	-Werror
 
-#DEBUG=-g
-#INSTALL_STRIP=
+DEBUG=-g
+INSTALL_STRIP=
 
 WARNINGS=yes
 
