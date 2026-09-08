@@ -372,6 +372,7 @@ out:
 	server_process_permitopen(ssh);
 	server_process_channel_timeouts(ssh);
 	kex_set_server_sig_algs(ssh, options.pubkey_accepted_algos);
+	kex_set_warn_weak_crypto(ssh, options.warn_weak_crypto);
 	ssh_packet_set_rekey_limits(ssh, options.rekey_limit,
 	    options.rekey_interval);
 	sshbuf_free(m);

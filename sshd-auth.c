@@ -753,6 +753,7 @@ do_ssh2_kex(struct ssh *ssh)
 	if ((r = kex_setup(ssh, myproposal)) != 0)
 		fatal_r(r, "kex_setup");
 	kex_set_server_sig_algs(ssh, options.pubkey_accepted_algos);
+	kex_set_warn_weak_crypto(ssh, options.warn_weak_crypto);
 	kex = ssh->kex;
 
 #ifdef WITH_OPENSSL
