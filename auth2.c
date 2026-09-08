@@ -327,6 +327,7 @@ input_userauth_request(int type, uint32_t seq, struct ssh *ssh)
 	auth2_authctxt_reset_info(authctxt);
 	authctxt->postponed = 0;
 	authctxt->server_caused_failure = 0;
+	authctxt->auth_failure_already_counted = 0;
 
 	/* try to authenticate user */
 	m = authmethod_lookup(authctxt, method);
@@ -405,6 +406,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *packet_method,
 	} else {
 		/* Allow initial try of "none" auth without failure penalty */
 		if (!partial && !authctxt->server_caused_failure &&
+		    !authctxt->auth_failure_already_counted &&
 		    (authctxt->attempt > 1 || strcmp(method, "none") != 0))
 			authctxt->failures++;
 		if (authctxt->failures >= options.max_authtries)

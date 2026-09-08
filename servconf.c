@@ -149,6 +149,9 @@ initialize_server_options(ServerOptions *options)
 	options->subsystem_name = NULL; \
 	options->subsystem_command = NULL; \
 	options->subsystem_args = NULL;
+#define init_pubkey_auth_options(options) \
+	options->pubkey_auth_options = -1; \
+	options->max_pubkey_ok = -1;
 #define init_timingsecret(options) \
 	options->timing_secret = 0;
 
@@ -392,6 +395,10 @@ fill_default_server_options(ServerOptions *options)
 		options->sshd_session_path = xstrdup(_PATH_SSHD_SESSION);
 	if (options->sshd_auth_path == NULL)
 		options->sshd_auth_path = xstrdup(_PATH_SSHD_AUTH);
+	if (options->pubkey_auth_options == -1) {
+		options->pubkey_auth_options = 0;
+		options->max_pubkey_ok = DEFAULT_AUTH_FAIL_MAX;
+	}
 
 	assemble_algorithms(options);
 
@@ -1354,6 +1361,7 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 	case sPubkeyAuthOptions:
 		intptr = &options->pubkey_auth_options;
 		value = 0;
+		value2 = -1;
 		while ((arg = argv_next(&ac, &av)) != NULL) {
 			if (strcasecmp(arg, "none") == 0)
 				continue;
@@ -1361,14 +1369,24 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 				value |= PUBKEYAUTH_TOUCH_REQUIRED;
 			else if (strcasecmp(arg, "verify-required") == 0)
 				value |= PUBKEYAUTH_VERIFY_REQUIRED;
-			else {
+			else if (strncasecmp(arg, "max-pk-ok:", 10) == 0) {
+				value2 = strtonum(arg + 10, 0, 255, &errstr);
+				if (errstr != NULL) {
+					error("%s line %d: bad %s max-pk-ok "
+					    "value: %s", filename, linenum,
+					keyword, errstr);
+					goto out;
+				}
+			} else {
 				error("%s line %d: unsupported %s option %s",
 				    filename, linenum, keyword, arg);
 				goto out;
 			}
 		}
-		if (*activep && *intptr == -1)
-			*intptr = value;
+		if (*activep && options->pubkey_auth_options == -1) {
+			options->pubkey_auth_options = value;
+			options->max_pubkey_ok = value2;
+		}
 		break;
 
 #ifdef KRB5
@@ -3004,6 +3022,19 @@ serialise_subsystem(const ServerOptions *options, struct sshbuf *buf)
 }
 
 static int
+serialise_pubkey_auth_options(const ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = serialise_s32(buf, options->pubkey_auth_options)) != 0 ||
+	    (r = serialise_s32(buf, options->max_pubkey_ok)) != 0) {
+		error_fr(r, "serialise");
+		return r;
+	}
+	return 0;
+}
+
+static int
 serialise_timingsecret(const ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
@@ -3538,6 +3569,19 @@ deserialise_subsystem(ServerOptions *options, struct sshbuf *buf)
 }
 
 static int
+deserialise_pubkey_auth_options(ServerOptions *options, struct sshbuf *buf)
+{
+	int r;
+
+	if ((r = deserialise_s32(buf, &options->pubkey_auth_options)) != 0 ||
+	    (r = deserialise_s32(buf, &options->max_pubkey_ok)) != 0) {
+		error_fr(r, "deserialise");
+		return r;
+	}
+	return 0;
+}
+
+static int
 deserialise_timingsecret(ServerOptions *options, struct sshbuf *buf)
 {
 	int r;
@@ -3711,6 +3755,7 @@ free_server_options(ServerOptions *options)
 #define free_persourcenetblocksize(options)
 #define free_persourcepenalties(options)
 #define free_rekeylimit(options)
+#define free_pubkey_auth_options(options)
 #define free_timingsecret(options)
 
 	SSHD_CONFIG_ENTRIES
@@ -3841,6 +3886,15 @@ copy_subsystem(ServerOptions *dst, const ServerOptions *src)
 	copy_server_option_strarray_values(&dst->subsystem_args,
 	    old_num_subsystems, src->subsystem_args, src->num_subsystems);
 	dst->num_subsystems = src->num_subsystems;
+}
+
+static void
+copy_pubkey_auth_options(ServerOptions *dst, const ServerOptions *src)
+{
+	if (src->pubkey_auth_options != -1) {
+		dst->pubkey_auth_options = src->pubkey_auth_options;
+		dst->max_pubkey_ok = src->max_pubkey_ok;
+	}
 }
 
 /*
@@ -4305,6 +4359,8 @@ dump_config(ServerOptions *o)
 		printf(" touch-required");
 	if (o->pubkey_auth_options & PUBKEYAUTH_VERIFY_REQUIRED)
 		printf(" verify-required");
+	if (o->max_pubkey_ok != -1)
+		printf(" max-pk-ok:%d", o->max_pubkey_ok);
 	printf("\n");
 
 	if (o->per_source_penalty.enabled) {

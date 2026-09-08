@@ -54,6 +54,8 @@ struct Authctxt {
 	int		 valid;		/* user exists and is allowed to login */
 	int		 attempt;
 	int		 failures;
+	int		 pk_ok_failures;
+	int		 auth_failure_already_counted;
 	int		 server_caused_failure;
 	int		 force_pwchange;
 	char		*user;		/* username sent by the client */
