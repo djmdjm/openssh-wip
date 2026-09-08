@@ -392,6 +392,8 @@ fill_default_server_options(ServerOptions *options)
 		options->sshd_session_path = xstrdup(_PATH_SSHD_SESSION);
 	if (options->sshd_auth_path == NULL)
 		options->sshd_auth_path = xstrdup(_PATH_SSHD_AUTH);
+	if (options->agent_socket_path == NULL)
+		options->agent_socket_path = xstrdup(_PATH_SSH_AGENT_SOCKET_DIR);
 
 	assemble_algorithms(options);
 
@@ -423,6 +425,7 @@ fill_default_server_options(ServerOptions *options)
 	CLEAR_ON_NONE(options->routing_domain);
 	CLEAR_ON_NONE(options->host_key_agent);
 	CLEAR_ON_NONE(options->per_source_penalty_exempt);
+	CLEAR_ON_NONE(options->agent_socket_path);
 
 	for (i = 0; i < options->num_host_key_files; i++)
 		CLEAR_ON_NONE(options->host_key_files[i]);
@@ -1601,6 +1604,29 @@ process_server_config_line_depth(ServerOptions *options, char *line,
 	case sAllowAgentForwarding:
 		intptr = &options->allow_agent_forwarding;
 		goto parse_flag;
+
+	case sAgentSocketPath:
+		charptr = &options->agent_socket_path;
+		arg = argv_next(&ac, &av);
+		if (!arg || *arg == '\0')
+			fatal("%s line %d: missing path.", filename, linenum);
+		if (strncmp(arg, "shared:", 7) == 0) {
+			/* Shared paths must be absolute */
+			if (arg[7] != '/') {
+				fatal("%s line %d: invalid shared path.",
+				    filename, linenum);
+			}
+		} else if (strncmp(arg, "user:", 5) == 0) {
+			/* User paths must not be empty */
+			if (arg[5] == '\0') {
+				fatal("%s line %d: invalid user path.",
+				    filename, linenum);
+			}
+		} else if (strcmp(arg, "none") != 0)
+			fatal("%s line %d: invalid path.", filename, linenum);
+		if (*activep && *charptr == NULL)
+			*charptr = xstrdup(arg);
+		break;
 
 	case sDisableForwarding:
 		intptr = &options->disable_forwarding;
@@ -4218,6 +4244,7 @@ dump_config(ServerOptions *o)
 	dump_cfg_string(sSshdSessionPath, o->sshd_session_path);
 	dump_cfg_string(sSshdAuthPath, o->sshd_auth_path);
 	dump_cfg_string(sPerSourcePenaltyExemptList, o->per_source_penalty_exempt);
+	dump_cfg_string(sAgentSocketPath, o->agent_socket_path);
 
 	/* string arguments requiring a lookup */
 	dump_cfg_string(sLogLevel, log_level_name(o->log_level));
