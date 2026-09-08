@@ -56,10 +56,13 @@
 
 
 /*
- * The directory in which ssh-agent sockets and agent sockets forwarded by
+ * Directory spec for ssh-agent sockets and agent sockets forwarded by
  * sshd reside. This directory should not be world-readable.
  */
-#define _PATH_SSH_AGENT_SOCKET_DIR _PATH_SSH_USER_DIR "/agent"
+#define _PATH_SSH_AGENT_SOCKET_DIR	"user:" _PATH_SSH_USER_DIR "/agent"
+
+/* Directory spec for ssh-agent sockets in /tmp */
+#define _PATH_SSH_AGENT_SOCKET_TMPDIR	"shared:/tmp"
 
 /*
  * Per-user file containing host keys of known hosts.  This file need not be
