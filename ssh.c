@@ -1681,6 +1681,8 @@ main(int ac, char **av)
 		channel_add_timeout(ssh, cp, i);
 		free(cp);
 	}
+	channel_set_tcp_keepalives(ssh,
+	    options.tcp_keep_alive == SSH_KEEPALIVES_ALL);
 
 	/* Open a connection to the remote host. */
 	if (ssh_connect(ssh, host, options.host_arg, addrs, &hostaddr,

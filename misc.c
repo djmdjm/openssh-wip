@@ -233,6 +233,19 @@ set_reuseaddr(int fd)
 	return 0;
 }
 
+/* Set TCP keepalives */
+int
+set_keepalive(int fd)
+{
+	int on = 1;
+
+	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)) == -1) {
+		error("setsockopt SO_KEEPALIVE fd %d: %s", fd, strerror(errno));
+		return -1;
+	}
+	return 0;
+}
+
 /* Get/set routing domain */
 char *
 get_rdomain(int fd)
