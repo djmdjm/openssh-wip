@@ -678,6 +678,14 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 	if ((keyid = get_hostkey_index(pubkey, 1, ssh)) == -1)
 		fatal_f("unknown hostkey");
 	debug_f("hostkey %s index %d", sshkey_ssh_name(pubkey), keyid);
+	/* Only make signatures that HostKeyAlgorithms permits for this key */
+	if (sshkey_type_plain(sshkey_type_from_name(alg)) !=
+	    sshkey_type_plain(pubkey->type) ||
+	    sshkey_ecdsa_nid_from_name(alg) != pubkey->ecdsa_nid ||
+	    match_pattern_list(alg, options.hostkeyalgorithms, 0) != 1) {
+		fatal_f("%s signature with %s hostkey not permitted by "
+		    "HostKeyAlgorithms", alg, sshkey_ssh_name(pubkey));
+	}
 	sshkey_free(pubkey);
 
 	/*

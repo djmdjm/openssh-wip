@@ -59,6 +59,7 @@
 #include "sshbuf.h"
 #include "log.h"
 #include "misc.h"
+#include "match.h"
 #include "servconf.h"
 #include "canohost.h"
 #include "sshpty.h"
@@ -655,6 +656,13 @@ server_input_channel_open(int type, uint32_t seq, struct ssh *ssh)
 	return 0;
 }
 
+/* returns non-zero if HostKeyAlgorithms permits sshd to sign using alg */
+static int
+hostkey_alg_permitted(const char *alg)
+{
+	return match_pattern_list(alg, options.hostkeyalgorithms, 0) == 1;
+}
+
 static int
 server_input_hostkeys_prove(struct ssh *ssh, struct sshbuf **respp)
 {
@@ -702,16 +710,33 @@ server_input_hostkeys_prove(struct ssh *ssh, struct sshbuf **respp)
 		sig = NULL;
 		/*
 		 * For RSA keys, prefer to use the signature type negotiated
-		 * during KEX to the default (SHA1).
+		 * during KEX, then a RSA/SHA2 type that the client offered
+		 * and finally any RSA type that HostKeyAlgorithms permits.
+		 * The client accepts RSA/SHA2 proofs that it didn't offer
+		 * but discards RSA/SHA1 ones, so prefer the former.
 		 */
 		sigalg = sshkey_ssh_name(key);
 		if (sshkey_type_plain(key->type) == KEY_RSA) {
 			if (kex_rsa_sigalg != NULL)
 				sigalg = kex_rsa_sigalg;
-			else if (ssh->kex->flags & KEX_RSA_SHA2_512_SUPPORTED)
+			else if ((ssh->kex->flags &
+			    KEX_RSA_SHA2_512_SUPPORTED) != 0 &&
+			    hostkey_alg_permitted("rsa-sha2-512"))
 				sigalg = "rsa-sha2-512";
-			else if (ssh->kex->flags & KEX_RSA_SHA2_256_SUPPORTED)
+			else if ((ssh->kex->flags &
+			    KEX_RSA_SHA2_256_SUPPORTED) != 0 &&
+			    hostkey_alg_permitted("rsa-sha2-256"))
 				sigalg = "rsa-sha2-256";
+			else if (hostkey_alg_permitted("rsa-sha2-512"))
+				sigalg = "rsa-sha2-512";
+			else if (hostkey_alg_permitted("rsa-sha2-256"))
+				sigalg = "rsa-sha2-256";
+		}
+		/* Never sign using an algorithm we wouldn't offer in KEX */
+		if (!hostkey_alg_permitted(sigalg)) {
+			error_f("%s signature not permitted by "
+			    "HostKeyAlgorithms", sigalg);
+			goto out;
 		}
 
 		debug3_f("sign %s key (index %d) using sigalg %s",
