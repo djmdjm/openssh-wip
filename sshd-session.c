@@ -507,6 +507,13 @@ notify_hostkeys(struct ssh *ssh)
 		if (key == NULL || key->type == KEY_UNSPEC ||
 		    sshkey_is_cert(key))
 			continue;
+		/* Skip keys that HostKeyAlgorithms doesn't allow us to use */
+		if (!sshkey_match_keyname_to_sigalgs(sshkey_ssh_name(key),
+		    options.hostkeyalgorithms)) {
+			debug3_f("key %d: %s not permitted by "
+			    "HostKeyAlgorithms", i, sshkey_ssh_name(key));
+			continue;
+		}
 		fp = sshkey_fingerprint(key, options.fingerprint_hash,
 		    SSH_FP_DEFAULT);
 		debug3_f("key %d: %s %s", i, sshkey_ssh_name(key), fp);
@@ -529,11 +536,14 @@ notify_hostkeys(struct ssh *ssh)
 			sshpkt_fatal(ssh, r, "%s: append key", __func__);
 		nkeys++;
 	}
-	debug3_f("sent %u hostkeys", nkeys);
+	/* There may be none, e.g. if HostKeyAlgorithms lists only cert types */
 	if (nkeys == 0)
-		fatal_f("no hostkeys");
-	if ((r = sshpkt_send(ssh)) != 0)
-		sshpkt_fatal(ssh, r, "%s: send", __func__);
+		debug3_f("no keys matched HostKeyAlgorithms");
+	else {
+		if ((r = sshpkt_send(ssh)) != 0)
+			sshpkt_fatal(ssh, r, "%s: send", __func__);
+		debug3_f("sent %u hostkeys", nkeys);
+	}
 	sshbuf_free(buf);
 }
 
