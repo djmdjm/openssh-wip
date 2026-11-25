@@ -808,6 +808,34 @@ mux_remove_remote_forwardings(struct ssh *ssh, Channel *c)
 	}
 }
 
+/*
+ * Remove the socket file of a Unix domain forwarding listener, unless it has
+ * since been replaced by someone else's (e.g. via StreamLocalBindUnlink).
+ * Must be called before the listener socket is closed: the bound socket
+ * keeps the file's inode from being reused, and a forked child that has
+ * already closed its copy of the listener must not remove a file that is
+ * still in use by its parent.
+ */
+static void
+channel_unlink_listener(Channel *c)
+{
+	struct stat st;
+
+	if ((c->type != SSH_CHANNEL_UNIX_LISTENER &&
+	    c->type != SSH_CHANNEL_RUNIX_LISTENER) ||
+	    c->sock == -1 || c->listening_addr == NULL)
+		return;
+	if (lstat(c->listening_addr, &st) != 0 || !S_ISSOCK(st.st_mode) ||
+	    st.st_dev != c->listening_dev || st.st_ino != c->listening_ino)
+		return;
+	if (unlink(c->listening_addr) != 0) {
+		error_f("unlink \"%s\": %s", c->listening_addr,
+		    strerror(errno));
+		return;
+	}
+	debug3_f("removed socket %s", c->listening_addr);
+}
+
 /* Free the channel and close its fd/socket. */
 void
 channel_free(struct ssh *ssh, Channel *c)
@@ -859,6 +887,7 @@ channel_free(struct ssh *ssh, Channel *c)
 		free(s);
 	}
 
+	channel_unlink_listener(c);
 	channel_close_fds(ssh, c);
 	sshbuf_free(c->input);
 	sshbuf_free(c->output);
@@ -968,6 +997,7 @@ channel_stop_listening(struct ssh *ssh)
 			case SSH_CHANNEL_X11_LISTENER:
 			case SSH_CHANNEL_UNIX_LISTENER:
 			case SSH_CHANNEL_RUNIX_LISTENER:
+				channel_unlink_listener(c);
 				channel_close_fd(ssh, c, &c->sock);
 				channel_free(ssh, c);
 				break;
@@ -4102,6 +4132,7 @@ channel_setup_fwd_listener_streamlocal(struct ssh *ssh, int type,
     struct Forward *fwd, struct ForwardOptions *fwd_opts)
 {
 	struct sockaddr_un sunaddr;
+	struct stat st;
 	const char *path;
 	Channel *c;
 	int port, sock;
@@ -4168,6 +4199,11 @@ channel_setup_fwd_listener_streamlocal(struct ssh *ssh, int type,
 	c->host_port = port;
 	c->listening_port = PORT_STREAMLOCAL;
 	c->listening_addr = xstrdup(fwd->listen_path);
+	/* Remember which file is ours so it can be removed with the listener */
+	if (lstat(fwd->listen_path, &st) == 0) {
+		c->listening_dev = st.st_dev;
+		c->listening_ino = st.st_ino;
+	}
 	return 1;
 }
 
