@@ -68,6 +68,7 @@ struct monitor {
 	int			 m_log_sendfd;
 	struct kex		**m_pkex;
 	pid_t			 m_pid;
+	int			 m_child_reaped;
 };
 
 struct monitor *monitor_init(void);
