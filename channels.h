@@ -162,6 +162,8 @@ struct Channel {
 		/* path for unix domain sockets, or host name for forwards */
 	int     listening_port;	/* port being listened for forwards */
 	char   *listening_addr;	/* addr being listened for forwards */
+	dev_t   listening_dev;	/* identity of the socket file created for */
+	ino_t   listening_ino;	/* a unix domain listener, for later removal */
 	int     host_port;	/* remote port to connect for forwards */
 	char   *remote_name;	/* remote hostname */
 

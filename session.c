@@ -2316,6 +2316,9 @@ do_cleanup(struct ssh *ssh, Authctxt *authctxt)
 	/* remove agent socket */
 	auth_sock_cleanup_proc(authctxt->pw);
 
+	/* remove the socket files of any remaining streamlocal listeners */
+	channel_stop_listening(ssh);
+
 	/* remove userauth info */
 	if (auth_info_file != NULL) {
 		temporarily_use_uid(authctxt->pw);
