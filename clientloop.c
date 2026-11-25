@@ -785,6 +785,26 @@ client_suspend_self(struct sshbuf *bin, struct sshbuf *bout, struct sshbuf *berr
 	enter_raw_mode(options.request_tty == REQUEST_TTY_FORCE);
 }
 
+/*
+ * Returns non-zero if the session channel has run to completion, i.e. the
+ * server has finished sending on it and everything it sent has been written
+ * out locally.
+ */
+static int
+client_session_finished(struct ssh *ssh)
+{
+	Channel *c;
+
+	if (session_closed)
+		return 1;
+	if (session_ident == -1 ||
+	    (c = channel_by_id(ssh, session_ident)) == NULL)
+		return 0;
+	return c->ostate == CHAN_OUTPUT_CLOSED ||
+	    (c->ostate == CHAN_OUTPUT_WAIT_DRAIN &&
+	    sshbuf_len(c->output) == 0 && !CHANNEL_EFD_OUTPUT_ACTIVE(c));
+}
+
 static void
 client_process_net_input(struct ssh *ssh)
 {
@@ -800,13 +820,18 @@ client_process_net_input(struct ssh *ssh)
 	if (r == SSH_ERR_SYSTEM_ERROR) {
 		if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK)
 			return;
-		if (errno == EPIPE) {
-			quit_message("Connection to %s closed by remote host.",
-			    host);
-			return;
-		}
 	}
-	quit_message("Read from remote host %s: %s", host, ssh_err(r));
+	if (r == SSH_ERR_SYSTEM_ERROR && errno == EPIPE)
+		quit_message("Connection to %s closed by remote host.", host);
+	else
+		quit_message("Read from remote host %s: %s", host, ssh_err(r));
+	/*
+	 * The server may send the exit-status ahead of the remainder of the
+	 * session's output, so don't report it if the connection was lost
+	 * before the session completed.
+	 */
+	if (!client_session_finished(ssh))
+		exit_status = -1;
 }
 
 static void
