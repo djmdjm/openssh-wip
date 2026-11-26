@@ -726,7 +726,8 @@ server_input_hostkeys_prove(struct ssh *ssh, struct sshbuf **respp)
 		    ssh->kex->session_id)) != 0 ||
 		    (r = sshkey_puts(key, sigbuf)) != 0 ||
 		    (r = ssh->kex->sign(ssh, key_prv, key_pub, &sig, &slen,
-		    sshbuf_ptr(sigbuf), sshbuf_len(sigbuf), sigalg)) != 0 ||
+		    sshbuf_ptr(sigbuf), sshbuf_len(sigbuf), sigalg,
+		    NULL)) != 0 ||
 		    (r = sshbuf_put_string(resp, sig, slen)) != 0) {
 			error_fr(r, "assemble signature");
 			goto out;

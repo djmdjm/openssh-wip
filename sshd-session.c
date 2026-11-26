@@ -1211,17 +1211,18 @@ main(int ac, char **av)
 int
 sshd_hostkey_sign(struct ssh *ssh, struct sshkey *privkey,
     struct sshkey *pubkey, u_char **signature, size_t *slenp,
-    const u_char *data, size_t dlen, const char *alg)
+    const u_char *data, size_t dlen, const char *alg,
+    const struct sshbuf *hash_input)
 {
 	if (privkey) {
 		if (mm_sshkey_sign(ssh, privkey, signature, slenp,
 		    data, dlen, alg, options.sk_provider, NULL,
-		    ssh->compat) < 0)
+		    ssh->compat, hash_input) < 0)
 			fatal_f("privkey sign failed");
 	} else {
 		if (mm_sshkey_sign(ssh, pubkey, signature, slenp,
 		    data, dlen, alg, options.sk_provider, NULL,
-		    ssh->compat) < 0)
+		    ssh->compat, hash_input) < 0)
 			fatal_f("pubkey sign failed");
 	}
 	return 0;

@@ -49,11 +49,13 @@ kexgex_hash(
     const BIGNUM *client_dh_pub,
     const BIGNUM *server_dh_pub,
     const u_char *shared_secret, size_t secretlen,
-    u_char *hash, size_t *hashlen)
+    u_char *hash, size_t *hashlen, struct sshbuf **hash_inputp)
 {
 	struct sshbuf *b;
 	int r;
 
+	if (hash_inputp != NULL)
+		*hash_inputp = NULL;
 	if (*hashlen < ssh_digest_bytes(SSH_DIGEST_SHA1))
 		return SSH_ERR_INVALID_ARGUMENT;
 	if ((b = sshbuf_new()) == NULL)
@@ -85,6 +87,10 @@ kexgex_hash(
 	if (ssh_digest_buffer(hash_alg, b, hash, *hashlen) != 0) {
 		sshbuf_free(b);
 		return SSH_ERR_LIBCRYPTO_ERROR;
+	}
+	if (hash_inputp != NULL) {
+		*hash_inputp = b;
+		b = NULL;
 	}
 	sshbuf_free(b);
 	*hashlen = ssh_digest_bytes(hash_alg);

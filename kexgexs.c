@@ -126,6 +126,7 @@ input_kex_dh_gex_init(int type, uint32_t seq, struct ssh *ssh)
 	const BIGNUM *pub_key, *dh_p, *dh_g;
 	struct sshbuf *shared_secret = NULL;
 	struct sshbuf *server_host_key_blob = NULL;
+	struct sshbuf *hash_input = NULL;
 	struct sshkey *server_host_public, *server_host_private;
 	u_char *signature = NULL;
 	u_char hash[SSH_DIGEST_MAX_LENGTH];
@@ -172,12 +173,13 @@ input_kex_dh_gex_init(int type, uint32_t seq, struct ssh *ssh)
 	    dh_client_pub,
 	    pub_key,
 	    sshbuf_ptr(shared_secret), sshbuf_len(shared_secret),
-	    hash, &hashlen)) != 0)
+	    hash, &hashlen, &hash_input)) != 0)
 		goto out;
 
 	/* sign H */
 	if ((r = kex->sign(ssh, server_host_private, server_host_public,
-	    &signature, &slen, hash, hashlen, kex->hostkey_alg)) < 0)
+	    &signature, &slen, hash, hashlen, kex->hostkey_alg,
+	    hash_input)) < 0)
 		goto out;
 
 	/* send server hostkey, DH pubkey 'f' and signed H */
@@ -205,6 +207,7 @@ input_kex_dh_gex_init(int type, uint32_t seq, struct ssh *ssh)
 	BN_clear_free(dh_client_pub);
 	sshbuf_free(shared_secret);
 	sshbuf_free(server_host_key_blob);
+	sshbuf_free(hash_input);
 	free(signature);
 	return r;
 }

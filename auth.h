@@ -192,7 +192,8 @@ struct sshkey	*get_hostkey_public_by_type(int, int, struct ssh *);
 struct sshkey	*get_hostkey_private_by_type(int, int, struct ssh *);
 int	 get_hostkey_index(struct sshkey *, int, struct ssh *);
 int	 sshd_hostkey_sign(struct ssh *, struct sshkey *, struct sshkey *,
-    u_char **, size_t *, const u_char *, size_t, const char *);
+    u_char **, size_t *, const u_char *, size_t, const char *,
+    const struct sshbuf *);
 
 /* Key / cert options linkage to auth layer */
 int	 auth_activate_options(struct ssh *, struct sshauthopt *);

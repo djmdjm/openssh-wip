@@ -175,7 +175,8 @@ struct kex {
 	struct sshkey *(*load_host_private_key)(int, int, struct ssh *);
 	int	(*host_key_index)(struct sshkey *, int, struct ssh *);
 	int	(*sign)(struct ssh *, struct sshkey *, struct sshkey *,
-	    u_char **, size_t *, const u_char *, size_t, const char *);
+	    u_char **, size_t *, const u_char *, size_t, const char *,
+	    const struct sshbuf *);
 	int	(*kex[KEX_MAX])(struct ssh *);
 	/* kex specific state */
 	DH	*dh;			/* DH */
@@ -278,7 +279,7 @@ int	 kexgex_hash(int, const struct sshbuf *, const struct sshbuf *,
     int, int, int,
     const BIGNUM *, const BIGNUM *, const BIGNUM *,
     const BIGNUM *, const u_char *, size_t,
-    u_char *, size_t *);
+    u_char *, size_t *, struct sshbuf **);
 
 void	kexc25519_keygen(u_char key[CURVE25519_SIZE], u_char pub[CURVE25519_SIZE])
 	__attribute__((__bounded__(__minbytes__, 1, CURVE25519_SIZE)))

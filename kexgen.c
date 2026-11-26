@@ -53,11 +53,13 @@ kex_gen_hash(
     const struct sshbuf *client_pub,
     const struct sshbuf *server_pub,
     const struct sshbuf *shared_secret,
-    u_char *hash, size_t *hashlen)
+    u_char *hash, size_t *hashlen, struct sshbuf **hash_inputp)
 {
 	struct sshbuf *b;
 	int r;
 
+	if (hash_inputp != NULL)
+		*hash_inputp = NULL;
 	if (*hashlen < ssh_digest_bytes(hash_alg))
 		return SSH_ERR_INVALID_ARGUMENT;
 	if ((b = sshbuf_new()) == NULL)
@@ -84,6 +86,10 @@ kex_gen_hash(
 	if (ssh_digest_buffer(hash_alg, b, hash, *hashlen) != 0) {
 		sshbuf_free(b);
 		return SSH_ERR_LIBCRYPTO_ERROR;
+	}
+	if (hash_inputp != NULL) {
+		*hash_inputp = b;
+		b = NULL;
 	}
 	sshbuf_free(b);
 	*hashlen = ssh_digest_bytes(hash_alg);
@@ -224,7 +230,7 @@ input_kex_gen_reply(int type, uint32_t seq, struct ssh *ssh)
 	    kex->client_pub,
 	    server_blob,
 	    shared_secret,
-	    hash, &hashlen)) != 0)
+	    hash, &hashlen, NULL)) != 0)
 		goto out;
 
 	if ((r = sshkey_verify(server_host_key, signature, slen, hash, hashlen,
@@ -286,6 +292,7 @@ input_kex_gen_init(int type, uint32_t seq, struct ssh *ssh)
 	struct sshbuf *server_pubkey = NULL;
 	struct sshbuf *client_pubkey = NULL;
 	struct sshbuf *server_host_key_blob = NULL;
+	struct sshbuf *hash_input = NULL;
 	u_char *signature = NULL, hash[SSH_DIGEST_MAX_LENGTH];
 	size_t slen, hashlen;
 	int r;
@@ -358,12 +365,13 @@ input_kex_gen_init(int type, uint32_t seq, struct ssh *ssh)
 	    client_pubkey,
 	    server_pubkey,
 	    shared_secret,
-	    hash, &hashlen)) != 0)
+	    hash, &hashlen, &hash_input)) != 0)
 		goto out;
 
 	/* sign H */
 	if ((r = kex->sign(ssh, server_host_private, server_host_public,
-	    &signature, &slen, hash, hashlen, kex->hostkey_alg)) != 0)
+	    &signature, &slen, hash, hashlen, kex->hostkey_alg,
+	    hash_input)) != 0)
 		goto out;
 
 	/* send server hostkey, ECDH pubkey 'Q_S' and signed H */
@@ -386,6 +394,7 @@ input_kex_gen_init(int type, uint32_t seq, struct ssh *ssh)
 out:
 	explicit_bzero(hash, sizeof(hash));
 	sshbuf_free(server_host_key_blob);
+	sshbuf_free(hash_input);
 	free(signature);
 	sshbuf_free(shared_secret);
 	sshbuf_free(client_pubkey);

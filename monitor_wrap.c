@@ -269,7 +269,8 @@ mm_sshkey_setcompat(struct ssh *ssh)
 int
 mm_sshkey_sign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
     const u_char *data, size_t datalen, const char *hostkey_alg,
-    const char *sk_provider, const char *sk_pin, u_int compat)
+    const char *sk_provider, const char *sk_pin, u_int compat,
+    const struct sshbuf *hash_input)
 {
 	struct sshbuf *m;
 	int r;
@@ -280,7 +281,8 @@ mm_sshkey_sign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
 	if ((r = sshkey_puts(key, m)) != 0 ||
 	    (r = sshbuf_put_string(m, data, datalen)) != 0 ||
 	    (r = sshbuf_put_cstring(m, hostkey_alg)) != 0 ||
-	    (r = sshbuf_put_u32(m, compat)) != 0)
+	    (r = sshbuf_put_u32(m, compat)) != 0 ||
+	    (r = sshbuf_put_stringb(m, hash_input)) != 0)
 		fatal_fr(r, "assemble");
 
 	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_SIGN, m);

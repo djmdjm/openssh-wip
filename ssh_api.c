@@ -43,7 +43,8 @@ int	_ssh_verify_host_key(struct sshkey *, struct ssh *);
 struct sshkey *_ssh_host_public_key(int, int, struct ssh *);
 struct sshkey *_ssh_host_private_key(int, int, struct ssh *);
 int	_ssh_host_key_sign(struct ssh *, struct sshkey *, struct sshkey *,
-    u_char **, size_t *, const u_char *, size_t, const char *);
+    u_char **, size_t *, const u_char *, size_t, const char *,
+    const struct sshbuf *);
 
 /*
  * stubs for privsep calls in the server side implementation of kex.
@@ -578,7 +579,8 @@ _ssh_order_hostkeyalgs(struct ssh *ssh)
 int
 _ssh_host_key_sign(struct ssh *ssh, struct sshkey *privkey,
     struct sshkey *pubkey, u_char **signature, size_t *slen,
-    const u_char *data, size_t dlen, const char *alg)
+    const u_char *data, size_t dlen, const char *alg,
+    const struct sshbuf *hash_input)
 {
 	return sshkey_sign(privkey, signature, slen, data, dlen,
 	    alg, NULL, NULL, ssh->compat);

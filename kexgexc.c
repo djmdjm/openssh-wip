@@ -194,7 +194,7 @@ input_kex_dh_gex_reply(int type, uint32_t seq, struct ssh *ssh)
 	    pub_key,
 	    dh_server_pub,
 	    sshbuf_ptr(shared_secret), sshbuf_len(shared_secret),
-	    hash, &hashlen)) != 0)
+	    hash, &hashlen, NULL)) != 0)
 		goto out;
 
 	if ((r = sshkey_verify(server_host_key, signature, slen, hash,

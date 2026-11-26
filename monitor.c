@@ -58,6 +58,7 @@
 #include "hostfile.h"
 #include "auth.h"
 #include "cipher.h"
+#include "digest.h"
 #include "kex.h"
 #include "dh.h"
 #include "packet.h"
@@ -654,11 +655,11 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 {
 	extern int auth_sock;			/* XXX move to state struct? */
 	struct sshkey *pubkey, *key;
-	struct sshbuf *sigbuf = NULL;
-	u_char *p = NULL, *signature = NULL;
+	struct sshbuf *sigbuf = NULL, *hash_input = NULL;
+	u_char *p = NULL, *signature = NULL, hash[SSH_DIGEST_MAX_LENGTH];
 	char *alg = NULL;
 	size_t datlen, siglen;
-	int r, is_proof = 0, keyid;
+	int r, is_proof = 0, keyid, hash_alg;
 	u_int compat;
 	const char proof_req[] = "hostkeys-prove-00@openssh.com";
 	static int nhostkey_proofs_done, *hostkey_proofs_done;
@@ -672,7 +673,8 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 	if ((r = sshkey_froms(m, &pubkey)) != 0 ||
 	    (r = sshbuf_get_string(m, &p, &datlen)) != 0 ||
 	    (r = sshbuf_get_cstring(m, &alg, NULL)) != 0 ||
-	    (r = sshbuf_get_u32(m, &compat)) != 0)
+	    (r = sshbuf_get_u32(m, &compat)) != 0 ||
+	    (r = sshbuf_froms(m, &hash_input)) != 0)
 		fatal_fr(r, "parse");
 
 	if ((keyid = get_hostkey_index(pubkey, 1, ssh)) == -1)
@@ -686,10 +688,6 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 	 *
 	 * Otherwise, verify the signature request is for a hostkey
 	 * proof.
-	 *
-	 * XXX perform similar check for KEX signature requests too?
-	 * it's not trivial, since what is signed is the hash, rather
-	 * than the full kex structure...
 	 */
 	if (datlen != 20 && datlen != 32 && datlen != 48 && datlen != 64) {
 		/*
@@ -724,7 +722,39 @@ mm_answer_sign(struct ssh *ssh, int sock, struct sshbuf *m)
 			    datlen, sshbuf_len(sigbuf));
 		sshbuf_free(sigbuf);
 		is_proof = 1;
+	} else {
+		/*
+		 * Verify that the data is the exchange hash of a KEX that
+		 * offered the hostkey we are being asked to sign with, by
+		 * recomputing it from the hash input sent by the unprivileged
+		 * process and checking the K_S it contains. The first exchange
+		 * hash becomes the session ID that userauth signatures are
+		 * later checked against, so the unprivileged process must not
+		 * be able to choose it freely (e.g. to replay a signature made
+		 * by a user for a session with some other server).
+		 */
+		for (hash_alg = 0; hash_alg < SSH_DIGEST_MAX; hash_alg++) {
+			if (ssh_digest_bytes(hash_alg) == datlen)
+				break;
+		}
+		if (hash_alg >= SSH_DIGEST_MAX)
+			fatal_f("no hash algorithm for data length %zu", datlen);
+		if ((r = ssh_digest_buffer(hash_alg, hash_input,
+		    hash, sizeof(hash))) != 0)
+			fatal_fr(r, "calculate exchange hash");
+		if (memcmp(p, hash, datlen) != 0)
+			fatal_f("exchange hash mismatch");
+		if ((r = sshbuf_skip_string(hash_input)) != 0 || /* V_C */
+		    (r = sshbuf_skip_string(hash_input)) != 0 || /* V_S */
+		    (r = sshbuf_skip_string(hash_input)) != 0 || /* I_C */
+		    (r = sshbuf_skip_string(hash_input)) != 0 || /* I_S */
+		    (r = sshkey_froms(hash_input, &pubkey)) != 0) /* K_S */
+			fatal_fr(r, "parse exchange hash input");
+		if (get_hostkey_index(pubkey, 1, ssh) != keyid)
+			fatal_f("exchange hash hostkey mismatch");
+		sshkey_free(pubkey);
 	}
+	sshbuf_free(hash_input);
 
 	/* save session id, it will be passed on the first call */
 	if (session_id2_len == 0) {
