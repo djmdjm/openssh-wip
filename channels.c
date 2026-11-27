@@ -1102,6 +1102,22 @@ channel_find_open(struct ssh *ssh)
 	return -1;
 }
 
+/*
+ * Returns non-zero if the channel is closed or has completed its
+ * pre-close drain.
+ */
+int
+channel_output_closed(struct ssh *ssh, int id)
+{
+	Channel *c;
+
+	if (id == -1 || (c = channel_by_id(ssh, id)) == NULL)
+		return 0;
+	return c->ostate == CHAN_OUTPUT_CLOSED ||
+	    (c->ostate == CHAN_OUTPUT_WAIT_DRAIN &&
+	    sshbuf_len(c->output) == 0 && !CHANNEL_EFD_OUTPUT_ACTIVE(c));
+}
+
 /* Returns the state of the channel's extended usage flag */
 const char *
 channel_format_extended_usage(const Channel *c)
